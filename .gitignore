@@ -1,0 +1,14 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Generated context artifacts
+gameplayflow/project_context/
+gameplayflow/generated_flows/
+
+# Generated plugin install report inside sample projects
+**/gameplayflow/plugin_install_report.json
+
+# Example project runtime outputs
+examples/godot_minimal/addons/pointer_gpf/
+examples/godot_minimal/gameplayflow/

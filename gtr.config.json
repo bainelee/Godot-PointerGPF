@@ -1,0 +1,21 @@
+{
+  "server_name": "pointer-gpf-mcp",
+  "server_version": "0.2.0",
+  "plugin_id": "pointer_gpf",
+  "plugin_cfg_rel": "addons/pointer_gpf/plugin.cfg",
+  "plugin_template_dir_rel": "godot_plugin_template/addons/pointer_gpf",
+  "context_dir_rel": "gameplayflow/project_context",
+  "index_rel": "gameplayflow/project_context/index.json",
+  "seed_flow_dir_rel": "gameplayflow/generated_flows",
+  "scan_roots": [
+    "scripts",
+    "scenes",
+    "addons",
+    "datas",
+    "docs",
+    "flows",
+    "tests",
+    "test",
+    "src"
+  ]
+}

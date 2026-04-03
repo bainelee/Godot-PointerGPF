@@ -1,0 +1,39 @@
+name: mcp-smoke
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MCP script smoke
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File "install/install-mcp.ps1"
+
+      - name: Runtime info smoke
+        shell: pwsh
+        run: |
+          python "mcp/server.py" --tool get_mcp_runtime_info --args "{}"
+
+      - name: Context init smoke (self repo)
+        shell: pwsh
+        run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          python "mcp/server.py" --tool init_project_context --project-root "."
+          python "mcp/server.py" --tool generate_flow_seed --project-root "." --flow-id "ci_smoke_seed" --strategy "generic"
+          $sw.Stop()
+          if ($sw.Elapsed.TotalSeconds -gt 180) {
+            throw "Smoke execution exceeded 180s. Actual=$($sw.Elapsed.TotalSeconds)s"
+          }

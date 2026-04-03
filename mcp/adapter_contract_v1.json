@@ -1,0 +1,67 @@
+{
+  "contract_version": "v1",
+  "name": "GodotAdapter Contract",
+  "description": "Minimum adapter contract for PointerGPF MCP integration.",
+  "transport_modes": [
+    {
+      "mode": "plugin_adapter",
+      "description": "Godot editor/runtime plugin implements adapter API directly."
+    },
+    {
+      "mode": "file_bridge",
+      "description": "File-based command/response bridge compatible with command.json/response.json style flows."
+    }
+  ],
+  "required_actions": [
+    {
+      "id": "launchGame",
+      "request_fields": [],
+      "response_fields": ["ok", "message"]
+    },
+    {
+      "id": "click",
+      "request_fields": ["target"],
+      "response_fields": ["ok", "message"]
+    },
+    {
+      "id": "wait",
+      "request_fields": ["until", "timeoutMs"],
+      "response_fields": ["ok", "elapsedMs", "conditionMet"]
+    },
+    {
+      "id": "check",
+      "request_fields": ["kind"],
+      "response_fields": ["ok", "details"]
+    },
+    {
+      "id": "snapshot",
+      "request_fields": ["name"],
+      "response_fields": ["ok", "artifactPath"]
+    }
+  ],
+  "optional_actions": [
+    "drag",
+    "inputText",
+    "openMenu",
+    "loadSlot",
+    "saveSlot",
+    "getState"
+  ],
+  "error_codes": [
+    "INVALID_ARGUMENT",
+    "TARGET_NOT_FOUND",
+    "ACTION_NOT_SUPPORTED",
+    "TIMEOUT",
+    "RUNTIME_EXCEPTION",
+    "IO_ERROR"
+  ],
+  "chat_protocol": {
+    "mode": "three_phase",
+    "required_phases": ["started", "result", "verify"]
+  },
+  "compliance": {
+    "minimum_required_actions_count": 5,
+    "must_emit_structured_error": true,
+    "must_include_action_id_in_failures": true
+  }
+}

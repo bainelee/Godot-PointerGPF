@@ -1,0 +1,26 @@
+{
+    "product":  "pointer-gpf-mcp",
+    "repository":  "bainelee/Godot-PointerGPF",
+    "current_version":  "0.2.0",
+    "channels":  {
+                     "stable":  {
+                                    "version":  "0.2.0",
+                                    "min_compatible_version":  "0.2.0",
+                                    "release_notes":  "Bootstrap plugin lifecycle, context intelligence, and flow seed generation.",
+                                    "published_at_utc":  "2026-04-02T19:20:54Z",
+                                    "artifact":  {
+                                                     "format":  "zip",
+                                                     "filename":  "pointer-gpf-mcp-0.2.0.zip",
+                                                     "url":  "https://example.com/pointer-gpf-mcp-0.2.0.zip",
+                                                     "sha256":  "abcdef",
+                                                     "size_bytes":  100,
+                                                     "zip_layout":  "repo_root"
+                                                 }
+                                }
+                 },
+    "update_policy":  {
+                          "default_channel":  "stable",
+                          "allow_auto_update":  true,
+                          "rollback_supported":  true
+                      }
+}

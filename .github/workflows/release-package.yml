@@ -1,0 +1,40 @@
+name: release-package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.2.1)"
+        required: true
+        type: string
+
+jobs:
+  package:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build package zip
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          $outDir = "dist"
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          $zip = Join-Path $outDir ("pointer-gpf-mcp-" + $version + ".zip")
+          Compress-Archive -Path "mcp","install","godot_plugin_template","docs","examples","README.md","gtr.config.json",".gitignore" -DestinationPath $zip -Force
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          Set-Content -Path (Join-Path $outDir "sha256.txt") -Value $sha -Encoding utf8
+          Write-Output "ZIP_PATH=$zip" >> $env:GITHUB_ENV
+          Write-Output "SHA256=$sha" >> $env:GITHUB_ENV
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: PointerGPF v${{ github.event.inputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/*.zip
+            dist/sha256.txt

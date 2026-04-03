@@ -1,0 +1,10 @@
+; Engine configuration file.
+; Minimal sample for PointerGPF plugin installation smoke test.
+
+config_version=5
+
+[application]
+config/name="PointerGPF Minimal"
+
+[editor_plugins]
+enabled=PackedStringArray("res://addons/pointer_gpf/plugin.cfg")
