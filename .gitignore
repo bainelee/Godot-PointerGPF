@@ -12,3 +12,8 @@ gameplayflow/generated_flows/
 # Example project runtime outputs
 examples/godot_minimal/addons/pointer_gpf/
 examples/godot_minimal/gameplayflow/
+
+# Local release/update artifacts
+dist/
+.mcp-update-work-*/
+.mcp-backup-*/

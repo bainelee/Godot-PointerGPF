@@ -7,13 +7,13 @@
                                     "version":  "0.2.0",
                                     "min_compatible_version":  "0.2.0",
                                     "release_notes":  "Bootstrap plugin lifecycle, context intelligence, and flow seed generation.",
-                                    "published_at_utc":  "2026-04-02T19:20:54Z",
+                                    "published_at_utc":  "2026-04-03T05:10:07Z",
                                     "artifact":  {
                                                      "format":  "zip",
                                                      "filename":  "pointer-gpf-mcp-0.2.0.zip",
-                                                     "url":  "https://example.com/pointer-gpf-mcp-0.2.0.zip",
-                                                     "sha256":  "abcdef",
-                                                     "size_bytes":  100,
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.0/pointer-gpf-mcp-0.2.0.zip",
+                                                     "sha256":  "4e6ae0b2a8e3060af28b526ab39638818664c8b78bfeb99f1d35d6bbf58a3798",
+                                                     "size_bytes":  27780,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }
