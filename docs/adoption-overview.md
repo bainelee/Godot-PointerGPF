@@ -19,9 +19,11 @@
 
 ## Output artifacts
 
-- `gameplayflow/project_context/*.md`
-- `gameplayflow/project_context/index.json`
-- `gameplayflow/generated_flows/*.json`
+- `pointer_gpf/project_context/*.md`
+- `pointer_gpf/project_context/index.json`
+- `pointer_gpf/generated_flows/*.json`
+- `pointer_gpf/reports/*.json`
+- `pointer_gpf/gpf-exp/*`
 
 ## Safety model
 

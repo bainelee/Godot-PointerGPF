@@ -8,18 +8,27 @@
 
 ## Migration steps
 
-- Configure Cursor MCP to point to `pointer_gpf/mcp/server.py`.
+- Configure Cursor MCP to point to `mcp/server.py` in this repository (or an absolute path like `D:/AI/pointer_gpf/mcp/server.py`).
 - Run `install/install-mcp.ps1`.
 - Install plugin into target project.
 - Run `init_project_context`.
 - Run `generate_flow_seed`.
 
+If legacy output paths exist (`gameplayflow/*` or project-root `gpf-exp`), run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -ProjectRoot "D:/path/to/your/godot/project" -DryRun
+```
+
+Then execute without `-DryRun` to apply migration.
+
 ## Verification
 
 - `get_mcp_runtime_info` returns expected tool list.
 - `check_plugin_status` is `ready`.
-- `index.json` exists under `gameplayflow/project_context/`.
-- Seed flow file exists under `gameplayflow/generated_flows/`.
+- `index.json` exists under `pointer_gpf/project_context/`.
+- Seed flow file exists under `pointer_gpf/generated_flows/`.
+- Runtime artifacts exist under `pointer_gpf/gpf-exp/runtime/`.
 
 ## Rollback
 

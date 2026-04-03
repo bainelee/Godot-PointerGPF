@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,8 +18,11 @@ DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
 DEFAULT_SERVER_VERSION = "0.2.0"
 DEFAULT_PLUGIN_ID = "pointer_gpf"
 DEFAULT_PLUGIN_CFG_REL = f"addons/{DEFAULT_PLUGIN_ID}/plugin.cfg"
-DEFAULT_CONTEXT_DIR_REL = "gameplayflow/project_context"
-DEFAULT_SEED_FLOW_DIR_REL = "gameplayflow/generated_flows"
+DEFAULT_WORKSPACE_DIR_REL = "pointer_gpf"
+DEFAULT_CONTEXT_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/project_context"
+DEFAULT_SEED_FLOW_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/generated_flows"
+DEFAULT_REPORT_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/reports"
+DEFAULT_EXP_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/gpf-exp"
 DEFAULT_SCAN_ROOTS = ["scripts", "scenes", "addons", "datas", "docs", "flows", "tests", "test", "src"]
 
 
@@ -48,6 +52,8 @@ class RuntimeConfig:
     context_dir_rel: str
     index_rel: str
     seed_flow_dir_rel: str
+    report_dir_rel: str
+    exp_dir_rel: str
     scan_roots: list[str]
     plugin_template_dir: Path
     config_sources: list[str]
@@ -88,6 +94,8 @@ def _default_runtime_config(ctx: ServerCtx) -> RuntimeConfig:
         context_dir_rel=DEFAULT_CONTEXT_DIR_REL,
         index_rel=f"{DEFAULT_CONTEXT_DIR_REL}/index.json",
         seed_flow_dir_rel=DEFAULT_SEED_FLOW_DIR_REL,
+        report_dir_rel=DEFAULT_REPORT_DIR_REL,
+        exp_dir_rel=DEFAULT_EXP_DIR_REL,
         scan_roots=list(DEFAULT_SCAN_ROOTS),
         plugin_template_dir=ctx.template_plugin_dir,
         config_sources=[],
@@ -103,6 +111,8 @@ def _merge_runtime_config(base: RuntimeConfig, payload: dict[str, Any], source_l
         context_dir_rel=base.context_dir_rel,
         index_rel=base.index_rel,
         seed_flow_dir_rel=base.seed_flow_dir_rel,
+        report_dir_rel=base.report_dir_rel,
+        exp_dir_rel=base.exp_dir_rel,
         scan_roots=list(base.scan_roots),
         plugin_template_dir=base.plugin_template_dir,
         config_sources=list(base.config_sources),
@@ -124,6 +134,10 @@ def _merge_runtime_config(base: RuntimeConfig, payload: dict[str, Any], source_l
         cfg.index_rel = str(payload.get("index_rel")).replace("\\", "/").strip()
     if payload.get("seed_flow_dir_rel"):
         cfg.seed_flow_dir_rel = str(payload.get("seed_flow_dir_rel")).replace("\\", "/").strip()
+    if payload.get("report_dir_rel"):
+        cfg.report_dir_rel = str(payload.get("report_dir_rel")).replace("\\", "/").strip()
+    if payload.get("exp_dir_rel"):
+        cfg.exp_dir_rel = str(payload.get("exp_dir_rel")).replace("\\", "/").strip()
     scan_roots = payload.get("scan_roots")
     if isinstance(scan_roots, list):
         normalized = [str(x).replace("\\", "/").strip() for x in scan_roots if str(x).strip()]
@@ -190,6 +204,59 @@ def _write_text(path: Path, text: str) -> None:
         path.write_text(text, encoding="utf-8")
     except OSError as exc:
         raise AppError("IO_ERROR", f"failed to write file: {path}", {"error": str(exc)}) from exc
+
+
+def _append_text(path: Path, text: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(text)
+    except OSError as exc:
+        raise AppError("IO_ERROR", f"failed to append file: {path}", {"error": str(exc)}) from exc
+
+
+def _exp_runtime_dir(project_root: Path, cfg: RuntimeConfig) -> Path:
+    return (project_root / cfg.exp_dir_rel / "runtime").resolve()
+
+
+def _legacy_layout_hints(project_root: Path) -> list[dict[str, str]]:
+    candidates = [
+        ("gameplayflow/project_context", "legacy_project_context"),
+        ("gameplayflow/generated_flows", "legacy_generated_flows"),
+        ("gpf-exp", "legacy_exp_root"),
+    ]
+    out: list[dict[str, str]] = []
+    for rel, kind in candidates:
+        p = project_root / rel
+        if p.exists():
+            out.append(
+                {
+                    "kind": kind,
+                    "path": str(p),
+                    "message": f"legacy path detected: {rel}. Run scripts/migrate-legacy-layout.ps1 to migrate into pointer_gpf/",
+                }
+            )
+    return out
+
+
+def _write_exp_runtime_artifact(
+    project_root: Path,
+    cfg: RuntimeConfig,
+    artifact_name: str,
+    payload: dict[str, Any],
+) -> dict[str, str]:
+    runtime_dir = _exp_runtime_dir(project_root, cfg)
+    slug = _slugify(artifact_name) or "runtime_artifact"
+    artifact_path = runtime_dir / f"{slug}.json"
+    _write_text(artifact_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    event_path = runtime_dir / "events.ndjson"
+    _append_text(event_path, json.dumps(payload, ensure_ascii=False) + "\n")
+    return {
+        "exp_output_dir": str((project_root / cfg.exp_dir_rel).resolve()),
+        "exp_runtime_dir": str(runtime_dir),
+        "artifact_file": str(artifact_path),
+        "event_log_file": str(event_path),
+    }
 
 
 def _ensure_plugin_enabled(project_root: Path, plugin_cfg_rel: str) -> dict[str, Any]:
@@ -260,7 +327,7 @@ def _tool_install_godot_plugin(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         "enable_result": enable_result,
         "status": "installed",
     }
-    report_path = project_root / "gameplayflow" / "plugin_install_report.json"
+    report_path = project_root / cfg.report_dir_rel / "plugin_install_report.json"
     _write_text(report_path, json.dumps(report, ensure_ascii=False, indent=2))
     report["report_path"] = str(report_path)
     return report
@@ -837,6 +904,8 @@ def _build_context_docs(
             "context_dir_rel": cfg.context_dir_rel,
             "index_rel": cfg.index_rel,
             "seed_flow_dir_rel": cfg.seed_flow_dir_rel,
+            "report_dir_rel": cfg.report_dir_rel,
+            "exp_dir_rel": cfg.exp_dir_rel,
             "scan_roots": cfg.scan_roots,
             "plugin_template_dir": str(cfg.plugin_template_dir),
         },
@@ -872,6 +941,21 @@ def _run_project_context_generation(ctx: ServerCtx, arguments: dict[str, Any], m
     previous = _load_previous_index(project_root, cfg.index_rel)
     built = _build_context_docs(project_root=project_root, files=files, previous=previous, cfg=cfg)
     index = built["index"]
+    exp_artifact = _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name=f"context_{mode}",
+        payload={
+            "tool": f"{mode}_project_context",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "mode": mode,
+            "files_scanned_count": len(files),
+            "context_dir": built["documents"]["context_dir"],
+            "index_json": built["documents"]["index_json"],
+        },
+    )
+    legacy_hints = _legacy_layout_hints(project_root)
     return {
         "status": mode,
         "project_root": str(project_root),
@@ -885,6 +969,8 @@ def _run_project_context_generation(ctx: ServerCtx, arguments: dict[str, Any], m
         },
         "config_sources": cfg.config_sources,
         "documents": built["documents"],
+        "exp_runtime": exp_artifact,
+        "legacy_layout_hints": legacy_hints,
     }
 
 
@@ -1091,6 +1177,21 @@ def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict
     else:
         output_path = (project_root / cfg.seed_flow_dir_rel / f"{flow_id}.json").resolve()
     _write_text(output_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    exp_artifact = _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name="flow_seed_last",
+        payload={
+            "tool": "generate_flow_seed",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "flow_id": flow_id,
+            "flow_file": str(output_path),
+            "seed_strategy": strategy,
+            "step_count": len(seeded_steps),
+        },
+    )
+    legacy_hints = _legacy_layout_hints(project_root)
     return {
         "status": "generated",
         "project_root": str(project_root),
@@ -1100,6 +1201,8 @@ def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict
         "step_count": len(seeded_steps),
         "from_action_candidates": len(action_candidates),
         "from_assertion_candidates": len(assertion_candidates),
+        "exp_runtime": exp_artifact,
+        "legacy_layout_hints": legacy_hints,
     }
 
 
@@ -1127,14 +1230,30 @@ def _tool_refresh_project_context(ctx: ServerCtx, arguments: dict[str, Any]) -> 
 
 def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     cfg = _resolve_runtime_config(ctx, arguments)
+    project_root_raw = str(arguments.get("project_root", "")).strip()
+    project_root = Path(project_root_raw).resolve() if project_root_raw else None
+    exp_runtime_info: dict[str, Any] = {"exp_runtime_dir_rel": f"{cfg.exp_dir_rel}/runtime"}
+    legacy_hints: list[dict[str, str]] = []
+    if project_root is not None and project_root.exists():
+        exp_runtime_info = {
+            "exp_output_dir": str((project_root / cfg.exp_dir_rel).resolve()),
+            "exp_runtime_dir": str(_exp_runtime_dir(project_root, cfg)),
+            "exp_runtime_dir_rel": f"{cfg.exp_dir_rel}/runtime",
+        }
+        legacy_hints = _legacy_layout_hints(project_root)
     return {
         "server_name": cfg.server_name,
         "server_version": cfg.server_version,
         "repo_root": str(ctx.repo_root),
         "plugin_template_dir": str(cfg.plugin_template_dir),
+        "workspace_output_dir": DEFAULT_WORKSPACE_DIR_REL,
         "context_output_dir": cfg.context_dir_rel,
         "seed_flow_output_dir": cfg.seed_flow_dir_rel,
+        "report_output_dir": cfg.report_dir_rel,
+        "exp_output_dir": cfg.exp_dir_rel,
+        "exp_runtime": exp_runtime_info,
         "config_sources": cfg.config_sources,
+        "legacy_layout_hints": legacy_hints,
         "tools": [
             "get_mcp_runtime_info",
             "get_adapter_contract",
@@ -1163,9 +1282,253 @@ def _build_tool_map() -> dict[str, Any]:
     }
 
 
+def _build_tool_specs() -> dict[str, dict[str, Any]]:
+    base_props: dict[str, Any] = {
+        "project_root": {"type": "string", "description": "Absolute path to target Godot project root."},
+        "config_file": {"type": "string", "description": "Optional runtime config JSON file path."},
+    }
+    return {
+        "get_mcp_runtime_info": {
+            "description": "Get runtime and tool metadata for PointerGPF MCP.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"config_file": base_props["config_file"], "project_root": base_props["project_root"]},
+            },
+        },
+        "get_adapter_contract": {
+            "description": "Return adapter contract JSON for Godot integration.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        "install_godot_plugin": {
+            "description": "Install PointerGPF plugin files and enable plugin in project.godot.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": dict(base_props),
+            },
+        },
+        "enable_godot_plugin": {
+            "description": "Enable existing PointerGPF plugin in project.godot.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": dict(base_props),
+            },
+        },
+        "update_godot_plugin": {
+            "description": "Overwrite plugin files and ensure plugin enabled.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": dict(base_props),
+            },
+        },
+        "check_plugin_status": {
+            "description": "Check plugin files and plugin enabled status.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": dict(base_props),
+            },
+        },
+        "init_project_context": {
+            "description": "Initialize project context and candidate documents.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "max_files": {"type": "integer", "description": "Maximum files to scan."},
+                },
+            },
+        },
+        "refresh_project_context": {
+            "description": "Refresh project context incrementally.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "max_files": {"type": "integer", "description": "Maximum files to scan."},
+                },
+            },
+        },
+        "generate_flow_seed": {
+            "description": "Generate flow seed JSON from context index.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "flow_id": {"type": "string"},
+                    "flow_name": {"type": "string"},
+                    "output_file": {"type": "string"},
+                    "strategy": {"type": "string", "enum": ["auto", "ui", "exploration", "builder", "generic"]},
+                },
+            },
+        },
+    }
+
+
+def _read_mcp_message() -> dict[str, Any] | None:
+    headers: dict[str, str] = {}
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        if line in (b"\r\n", b"\n"):
+            break
+        text = line.decode("utf-8", errors="replace").strip()
+        if not text or ":" not in text:
+            continue
+        key, value = text.split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+    content_length_raw = headers.get("content-length", "")
+    if not content_length_raw:
+        return None
+    try:
+        content_length = int(content_length_raw)
+    except ValueError:
+        return None
+    body = sys.stdin.buffer.read(content_length)
+    if not body:
+        return None
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _write_mcp_message(payload: dict[str, Any]) -> None:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+    sys.stdout.buffer.write(header)
+    sys.stdout.buffer.write(body)
+    sys.stdout.buffer.flush()
+
+
+def _mcp_jsonrpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def _mcp_jsonrpc_error(request_id: Any, code: int, message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def _run_stdio_mcp(ctx: ServerCtx, tool_map: dict[str, Any], startup_config_file: str | None = None) -> int:
+    tool_specs = _build_tool_specs()
+    while True:
+        req = _read_mcp_message()
+        if req is None:
+            return 0
+        request_id = req.get("id")
+        method = str(req.get("method", "")).strip()
+        params = req.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        is_notification = "id" not in req
+        try:
+            if method == "initialize":
+                if is_notification:
+                    continue
+                _write_mcp_message(
+                    _mcp_jsonrpc_result(
+                        request_id,
+                        {
+                            "protocolVersion": "2024-11-05",
+                            "capabilities": {"tools": {}},
+                            "serverInfo": {"name": DEFAULT_SERVER_NAME, "version": DEFAULT_SERVER_VERSION},
+                        },
+                    )
+                )
+                continue
+            if method == "notifications/initialized":
+                continue
+            if method == "ping":
+                if not is_notification:
+                    _write_mcp_message(_mcp_jsonrpc_result(request_id, {}))
+                continue
+            if method == "tools/list":
+                if is_notification:
+                    continue
+                tools = [
+                    {"name": name, "description": spec["description"], "inputSchema": spec["inputSchema"]}
+                    for name, spec in tool_specs.items()
+                ]
+                _write_mcp_message(_mcp_jsonrpc_result(request_id, {"tools": tools}))
+                continue
+            if method == "tools/call":
+                if is_notification:
+                    continue
+                tool_name = str(params.get("name", "")).strip()
+                args_payload = params.get("arguments", {})
+                if not isinstance(args_payload, dict):
+                    raise AppError("INVALID_ARGUMENT", "tool arguments must be an object")
+                if startup_config_file and "config_file" not in args_payload:
+                    args_payload["config_file"] = startup_config_file
+                handler = tool_map.get(tool_name)
+                if handler is None:
+                    raise AppError("UNSUPPORTED_TOOL", f"unsupported tool: {tool_name}")
+                result = handler(ctx, args_payload)
+                _write_mcp_message(
+                    _mcp_jsonrpc_result(
+                        request_id,
+                        {
+                            "structuredContent": result,
+                            "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
+                        },
+                    )
+                )
+                continue
+            if is_notification:
+                continue
+            _write_mcp_message(_mcp_jsonrpc_error(request_id, -32601, f"Method not found: {method}"))
+        except AppError as exc:
+            if not is_notification:
+                _write_mcp_message(_mcp_jsonrpc_error(request_id, -32000, exc.message, exc.as_dict()))
+        except Exception as exc:  # pylint: disable=broad-except
+            if not is_notification:
+                _write_mcp_message(_mcp_jsonrpc_error(request_id, -32603, "Internal error", {"error": str(exc)}))
+
+
+def _run_cli_mode(args: argparse.Namespace, ctx: ServerCtx, tool_map: dict[str, Any]) -> int:
+    if not args.tool:
+        raise AppError("INVALID_ARGUMENT", "--tool is required in CLI mode")
+    payload = json.loads(args.args)
+    if not isinstance(payload, dict):
+        raise AppError("INVALID_ARGUMENT", "args must be a JSON object")
+    if args.project_root is not None:
+        payload["project_root"] = args.project_root
+    if args.config_file is not None:
+        payload["config_file"] = args.config_file
+    if args.max_files is not None:
+        payload["max_files"] = int(args.max_files)
+    if args.flow_id is not None:
+        payload["flow_id"] = args.flow_id
+    if args.flow_name is not None:
+        payload["flow_name"] = args.flow_name
+    if args.output_file is not None:
+        payload["output_file"] = args.output_file
+    if args.strategy is not None:
+        payload["strategy"] = args.strategy
+    handler = tool_map.get(args.tool)
+    if handler is None:
+        raise AppError("UNSUPPORTED_TOOL", f"unsupported tool: {args.tool}")
+    result = handler(ctx, payload)
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="PointerGPF MCP server")
-    parser.add_argument("--tool", required=True, help="Tool name")
+    parser.add_argument("--tool", required=False, help="Tool name for CLI compatibility mode")
+    parser.add_argument("--stdio", action="store_true", help="Force stdio MCP server mode")
     parser.add_argument("--args", default="{}", help="JSON args object")
     parser.add_argument("--config-file", default=None, help="Explicit runtime config JSON file path")
     parser.add_argument("--project-root", default=None, help="Shortcut for project_root")
@@ -1186,29 +1549,9 @@ def main() -> int:
     )
     tool_map = _build_tool_map()
     try:
-        payload = json.loads(args.args)
-        if not isinstance(payload, dict):
-            raise AppError("INVALID_ARGUMENT", "args must be a JSON object")
-        if args.project_root is not None:
-            payload["project_root"] = args.project_root
-        if args.config_file is not None:
-            payload["config_file"] = args.config_file
-        if args.max_files is not None:
-            payload["max_files"] = int(args.max_files)
-        if args.flow_id is not None:
-            payload["flow_id"] = args.flow_id
-        if args.flow_name is not None:
-            payload["flow_name"] = args.flow_name
-        if args.output_file is not None:
-            payload["output_file"] = args.output_file
-        if args.strategy is not None:
-            payload["strategy"] = args.strategy
-        handler = tool_map.get(args.tool)
-        if handler is None:
-            raise AppError("UNSUPPORTED_TOOL", f"unsupported tool: {args.tool}")
-        result = handler(ctx, payload)
-        print(json.dumps({"ok": True, "result": result}, ensure_ascii=False))
-        return 0
+        if args.stdio or not args.tool:
+            return _run_stdio_mcp(ctx, tool_map, startup_config_file=args.config_file)
+        return _run_cli_mode(args, ctx, tool_map)
     except AppError as exc:
         print(json.dumps({"ok": False, "error": exc.as_dict()}, ensure_ascii=False))
         return 1

@@ -95,7 +95,8 @@ python "mcp/server.py" --tool refresh_project_context --project-root "D:/path/to
 python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "smoke_seed" --strategy "auto"
 ```
 
-默认输出到 `gameplayflow/generated_flows/<flow_id>.json`。
+默认输出到 `pointer_gpf/generated_flows/<flow_id>.json`。
+同时会记录运行时产物到 `pointer_gpf/gpf-exp/runtime/`。
 
 `--strategy` 可选值：
 
@@ -117,7 +118,17 @@ python "mcp/server.py" --tool get_adapter_contract --args "{}"
 powershell -ExecutionPolicy Bypass -File "scripts/verify-cross-project.ps1"
 ```
 
-## 9) 发布后回填 manifest（维护者）
+## 9) 迁移旧目录布局（可选）
+
+如果目标项目里存在 `gameplayflow/*` 或根目录 `gpf-exp` 历史产物：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -ProjectRoot "D:/path/to/your/godot/project" -DryRun
+# apply
+powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -ProjectRoot "D:/path/to/your/godot/project"
+```
+
+## 10) 发布后回填 manifest（维护者）
 
 发布 zip 后可用以下命令更新 `mcp/version_manifest.json`：
 
@@ -137,12 +148,12 @@ powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
 
 文档会生成在：
 
-- `gameplayflow/project_context/01-project-overview.md`
-- `gameplayflow/project_context/02-runtime-architecture.md`
-- `gameplayflow/project_context/03-test-surface.md`
-- `gameplayflow/project_context/04-flow-authoring-guide.md`
-- `gameplayflow/project_context/05-flow-candidate-catalog.md`
-- `gameplayflow/project_context/index.json`
+- `pointer_gpf/project_context/01-project-overview.md`
+- `pointer_gpf/project_context/02-runtime-architecture.md`
+- `pointer_gpf/project_context/03-test-surface.md`
+- `pointer_gpf/project_context/04-flow-authoring-guide.md`
+- `pointer_gpf/project_context/05-flow-candidate-catalog.md`
+- `pointer_gpf/project_context/index.json`
 
 其中 `index.json` 会包含：
 

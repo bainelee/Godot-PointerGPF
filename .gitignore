@@ -3,14 +3,20 @@ __pycache__/
 *.py[cod]
 
 # Generated context artifacts
+pointer_gpf/project_context/
+pointer_gpf/generated_flows/
+pointer_gpf/reports/
+pointer_gpf/gpf-exp/
+# Legacy output layout (migration compatibility)
 gameplayflow/project_context/
 gameplayflow/generated_flows/
 
 # Generated plugin install report inside sample projects
-**/gameplayflow/plugin_install_report.json
+**/pointer_gpf/reports/plugin_install_report.json
 
 # Example project runtime outputs
 examples/godot_minimal/addons/pointer_gpf/
+examples/godot_minimal/pointer_gpf/
 examples/godot_minimal/gameplayflow/
 
 # Local release/update artifacts

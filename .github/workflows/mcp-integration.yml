@@ -1,0 +1,33 @@
+name: mcp-integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  integration:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Runtime info
+        shell: pwsh
+        run: |
+          python "mcp/server.py" --tool get_mcp_runtime_info --args "{}"
+
+      - name: Context init (repo scale)
+        shell: pwsh
+        run: |
+          python "mcp/server.py" --tool init_project_context --project-root "." --max-files 2500
+
+      - name: Flow seed (repo scale)
+        shell: pwsh
+        run: |
+          python "mcp/server.py" --tool generate_flow_seed --project-root "." --flow-id "ci_integration_seed" --strategy "generic"
