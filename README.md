@@ -2,7 +2,7 @@
 
 一个面向 Godot 开发的自动化灰盒测试工具（MCP 入口 + 插件安装 + 项目初始化理解）。
 
-## 当前可用能力（v0.2.0）
+## 当前可用能力（v0.2.1）
 
 - `install_godot_plugin`：向目标 Godot 项目安装 `addons/pointer_gpf` 并写入 `project.godot` 插件启用项。
 - `enable_godot_plugin`：在插件已存在时，仅执行启用写入。
@@ -79,6 +79,10 @@ python "mcp/server.py" --tool refresh_project_context --project-root "D:/path/to
 
 - 文档：`docs/godot-adapter-contract-v1.md`
 - JSON：`mcp/adapter_contract_v1.json`
+
+## Changelog
+
+- `CHANGELOG.md`
 
 ## Adoption Docs
 

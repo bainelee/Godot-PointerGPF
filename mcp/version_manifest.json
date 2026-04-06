@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.0",
+    "current_version":  "0.2.1",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.0",
+                                    "version":  "0.2.1",
                                     "min_compatible_version":  "0.2.0",
-                                    "release_notes":  "Bootstrap plugin lifecycle, context intelligence, and flow seed generation.",
-                                    "published_at_utc":  "2026-04-03T05:10:07Z",
+                                    "release_notes":  "Finalize stdio MCP routing, add artifact-contract checks, and add integration trend reporting.",
+                                    "published_at_utc":  "2026-04-06T12:17:02Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.0.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.0/pointer-gpf-mcp-0.2.0.zip",
-                                                     "sha256":  "4e6ae0b2a8e3060af28b526ab39638818664c8b78bfeb99f1d35d6bbf58a3798",
-                                                     "size_bytes":  27780,
+                                                     "filename":  "pointer-gpf-mcp-0.2.1.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.1/pointer-gpf-mcp-0.2.1.zip",
+                                                     "sha256":  "31764e951f9599055408f7997bc734f104698b8dd4b6f584b15c2f1f8a36f8a2",
+                                                     "size_bytes":  1445758,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }
