@@ -1,0 +1,113 @@
+# PointerGPF MCP Testing Specification
+
+## 1. Baseline Evidence
+
+当前仓库已具备三类可复用测试资产：
+
+- CI 冒烟：`.github/workflows/mcp-smoke.yml`
+  - 覆盖 `install/install-mcp.ps1`
+  - 覆盖 CLI `get_mcp_runtime_info`
+  - 覆盖 stdio 协议 `initialize` + `tools/list`
+  - 覆盖最小样本 `init_project_context` + `generate_flow_seed`
+- CI 集成：`.github/workflows/mcp-integration.yml`
+  - 覆盖仓库规模 `init_project_context --max-files 2500`
+  - 覆盖仓库规模 `generate_flow_seed`
+- 本地矩阵：`scripts/verify-cross-project.ps1`
+  - 示例项目 + 真实项目双矩阵串行验证
+
+相关规范/检查项分散在：
+
+- `README.md`
+- `docs/quickstart.md`
+- `docs/migration-checklist.md`
+- `docs/mcp-implementation-status.md`
+
+## 2. Gap Analysis And Severity
+
+### P0 (Must Fix)
+
+- 协议层断言不足：`smoke` 未覆盖 `tools/call` 成功与失败路径。
+- 契约负例不足：未验证非法工具名、非法 `arguments` 类型、缺失必填参数的错误语义。
+
+### P1 (Should Fix)
+
+- 产物质量断言不足：`integration` 仅执行命令，缺少对 `index.json` 与 seed flow 结构断言。
+- 本地脚本可移植性不足：`verify-cross-project.ps1` 默认真实项目路径硬编码。
+
+### P2 (Can Improve)
+
+- 文档口径分散：测试层级、预算、失败处理策略不集中。
+- 趋势数据不足：nightly 未沉淀结构化耗时/失败阶段输出。
+
+## 3. Target Test Flow
+
+```mermaid
+flowchart TD
+    commitPush["CommitOrPR"] --> smokeCi["SmokeCI"]
+    smokeCi --> protocolLayer["L0Protocol"]
+    smokeCi --> functionalLayer["L1FunctionalSmoke"]
+    smokeCi --> contractLayer["L2ArtifactContract"]
+    protocolLayer --> mergeGate["MergeGate"]
+    functionalLayer --> mergeGate
+    contractLayer --> mergeGate
+    mergeGate --> nightlyRun["NightlyIntegration"]
+    nightlyRun --> capacityLayer["L3CapacityRepoScale"]
+    nightlyRun --> trendLayer["L3TrendMetrics"]
+    trendLayer --> opsFeedback["OpsFeedback"]
+```
+
+### L0 Protocol (PR Required)
+
+- stdio `initialize` 成功
+- stdio `tools/list` 返回关键工具
+- stdio `tools/call` 正向调用成功
+- stdio `tools/call` 负向调用返回可预期 JSON-RPC 错误
+
+### L1 Functional Smoke (PR Required)
+
+- `install-mcp.ps1`
+- `get_mcp_runtime_info`
+- `init_project_context`（最小样本）
+- `generate_flow_seed`（最小样本）
+
+### L2 Artifact Contract (PR Required)
+
+- `project_context/index.json` 存在并包含关键字段
+- `generated_flows/<flow_id>.json` 存在并符合 chat contract 最小契约
+- `gpf-exp/runtime/` 目录存在且包含运行时产物
+
+### L3 Capacity And Trend (Nightly/Manual)
+
+- 仓库规模上下文初始化与 seed 生成
+- 沉淀结构化指标（耗时、阶段、状态）供趋势追踪
+
+### L4 Cross-Project Matrix (Local Recommended)
+
+- 示例项目 + 真实项目
+- 对真实项目路径采用显式参数或环境变量，不允许硬编码默认值
+
+## 4. Failure Policy
+
+- PR 阶段：L0/L1/L2 任一失败 -> 阻断合并
+- Nightly 阶段：L3 失败 -> 不阻断开发流，但必须输出失败阶段与错误摘要
+- 本地矩阵：用于发布前验证与问题复现，不替代 CI gate
+
+## 5. Ownership
+
+- Workflow 维护：仓库维护者
+- 契约字段变更：`mcp/server.py` 维护者
+- 文档同步：发布责任人（版本升级与测试策略更新时必须同步）
+
+## 6. Acceptance Criteria
+
+- 能明确回答：每层测什么、何时触发、失败是否阻断
+- 每个关键工具具备至少 1 条成功 + 1 条失败自动化断言
+- 文档描述与 CI 实际行为一致
+
+## 7. Minimal Rollout Sequence
+
+1. 先增强 `.github/workflows/mcp-smoke.yml` 的协议断言（补 `tools/call` 正负例）。
+2. 增加 `scripts/assert-mcp-artifacts.ps1`，并在 smoke/integration 中接入。
+3. 调整 `scripts/verify-cross-project.ps1`，移除真实项目硬编码默认路径。
+4. 同步 `README.md`、`docs/quickstart.md`、`docs/migration-checklist.md`、`docs/mcp-implementation-status.md`。
+5. nightly 输出并上传趋势报告 artifact，供后续外部看板聚合。

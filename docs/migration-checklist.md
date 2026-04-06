@@ -30,6 +30,14 @@ Then execute without `-DryRun` to apply migration.
 - Seed flow file exists under `pointer_gpf/generated_flows/`.
 - Runtime artifacts exist under `pointer_gpf/gpf-exp/runtime/`.
 
+可使用自动化断言脚本替代手动核对：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
+  -ProjectRoot "D:/path/to/your/godot/project" `
+  -FlowId "smoke_seed"
+```
+
 ## Rollback
 
 - Restore previous MCP config in Cursor if needed.

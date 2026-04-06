@@ -2,7 +2,7 @@ param(
     [string]$PythonExe = "python",
     [string]$RepoRoot = "",
     [string]$ExampleProjectRoot = "",
-    [string]$TargetProjectRoot = "D:/GODOT_Test/old-archives-sp",
+    [string]$TargetProjectRoot = "",
     [int]$SmokeTimeoutSec = 180
 )
 
@@ -14,6 +14,12 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 }
 if ([string]::IsNullOrWhiteSpace($ExampleProjectRoot)) {
     $ExampleProjectRoot = Join-Path $RepoRoot "examples/godot_minimal"
+}
+if ([string]::IsNullOrWhiteSpace($TargetProjectRoot)) {
+    $TargetProjectRoot = [Environment]::GetEnvironmentVariable("POINTER_GPF_TARGET_PROJECT_ROOT")
+}
+if ([string]::IsNullOrWhiteSpace($TargetProjectRoot)) {
+    throw "TargetProjectRoot is required. Pass -TargetProjectRoot or set POINTER_GPF_TARGET_PROJECT_ROOT."
 }
 
 $serverPath = Join-Path $RepoRoot "mcp/server.py"
@@ -56,11 +62,13 @@ Invoke-McpTool -Tool "install_godot_plugin" -ProjectRoot $ExampleProjectRoot | O
 Invoke-McpTool -Tool "check_plugin_status" -ProjectRoot $ExampleProjectRoot | Out-Null
 Invoke-McpTool -Tool "init_project_context" -ProjectRoot $ExampleProjectRoot | Out-Null
 Invoke-McpTool -Tool "generate_flow_seed" -ProjectRoot $ExampleProjectRoot -FlowId "matrix_example_seed" | Out-Null
+powershell -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "scripts/assert-mcp-artifacts.ps1") -PythonExe $PythonExe -RepoRoot $RepoRoot -ProjectRoot $ExampleProjectRoot -FlowId "matrix_example_seed" | Out-Null
 
 # Matrix B: target real project
 Invoke-McpTool -Tool "check_plugin_status" -ProjectRoot $TargetProjectRoot | Out-Null
 Invoke-McpTool -Tool "init_project_context" -ProjectRoot $TargetProjectRoot | Out-Null
 Invoke-McpTool -Tool "generate_flow_seed" -ProjectRoot $TargetProjectRoot -FlowId "matrix_target_seed" | Out-Null
+powershell -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "scripts/assert-mcp-artifacts.ps1") -PythonExe $PythonExe -RepoRoot $RepoRoot -ProjectRoot $TargetProjectRoot -FlowId "matrix_target_seed" | Out-Null
 
 $sw.Stop()
 if ($sw.Elapsed.TotalSeconds -gt $SmokeTimeoutSec) {

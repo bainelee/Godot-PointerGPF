@@ -66,12 +66,14 @@ python "mcp/server.py" --tool refresh_project_context --project-root "D:/path/to
 ## CI
 
 - GitHub Actions: `.github/workflows/mcp-smoke.yml`
-- 覆盖：`install-mcp.ps1`、CLI runtime info、stdio protocol initialize/tools/list、`init_project_context`、`generate_flow_seed`（最小样本）
+- 覆盖：`install-mcp.ps1`、CLI runtime info、stdio protocol `initialize/tools/list/tools/call`（含负例）、`init_project_context`、`generate_flow_seed`（最小样本）
+- 产物契约断言：`scripts/assert-mcp-artifacts.ps1`（`index.json`、seed flow chat contract、runtime 产物）
 - Job 预算：`timeout-minutes: 2`，并对关键上下文步骤设置 90s 阈值
-- Integration: `.github/workflows/mcp-integration.yml`（`workflow_dispatch` + nightly，仓库规模 `max-files=2500`）
-- 跨项目矩阵脚本：`scripts/verify-cross-project.ps1`
+- Integration: `.github/workflows/mcp-integration.yml`（`workflow_dispatch` + nightly，仓库规模 `max-files=2500`，输出趋势报告 artifact）
+- 跨项目矩阵脚本：`scripts/verify-cross-project.ps1`（需显式 `-TargetProjectRoot` 或环境变量 `POINTER_GPF_TARGET_PROJECT_ROOT`）
 - 旧目录迁移脚本：`scripts/migrate-legacy-layout.ps1`（支持 `-DryRun`）
 - 发布回填脚本：`scripts/update-version-manifest.ps1`
+- 测试规范：`docs/mcp-testing-spec.md`
 
 ## Adapter Contract
 

@@ -25,9 +25,48 @@ jobs:
       - name: Context init (repo scale)
         shell: pwsh
         run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
           python "mcp/server.py" --tool init_project_context --project-root "." --max-files 2500
+          $sw.Stop()
+          $metric = @{
+            stage = "init_project_context"
+            status = "ok"
+            elapsed_sec = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath "mcp_integration_init_metrics.json" -Value $metric -Encoding UTF8
 
       - name: Flow seed (repo scale)
         shell: pwsh
         run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
           python "mcp/server.py" --tool generate_flow_seed --project-root "." --flow-id "ci_integration_seed" --strategy "generic"
+          $sw.Stop()
+          $metric = @{
+            stage = "generate_flow_seed"
+            status = "ok"
+            elapsed_sec = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath "mcp_integration_seed_metrics.json" -Value $metric -Encoding UTF8
+
+      - name: Artifact contract assertions
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "." -FlowId "ci_integration_seed"
+
+      - name: Build trend metrics report
+        shell: pwsh
+        run: |
+          $init = Get-Content -LiteralPath "mcp_integration_init_metrics.json" -Raw | ConvertFrom-Json
+          $seed = Get-Content -LiteralPath "mcp_integration_seed_metrics.json" -Raw | ConvertFrom-Json
+          $report = @{
+            workflow = "mcp-integration"
+            generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+            metrics = @($init, $seed)
+          } | ConvertTo-Json -Depth 5
+          Set-Content -LiteralPath "mcp_integration_trend_report.json" -Value $report -Encoding UTF8
+
+      - name: Upload integration trend report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-integration-trend
+          path: mcp_integration_trend_report.json

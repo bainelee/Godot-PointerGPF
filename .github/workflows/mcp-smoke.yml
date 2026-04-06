@@ -84,6 +84,46 @@ jobs:
           assert "get_mcp_runtime_info" in tool_names
           assert "init_project_context" in tool_names
 
+          send_msg(
+              {
+                  "jsonrpc": "2.0",
+                  "id": 3,
+                  "method": "tools/call",
+                  "params": {
+                      "name": "get_mcp_runtime_info",
+                      "arguments": {},
+                  },
+              }
+          )
+          call_res = read_msg()
+          assert "result" in call_res
+          assert "structuredContent" in call_res["result"]
+          assert call_res["result"]["structuredContent"]["server_name"] == "pointer-gpf-mcp"
+
+          send_msg(
+              {
+                  "jsonrpc": "2.0",
+                  "id": 4,
+                  "method": "tools/call",
+                  "params": {"name": "not_a_real_tool", "arguments": {}},
+              }
+          )
+          bad_tool = read_msg()
+          assert bad_tool["error"]["code"] == -32000
+          assert "unsupported tool" in bad_tool["error"]["message"].lower()
+
+          send_msg(
+              {
+                  "jsonrpc": "2.0",
+                  "id": 5,
+                  "method": "tools/call",
+                  "params": {"name": "get_mcp_runtime_info", "arguments": []},
+              }
+          )
+          bad_args = read_msg()
+          assert bad_args["error"]["code"] == -32000
+          assert "tool arguments must be an object" in bad_args["error"]["message"].lower()
+
           p.terminate()
           p.wait(timeout=5)
           '@ | Set-Content -LiteralPath "__mcp_stdio_smoke.py" -Encoding UTF8
@@ -97,6 +137,7 @@ jobs:
           $project = "examples/godot_minimal"
           python "mcp/server.py" --tool init_project_context --project-root $project --max-files 120
           python "mcp/server.py" --tool generate_flow_seed --project-root $project --flow-id "ci_smoke_seed" --strategy "generic"
+          powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot $project -FlowId "ci_smoke_seed"
           $sw.Stop()
           if ($sw.Elapsed.TotalSeconds -gt 90) {
             throw "Smoke execution exceeded 90s. Actual=$($sw.Elapsed.TotalSeconds)s"

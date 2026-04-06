@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Godot Minimal Editor (LSP 47053)",
+            "type": "shell",
+            "command": "d:\\GODOT\\Godot_v4.6.1-stable_win64.exe\\Godot_v4.6.1-stable_win64.exe",
+            "args": [
+                "--editor",
+                "--path",
+                "${workspaceFolder}/examples/godot_minimal",
+                "--lsp-port",
+                "47053",
+                "--dap-port",
+                "47054"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}

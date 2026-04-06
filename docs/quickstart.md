@@ -115,10 +115,26 @@ python "mcp/server.py" --tool get_adapter_contract --args "{}"
 ## 8) 执行跨项目矩阵验证（本地）
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/verify-cross-project.ps1" `
+  -TargetProjectRoot "D:/path/to/your/real/godot/project"
+```
+
+或设置环境变量后执行：
+
+```powershell
+$env:POINTER_GPF_TARGET_PROJECT_ROOT = "D:/path/to/your/real/godot/project"
 powershell -ExecutionPolicy Bypass -File "scripts/verify-cross-project.ps1"
 ```
 
-## 9) 迁移旧目录布局（可选）
+## 9) 执行产物契约校验（可选，推荐）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
+  -ProjectRoot "D:/path/to/your/godot/project" `
+  -FlowId "smoke_seed"
+```
+
+## 10) 迁移旧目录布局（可选）
 
 如果目标项目里存在 `gameplayflow/*` 或根目录 `gpf-exp` 历史产物：
 
@@ -128,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -Pr
 powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -ProjectRoot "D:/path/to/your/godot/project"
 ```
 
-## 10) 发布后回填 manifest（维护者）
+## 11) 发布后回填 manifest（维护者）
 
 发布 zip 后可用以下命令更新 `mcp/version_manifest.json`：
 
