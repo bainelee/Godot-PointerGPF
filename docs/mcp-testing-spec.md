@@ -69,12 +69,19 @@ flowchart TD
 - `get_mcp_runtime_info`
 - `init_project_context`（最小样本）
 - `generate_flow_seed`（最小样本）
+- Figma 协同最小样本：
+  - `figma_design_to_baseline`
+  - `compare_figma_game_ui`
+  - `annotate_ui_mismatch`
+  - `approve_ui_fix_plan`
+  - `suggest_ui_fix_patch`
 
 ### L2 Artifact Contract (PR Required)
 
 - `project_context/index.json` 存在并包含关键字段
 - `generated_flows/<flow_id>.json` 存在并符合 chat contract 最小契约
 - `gpf-exp/runtime/` 目录存在且包含运行时产物
+- 若启用 Figma 协同链路：`compare/annotate/approval/suggestion` 报告存在且 `run_id` 一致
 
 ### L3 Capacity And Trend (Nightly/Manual)
 

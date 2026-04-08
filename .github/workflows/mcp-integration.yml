@@ -53,15 +53,79 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "." -FlowId "ci_integration_seed"
 
+      - name: Figma collaboration pipeline (repo scale sample)
+        shell: pwsh
+        run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          @'
+          import base64
+          import json
+          import subprocess
+          from pathlib import Path
+
+          repo_root = Path(".").resolve()
+          fixture = repo_root / "pointer_gpf" / "gpf-exp" / "runtime" / "ci_integration_figma_fixture.png"
+          fixture.parent.mkdir(parents=True, exist_ok=True)
+          fixture.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2r8lUAAAAASUVORK5CYII="))
+
+          def run_tool(name, args):
+              cmd = ["python", "mcp/server.py", "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
+              p = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
+              if p.returncode != 0:
+                  raise RuntimeError(f"{name} failed: {p.stdout}\n{p.stderr}")
+              payload = json.loads(p.stdout)
+              if not payload.get("ok"):
+                  raise RuntimeError(f"{name} returned error: {p.stdout}")
+              return payload["result"]
+
+          baseline = run_tool("figma_design_to_baseline", {
+              "project_root": str(repo_root),
+              "figma_file_key": "ci_integration_file",
+              "figma_node_id": "2:1",
+              "figma_screenshot_file": str(fixture),
+              "figma_design_context": {"frame": {"width": 1, "height": 1}}
+          })
+          compare = run_tool("compare_figma_game_ui", {
+              "project_root": str(repo_root),
+              "figma_baseline_file": baseline["baseline_file"],
+              "game_snapshot_file": str(fixture),
+          })
+          run_tool("annotate_ui_mismatch", {
+              "project_root": str(repo_root),
+              "compare_report_file": compare["report_file"],
+          })
+          approval = run_tool("approve_ui_fix_plan", {
+              "project_root": str(repo_root),
+              "compare_report_file": compare["report_file"],
+              "approved": True,
+              "approval_token": "integration-approved"
+          })
+          run_tool("suggest_ui_fix_patch", {
+              "project_root": str(repo_root),
+              "compare_report_file": compare["report_file"],
+              "approval_file": approval["approval_file"],
+          })
+          '@ | Set-Content -LiteralPath "__mcp_figma_integration.py" -Encoding UTF8
+          python "__mcp_figma_integration.py"
+          Remove-Item -LiteralPath "__mcp_figma_integration.py" -Force
+          $sw.Stop()
+          $metric = @{
+            stage = "figma_collaboration_pipeline"
+            status = "ok"
+            elapsed_sec = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath "mcp_integration_figma_metrics.json" -Value $metric -Encoding UTF8
+
       - name: Build trend metrics report
         shell: pwsh
         run: |
           $init = Get-Content -LiteralPath "mcp_integration_init_metrics.json" -Raw | ConvertFrom-Json
           $seed = Get-Content -LiteralPath "mcp_integration_seed_metrics.json" -Raw | ConvertFrom-Json
+          $figma = Get-Content -LiteralPath "mcp_integration_figma_metrics.json" -Raw | ConvertFrom-Json
           $report = @{
             workflow = "mcp-integration"
             generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
-            metrics = @($init, $seed)
+            metrics = @($init, $seed, $figma)
           } | ConvertTo-Json -Depth 5
           Set-Content -LiteralPath "mcp_integration_trend_report.json" -Value $report -Encoding UTF8
 

@@ -126,7 +126,29 @@ $env:POINTER_GPF_TARGET_PROJECT_ROOT = "D:/path/to/your/real/godot/project"
 powershell -ExecutionPolicy Bypass -File "scripts/verify-cross-project.ps1"
 ```
 
-## 9) 执行产物契约校验（可选，推荐）
+## 9) Figma 协同对比（标注 + 授权 + 修复建议）
+
+先把 Figma 设计输出固化为基线（可由外部 Figma MCP 获取 `design_context` 和截图后传入）：
+
+```powershell
+python "mcp/server.py" --tool figma_design_to_baseline --args "{""project_root"":""D:/path/to/your/godot/project"",""figma_file_key"":""<fileKey>"",""figma_node_id"":""<nodeId>"",""figma_version"":""latest"",""figma_screenshot_file"":""D:/path/to/figma_node.png"",""figma_design_context"":{""frame"":{""width"":1920,""height"":1080}}}"
+```
+
+再执行对比与差异标注：
+
+```powershell
+python "mcp/server.py" --tool compare_figma_game_ui --args "{""project_root"":""D:/path/to/your/godot/project"",""figma_baseline_file"":""D:/path/to/figma_baseline.json"",""game_snapshot_file"":""D:/path/to/game_ui.png""}"
+python "mcp/server.py" --tool annotate_ui_mismatch --args "{""project_root"":""D:/path/to/your/godot/project"",""compare_report_file"":""D:/path/to/compare_report.json""}"
+```
+
+授权后生成修复建议（未授权将拒绝）：
+
+```powershell
+python "mcp/server.py" --tool approve_ui_fix_plan --args "{""project_root"":""D:/path/to/your/godot/project"",""compare_report_file"":""D:/path/to/compare_report.json"",""approved"":true,""approval_token"":""review-approved-001""}"
+python "mcp/server.py" --tool suggest_ui_fix_patch --args "{""project_root"":""D:/path/to/your/godot/project"",""compare_report_file"":""D:/path/to/compare_report.json"",""approval_file"":""D:/path/to/approval.json""}"
+```
+
+## 10) 执行产物契约校验（可选，推荐）
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
@@ -134,7 +156,16 @@ powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
   -FlowId "smoke_seed"
 ```
 
-## 10) 迁移旧目录布局（可选）
+若本次运行包含 Figma 协同链路，增加 `-ValidateFigmaPipeline`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
+  -ProjectRoot "D:/path/to/your/godot/project" `
+  -FlowId "smoke_seed" `
+  -ValidateFigmaPipeline
+```
+
+## 11) 迁移旧目录布局（可选）
 
 如果目标项目里存在 `gameplayflow/*` 或根目录 `gpf-exp` 历史产物：
 
@@ -144,7 +175,7 @@ powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -Pr
 powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -ProjectRoot "D:/path/to/your/godot/project"
 ```
 
-## 11) 发布后回填 manifest（维护者）
+## 12) 发布后回填 manifest（维护者）
 
 发布 zip 后可用以下命令更新 `mcp/version_manifest.json`：
 

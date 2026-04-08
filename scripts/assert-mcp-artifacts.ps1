@@ -2,7 +2,8 @@ param(
     [string]$PythonExe = "python",
     [string]$RepoRoot = "",
     [Parameter(Mandatory = $true)][string]$ProjectRoot,
-    [Parameter(Mandatory = $true)][string]$FlowId
+    [Parameter(Mandatory = $true)][string]$FlowId,
+    [switch]$ValidateFigmaPipeline
 )
 
 Set-StrictMode -Version Latest
@@ -97,7 +98,43 @@ if ($runtimeFiles.Count -eq 0) {
     throw "Runtime dir has no files: $runtimeDir"
 }
 
+if ($ValidateFigmaPipeline) {
+    $compareFile = Get-ChildItem -LiteralPath $runtimeDir -File -Filter "compare_figma_game_ui_*.json" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $annotationFile = Get-ChildItem -LiteralPath $runtimeDir -File -Filter "ui_mismatch_annotations_*.json" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $approvalFile = Get-ChildItem -LiteralPath $runtimeDir -File -Filter "ui_fix_approval_*.json" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $suggestionFile = Get-ChildItem -LiteralPath $runtimeDir -File -Filter "ui_fix_suggestions_*.json" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $figmaBaselineEvent = Get-ChildItem -LiteralPath $runtimeDir -File -Filter "figma_baseline_last.json" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if (-not $compareFile) { throw "Missing compare_figma_game_ui report in runtime dir" }
+    if (-not $annotationFile) { throw "Missing ui_mismatch_annotations report in runtime dir" }
+    if (-not $approvalFile) { throw "Missing ui_fix_approval report in runtime dir" }
+    if (-not $suggestionFile) { throw "Missing ui_fix_suggestions report in runtime dir" }
+    if (-not $figmaBaselineEvent) { throw "Missing figma_baseline_last event artifact in runtime dir" }
+
+    $compareJson = Get-Content -LiteralPath $compareFile.FullName -Raw | ConvertFrom-Json
+    $annotationJson = Get-Content -LiteralPath $annotationFile.FullName -Raw | ConvertFrom-Json
+    $approvalJson = Get-Content -LiteralPath $approvalFile.FullName -Raw | ConvertFrom-Json
+    $suggestionJson = Get-Content -LiteralPath $suggestionFile.FullName -Raw | ConvertFrom-Json
+
+    foreach ($field in @("run_id", "figma_ref", "overall_status", "visual_diff", "layout_diff", "next_action")) {
+        if (-not ($compareJson.PSObject.Properties.Name -contains $field)) {
+            throw "compare report missing field: $field"
+        }
+    }
+    if ($annotationJson.run_id -ne $compareJson.run_id) {
+        throw "annotation run_id mismatch. compare=$($compareJson.run_id), annotation=$($annotationJson.run_id)"
+    }
+    if ($approvalJson.run_id -ne $compareJson.run_id) {
+        throw "approval run_id mismatch. compare=$($compareJson.run_id), approval=$($approvalJson.run_id)"
+    }
+    if ($suggestionJson.run_id -ne $compareJson.run_id) {
+        throw "suggestion run_id mismatch. compare=$($compareJson.run_id), suggestion=$($suggestionJson.run_id)"
+    }
+}
+
 Write-Output "[ASSERT] MCP artifacts validated."
 Write-Output ("[ASSERT] index=" + $indexPath)
 Write-Output ("[ASSERT] seed=" + $seedPath)
 Write-Output ("[ASSERT] runtime_dir=" + $runtimeDir)
+if ($ValidateFigmaPipeline) {
+    Write-Output "[ASSERT] figma collaboration artifacts validated."
+}

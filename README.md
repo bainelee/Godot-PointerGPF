@@ -14,6 +14,11 @@
 - 初始化输出包含 `flow_candidates`（动作/断言候选），可作为自然语言生成 flow 的直接参考。
 - `generate_flow_seed`：基于 `project_context/index.json` 生成首版 flow 草稿（JSON）。
   - 支持 `strategy=auto/ui/exploration/builder/generic` 模板策略。
+- `figma_design_to_baseline`：把 Figma 设计上下文+截图固化为可追溯基线（含 `fileKey/nodeId/version`）。
+- `compare_figma_game_ui`：对比 Figma 基线与游戏截图，输出视觉+结构化差异报告。
+- `annotate_ui_mismatch`：把差异报告转为可审阅 mismatch 列表。
+- `approve_ui_fix_plan`：记录修复授权门禁（未授权禁止进入建议修复）。
+- `suggest_ui_fix_patch`：基于差异与授权生成修复建议草稿（默认不自动写回）。
 
 ## 启动 MCP（本地）
 
@@ -67,6 +72,7 @@ python "mcp/server.py" --tool refresh_project_context --project-root "D:/path/to
 
 - GitHub Actions: `.github/workflows/mcp-smoke.yml`
 - 覆盖：`install-mcp.ps1`、CLI runtime info、stdio protocol `initialize/tools/list/tools/call`（含负例）、`init_project_context`、`generate_flow_seed`（最小样本）
+- 覆盖 Figma 协同最小链路：`figma_design_to_baseline -> compare_figma_game_ui -> annotate_ui_mismatch -> approve_ui_fix_plan -> suggest_ui_fix_patch`
 - 产物契约断言：`scripts/assert-mcp-artifacts.ps1`（`index.json`、seed flow chat contract、runtime 产物）
 - Job 预算：`timeout-minutes: 2`，并对关键上下文步骤设置 90s 阈值
 - Integration: `.github/workflows/mcp-integration.yml`（`workflow_dispatch` + nightly，仓库规模 `max-files=2500`，输出趋势报告 artifact）

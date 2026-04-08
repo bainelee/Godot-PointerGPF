@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.2 - 2026-04-09
+
+- 新增 Figma 协同 UI 对比工具链：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`。
+- 新增修复授权门禁：未授权不能生成修复建议。
+- 扩展 CI smoke/integration，覆盖 Figma 协同最小闭环。
+- 扩展产物校验脚本 `scripts/assert-mcp-artifacts.ps1`，支持 `-ValidateFigmaPipeline`。
+- 更新适配器契约与文档，补充 `check.kind=visual_hard` 证据字段约定。
+
 ## v0.2.1 - 2026-04-06
 
 - 完成 MCP `stdio` 入口与 CLI 入口治理，统一工具路由与输出布局。

@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
+import struct
 import sys
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -257,6 +260,298 @@ def _write_exp_runtime_artifact(
         "artifact_file": str(artifact_path),
         "event_log_file": str(event_path),
     }
+
+
+def _resolve_existing_file(raw: str, field_name: str) -> Path:
+    path = Path(str(raw).strip()).resolve()
+    if not str(raw).strip():
+        raise AppError("INVALID_ARGUMENT", f"{field_name} is required")
+    if not path.exists() or not path.is_file():
+        raise AppError("INVALID_ARGUMENT", f"{field_name} not found: {path}")
+    return path
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise AppError("INVALID_ARGUMENT", f"invalid json file: {path}", {"error": str(exc)}) from exc
+    if not isinstance(payload, dict):
+        raise AppError("INVALID_ARGUMENT", f"json file must contain object: {path}")
+    return payload
+
+
+def _is_png_file(path: Path) -> bool:
+    try:
+        with path.open("rb") as fh:
+            return fh.read(8) == b"\x89PNG\r\n\x1a\n"
+    except OSError:
+        return False
+
+
+def _convert_image_to_png_if_needed(source: Path, target_png: Path) -> Path:
+    if _is_png_file(source):
+        if source.resolve() != target_png.resolve():
+            shutil.copyfile(source, target_png)
+        return target_png
+    try:
+        from PIL import Image  # type: ignore
+    except Exception as exc:  # pylint: disable=broad-except
+        raise AppError(
+            "INVALID_ARGUMENT",
+            "figma_screenshot_file is not a valid PNG; install Pillow or provide PNG input",
+            {"file": str(source), "error": str(exc)},
+        ) from exc
+    try:
+        img = Image.open(source)
+        img.save(target_png, format="PNG")
+    except Exception as exc:  # pylint: disable=broad-except
+        raise AppError("INVALID_ARGUMENT", "failed to convert baseline image to PNG", {"error": str(exc)}) from exc
+    return target_png
+
+
+def _byte_diff_ratio(left: bytes, right: bytes) -> float:
+    if not left and not right:
+        return 0.0
+    max_len = max(len(left), len(right))
+    total = abs(len(left) - len(right)) * 255
+    common = min(len(left), len(right))
+    for idx in range(common):
+        total += abs(left[idx] - right[idx])
+    return round(total / (max_len * 255), 6)
+
+
+def _paeth_predictor(a: int, b: int, c: int) -> int:
+    p = a + b - c
+    pa = abs(p - a)
+    pb = abs(p - b)
+    pc = abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    if pb <= pc:
+        return b
+    return c
+
+
+def _unfilter_png_scanlines(payload: bytes, width: int, height: int, bytes_per_pixel: int) -> bytes:
+    stride = width * bytes_per_pixel
+    out = bytearray()
+    prev = bytearray(stride)
+    pos = 0
+    for _ in range(height):
+        if pos >= len(payload):
+            break
+        filter_type = payload[pos]
+        pos += 1
+        if pos + stride > len(payload):
+            break
+        row = bytearray(payload[pos : pos + stride])
+        pos += stride
+        if filter_type == 1:
+            for i in range(stride):
+                left = row[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+                row[i] = (row[i] + left) & 0xFF
+        elif filter_type == 2:
+            for i in range(stride):
+                row[i] = (row[i] + prev[i]) & 0xFF
+        elif filter_type == 3:
+            for i in range(stride):
+                left = row[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+                up = prev[i]
+                row[i] = (row[i] + ((left + up) // 2)) & 0xFF
+        elif filter_type == 4:
+            for i in range(stride):
+                left = row[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+                up = prev[i]
+                up_left = prev[i - bytes_per_pixel] if i >= bytes_per_pixel else 0
+                row[i] = (row[i] + _paeth_predictor(left, up, up_left)) & 0xFF
+        out.extend(row)
+        prev = row
+    return bytes(out)
+
+
+def _parse_png_metrics(path: Path) -> dict[str, Any]:
+    raw = path.read_bytes()
+    signature = b"\x89PNG\r\n\x1a\n"
+    if len(raw) < 8 or raw[:8] != signature:
+        return {"format": "unknown", "width": 0, "height": 0, "raw_payload": b"", "byte_size": len(raw)}
+    offset = 8
+    width = 0
+    height = 0
+    bit_depth = 0
+    color_type = 0
+    idat_parts: list[bytes] = []
+    while offset + 8 <= len(raw):
+        chunk_len = struct.unpack(">I", raw[offset : offset + 4])[0]
+        chunk_type = raw[offset + 4 : offset + 8]
+        data_start = offset + 8
+        data_end = data_start + chunk_len
+        crc_end = data_end + 4
+        if crc_end > len(raw):
+            break
+        chunk_data = raw[data_start:data_end]
+        if chunk_type == b"IHDR" and len(chunk_data) >= 13:
+            width = struct.unpack(">I", chunk_data[0:4])[0]
+            height = struct.unpack(">I", chunk_data[4:8])[0]
+            bit_depth = int(chunk_data[8])
+            color_type = int(chunk_data[9])
+        elif chunk_type == b"IDAT":
+            idat_parts.append(chunk_data)
+        elif chunk_type == b"IEND":
+            break
+        offset = crc_end
+    decompressed = b""
+    if idat_parts:
+        try:
+            decompressed = zlib.decompress(b"".join(idat_parts))
+        except zlib.error:
+            decompressed = b""
+    pixel_data = b""
+    channels_map = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+    channels = channels_map.get(color_type, 0)
+    if decompressed and width > 0 and height > 0 and bit_depth == 8 and channels > 0:
+        pixel_data = _unfilter_png_scanlines(decompressed, width, height, channels)
+    return {
+        "format": "png",
+        "width": width,
+        "height": height,
+        "raw_payload": decompressed,
+        "pixel_data": pixel_data,
+        "byte_size": len(raw),
+        "bit_depth": bit_depth,
+        "color_type": color_type,
+    }
+
+
+def _extract_figma_layout_expectation(design_context: dict[str, Any]) -> dict[str, Any]:
+    frame = design_context.get("frame")
+    if isinstance(frame, dict):
+        width = int(frame.get("width", 0) or 0)
+        height = int(frame.get("height", 0) or 0)
+        return {"width": width, "height": height}
+    return {"width": 0, "height": 0}
+
+
+def _resolve_project_file(project_root: Path, raw: str, default_rel: str) -> Path:
+    value = str(raw).strip()
+    if not value:
+        return (project_root / default_rel).resolve()
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = (project_root / value).resolve()
+    else:
+        candidate = candidate.resolve()
+    return candidate
+
+
+def _parse_texture_rect_nodes(scene_file: Path) -> list[dict[str, Any]]:
+    text = _safe_read_text(scene_file)
+    if not text:
+        return []
+    out: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[node "):
+            if current and {"name", "top", "bottom", "left", "right"} <= set(current.keys()):
+                out.append(current)
+            match = re.search(r'name="([^"]+)"\s+type="([^"]+)"', stripped)
+            if match and match.group(2) == "TextureRect":
+                current = {"name": match.group(1)}
+            else:
+                current = None
+            continue
+        if current is None:
+            continue
+        if stripped.startswith("offset_left ="):
+            current["left"] = float(stripped.split("=", 1)[1].strip())
+        elif stripped.startswith("offset_top ="):
+            current["top"] = float(stripped.split("=", 1)[1].strip())
+        elif stripped.startswith("offset_right ="):
+            current["right"] = float(stripped.split("=", 1)[1].strip())
+        elif stripped.startswith("offset_bottom ="):
+            current["bottom"] = float(stripped.split("=", 1)[1].strip())
+    if current and {"name", "top", "bottom", "left", "right"} <= set(current.keys()):
+        out.append(current)
+    return out
+
+
+def _build_uniform_height_plan(
+    scene_file: Path,
+    target_height: float,
+    node_name_pattern: str,
+) -> dict[str, Any]:
+    nodes = _parse_texture_rect_nodes(scene_file)
+    if target_height <= 0 or not nodes:
+        return {"target_height": target_height, "matched_nodes": [], "adjustments": []}
+    pattern = re.compile(node_name_pattern) if node_name_pattern else re.compile(r".*")
+    adjustments: list[dict[str, Any]] = []
+    for node in nodes:
+        name = str(node.get("name", ""))
+        if not pattern.search(name):
+            continue
+        old_w = float(node["right"]) - float(node["left"])
+        old_h = float(node["bottom"]) - float(node["top"])
+        if old_h <= 0:
+            continue
+        scale = target_height / old_h
+        new_w = round(old_w * scale, 3)
+        new_h = round(target_height, 3)
+        new_right = round(float(node["left"]) + new_w, 3)
+        new_bottom = round(float(node["top"]) + new_h, 3)
+        adjustments.append(
+            {
+                "node": name,
+                "old_size": {"width": round(old_w, 3), "height": round(old_h, 3)},
+                "new_size": {"width": new_w, "height": new_h},
+                "scale_factor": round(scale, 6),
+                "patch_hint": {
+                    "offset_right": new_right,
+                    "offset_bottom": new_bottom,
+                },
+            }
+        )
+    matched = [a["node"] for a in adjustments]
+    return {
+        "target_height": round(target_height, 3),
+        "matched_nodes": matched,
+        "adjustments": adjustments,
+    }
+
+
+def _resolve_compare_report_payload(compare_report_file: Path) -> tuple[dict[str, Any], Path]:
+    payload = _read_json_file(compare_report_file)
+    if isinstance(payload.get("visual_diff"), dict) and str(payload.get("run_id", "")).strip():
+        return payload, compare_report_file
+    report_ref = str(payload.get("report_file", "")).strip()
+    if report_ref:
+        resolved = _resolve_existing_file(report_ref, "report_file")
+        full = _read_json_file(resolved)
+        if isinstance(full.get("visual_diff"), dict) and str(full.get("run_id", "")).strip():
+            return full, resolved
+    return payload, compare_report_file
+
+
+def _compute_resized_diff_ratio(figma_file: Path, game_file: Path, expected_w: int, expected_h: int) -> tuple[float, dict[str, Any]]:
+    info: dict[str, Any] = {"resized_for_compare": False, "method": "raw_payload"}
+    try:
+        from PIL import Image  # type: ignore
+    except Exception:
+        return 1.0, info
+    try:
+        figma_img = Image.open(figma_file).convert("RGB")
+        game_img = Image.open(game_file).convert("RGB")
+        if figma_img.size != (expected_w, expected_h):
+            figma_img = figma_img.resize((expected_w, expected_h))
+            info["resized_for_compare"] = True
+        if game_img.size != (expected_w, expected_h):
+            game_img = game_img.resize((expected_w, expected_h))
+            info["resized_for_compare"] = True
+        info["method"] = "pillow_rgb"
+        return _byte_diff_ratio(figma_img.tobytes(), game_img.tobytes()), info
+    except Exception as exc:  # pylint: disable=broad-except
+        info["error"] = str(exc)
+        return 1.0, info
 
 
 def _ensure_plugin_enabled(project_root: Path, plugin_cfg_rel: str) -> dict[str, Any]:
@@ -1206,6 +1501,357 @@ def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict
     }
 
 
+def _tool_figma_design_to_baseline(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    figma_file_key = str(arguments.get("figma_file_key", "")).strip()
+    figma_node_id = str(arguments.get("figma_node_id", "")).strip()
+    if not figma_file_key:
+        raise AppError("INVALID_ARGUMENT", "figma_file_key is required")
+    if not figma_node_id:
+        raise AppError("INVALID_ARGUMENT", "figma_node_id is required")
+    screenshot_path = _resolve_existing_file(str(arguments.get("figma_screenshot_file", "")), "figma_screenshot_file")
+    context = arguments.get("figma_design_context", {})
+    if context and not isinstance(context, dict):
+        raise AppError("INVALID_ARGUMENT", "figma_design_context must be an object")
+    context = context if isinstance(context, dict) else {}
+    baseline_slug = _slugify(f"{figma_file_key}_{figma_node_id}")
+    baseline_dir = _exp_runtime_dir(project_root, cfg) / "figma"
+    baseline_json_path = baseline_dir / f"figma_baseline_{baseline_slug}.json"
+    screenshot_copy = baseline_dir / f"figma_screenshot_{baseline_slug}.png"
+    baseline_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_copy = _convert_image_to_png_if_needed(screenshot_path, screenshot_copy)
+    figma_metrics = _parse_png_metrics(screenshot_copy)
+    payload = {
+        "generated_at": _utc_iso(),
+        "figma_ref": {
+            "file_key": figma_file_key,
+            "node_id": figma_node_id,
+            "version": str(arguments.get("figma_version", "")).strip() or "latest",
+        },
+        "figma_screenshot_file": str(screenshot_copy),
+        "figma_design_context": context,
+        "expected_layout": _extract_figma_layout_expectation(context),
+        "expected_image_height": float(arguments.get("image_target_height", 120)),
+        "screenshot_metrics": {
+            "format": figma_metrics.get("format"),
+            "width": figma_metrics.get("width"),
+            "height": figma_metrics.get("height"),
+            "byte_size": figma_metrics.get("byte_size"),
+        },
+    }
+    _write_text(baseline_json_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    exp_artifact = _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name="figma_baseline_last",
+        payload={
+            "tool": "figma_design_to_baseline",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "baseline_file": str(baseline_json_path),
+            "figma_ref": payload["figma_ref"],
+        },
+    )
+    return {
+        "status": "generated",
+        "project_root": str(project_root),
+        "baseline_file": str(baseline_json_path),
+        "figma_screenshot_file": str(screenshot_copy),
+        "figma_ref": payload["figma_ref"],
+        "exp_runtime": exp_artifact,
+    }
+
+
+def _tool_compare_figma_game_ui(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    baseline_file = _resolve_existing_file(str(arguments.get("figma_baseline_file", "")), "figma_baseline_file")
+    game_snapshot_file = _resolve_existing_file(str(arguments.get("game_snapshot_file", "")), "game_snapshot_file")
+    baseline = _read_json_file(baseline_file)
+    figma_screenshot_file = _resolve_existing_file(
+        str(baseline.get("figma_screenshot_file", "")),
+        "figma_screenshot_file",
+    )
+    figma_metrics = _parse_png_metrics(figma_screenshot_file)
+    game_metrics = _parse_png_metrics(game_snapshot_file)
+    pixel_threshold = float(arguments.get("pixel_threshold", 0.03))
+    perceptual_threshold = float(arguments.get("perceptual_threshold", 0.97))
+    resize_to_baseline = bool(arguments.get("resize_to_baseline", True))
+    same_resolution = (
+        int(figma_metrics.get("width", 0)) > 0
+        and int(figma_metrics.get("width", 0)) == int(game_metrics.get("width", 0))
+        and int(figma_metrics.get("height", 0)) == int(game_metrics.get("height", 0))
+    )
+    figma_payload = figma_metrics.get("pixel_data", b"") or figma_metrics.get("raw_payload", b"") or figma_screenshot_file.read_bytes()
+    game_payload = game_metrics.get("pixel_data", b"") or game_metrics.get("raw_payload", b"") or game_snapshot_file.read_bytes()
+    resize_info: dict[str, Any] = {"resized_for_compare": False, "method": "raw_payload"}
+    can_compare_raw = same_resolution and len(figma_payload) == len(game_payload) and len(figma_payload) > 0
+    if resize_to_baseline and int(figma_metrics.get("width", 0)) > 0 and int(figma_metrics.get("height", 0)) > 0:
+        pixel_diff_ratio, resize_info = _compute_resized_diff_ratio(
+            figma_screenshot_file,
+            game_snapshot_file,
+            int(figma_metrics.get("width", 0)),
+            int(figma_metrics.get("height", 0)),
+        )
+    elif can_compare_raw:
+        pixel_diff_ratio = _byte_diff_ratio(figma_payload, game_payload)
+    else:
+        pixel_diff_ratio = 1.0
+    perceptual_score = round(max(0.0, 1.0 - pixel_diff_ratio), 6)
+    expected_layout = baseline.get("expected_layout", {})
+    layout_diff = {
+        "expected_width": int(expected_layout.get("width", 0) or 0),
+        "expected_height": int(expected_layout.get("height", 0) or 0),
+        "actual_width": int(game_metrics.get("width", 0) or 0),
+        "actual_height": int(game_metrics.get("height", 0) or 0),
+    }
+    layout_diff["dimension_mismatch"] = bool(
+        layout_diff["expected_width"]
+        and layout_diff["expected_height"]
+        and (
+            layout_diff["expected_width"] != layout_diff["actual_width"]
+            or layout_diff["expected_height"] != layout_diff["actual_height"]
+        )
+    )
+    visual_pass = pixel_diff_ratio <= pixel_threshold and perceptual_score >= perceptual_threshold
+    overall_status = "pass" if visual_pass and not layout_diff["dimension_mismatch"] else "fail"
+    run_id = _slugify(f"{baseline.get('figma_ref', {}).get('file_key', 'figma')}_{datetime.now(timezone.utc).timestamp()}")
+    report_payload = {
+        "tool": "compare_figma_game_ui",
+        "generated_at": _utc_iso(),
+        "run_id": run_id,
+        "project_root": str(project_root),
+        "figma_ref": baseline.get("figma_ref", {}),
+        "figma_baseline_file": str(baseline_file),
+        "game_snapshot_file": str(game_snapshot_file),
+        "overall_status": overall_status,
+        "visual_diff": {
+            "pixel_diff_ratio": pixel_diff_ratio,
+            "perceptual_score": perceptual_score,
+            "pixel_threshold": pixel_threshold,
+            "perceptual_threshold": perceptual_threshold,
+            "same_resolution": same_resolution,
+            "raw_payload_compatible": can_compare_raw,
+            "resize_to_baseline": resize_to_baseline,
+            "resize_info": resize_info,
+        },
+        "layout_diff": layout_diff,
+        "hot_regions": [],
+        "next_action": "request_approval" if overall_status != "pass" else "accept",
+        "hashes": {
+            "figma_sha256": hashlib.sha256(figma_screenshot_file.read_bytes()).hexdigest(),
+            "game_sha256": hashlib.sha256(game_snapshot_file.read_bytes()).hexdigest(),
+        },
+    }
+    report_name = _slugify(str(arguments.get("report_basename", "")).strip() or f"compare_figma_game_ui_{run_id}")
+    report_file = _exp_runtime_dir(project_root, cfg) / f"{report_name}.json"
+    _write_text(report_file, json.dumps(report_payload, ensure_ascii=False, indent=2))
+    exp_artifact = _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name="compare_figma_game_ui_last",
+        payload={
+            "tool": "compare_figma_game_ui",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "report_file": str(report_file),
+            "overall_status": overall_status,
+            "run_id": run_id,
+        },
+    )
+    return {
+        "status": "compared",
+        "project_root": str(project_root),
+        "report_file": str(report_file),
+        "run_id": run_id,
+        "overall_status": overall_status,
+        "visual_diff": report_payload["visual_diff"],
+        "layout_diff": layout_diff,
+        "next_action": report_payload["next_action"],
+        "exp_runtime": exp_artifact,
+    }
+
+
+def _tool_annotate_ui_mismatch(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    compare_report_file = _resolve_existing_file(str(arguments.get("compare_report_file", "")), "compare_report_file")
+    compare_payload, resolved_compare_report = _resolve_compare_report_payload(compare_report_file)
+    mismatches: list[dict[str, Any]] = []
+    layout = compare_payload.get("layout_diff", {})
+    if isinstance(layout, dict) and layout.get("dimension_mismatch"):
+        mismatches.append(
+            {
+                "severity": "high",
+                "type": "dimension_mismatch",
+                "figma_ref": compare_payload.get("figma_ref", {}),
+                "evidence": {
+                    "expected": [layout.get("expected_width"), layout.get("expected_height")],
+                    "actual": [layout.get("actual_width"), layout.get("actual_height")],
+                },
+            }
+        )
+    visual = compare_payload.get("visual_diff", {})
+    if isinstance(visual, dict) and float(visual.get("pixel_diff_ratio", 0.0)) > float(visual.get("pixel_threshold", 0.03)):
+        mismatches.append(
+            {
+                "severity": "medium",
+                "type": "visual_diff",
+                "figma_ref": compare_payload.get("figma_ref", {}),
+                "evidence": {
+                    "pixel_diff_ratio": visual.get("pixel_diff_ratio"),
+                    "threshold": visual.get("pixel_threshold"),
+                    "perceptual_score": visual.get("perceptual_score"),
+                },
+            }
+        )
+    annotation_payload = {
+        "tool": "annotate_ui_mismatch",
+        "generated_at": _utc_iso(),
+        "run_id": compare_payload.get("run_id"),
+        "project_root": str(project_root),
+        "compare_report_file": str(resolved_compare_report),
+        "mismatch_count": len(mismatches),
+        "mismatches": mismatches,
+        "summary": "no mismatch" if not mismatches else "mismatch detected",
+    }
+    report_file = _exp_runtime_dir(project_root, cfg) / f"ui_mismatch_annotations_{_slugify(str(compare_payload.get('run_id', 'last')))}.json"
+    _write_text(report_file, json.dumps(annotation_payload, ensure_ascii=False, indent=2))
+    return {
+        "status": "annotated",
+        "project_root": str(project_root),
+        "annotation_file": str(report_file),
+        "mismatch_count": len(mismatches),
+    }
+
+
+def _tool_approve_ui_fix_plan(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    compare_report_file = _resolve_existing_file(str(arguments.get("compare_report_file", "")), "compare_report_file")
+    approved = bool(arguments.get("approved", False))
+    token = str(arguments.get("approval_token", "")).strip()
+    if approved and not token:
+        raise AppError("INVALID_ARGUMENT", "approval_token is required when approved=true")
+    compare_payload, resolved_compare_report = _resolve_compare_report_payload(compare_report_file)
+    run_id = _slugify(str(compare_payload.get("run_id", "last")))
+    approval_payload = {
+        "tool": "approve_ui_fix_plan",
+        "generated_at": _utc_iso(),
+        "project_root": str(project_root),
+        "run_id": compare_payload.get("run_id"),
+        "compare_report_file": str(resolved_compare_report),
+        "approved": approved,
+        "approval_token_hash": hashlib.sha256(token.encode("utf-8")).hexdigest() if token else "",
+    }
+    approval_file = _exp_runtime_dir(project_root, cfg) / f"ui_fix_approval_{run_id}.json"
+    _write_text(approval_file, json.dumps(approval_payload, ensure_ascii=False, indent=2))
+    return {
+        "status": "recorded",
+        "project_root": str(project_root),
+        "approval_file": str(approval_file),
+        "approved": approved,
+        "run_id": compare_payload.get("run_id"),
+    }
+
+
+def _tool_suggest_ui_fix_patch(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    compare_report_file = _resolve_existing_file(str(arguments.get("compare_report_file", "")), "compare_report_file")
+    approval_file = _resolve_existing_file(str(arguments.get("approval_file", "")), "approval_file")
+    compare_payload, resolved_compare_report = _resolve_compare_report_payload(compare_report_file)
+    approval_payload = _read_json_file(approval_file)
+    if not bool(approval_payload.get("approved", False)):
+        raise AppError("INVALID_ARGUMENT", "fix suggestion requires approved=true in approval_file")
+    baseline_file = _resolve_existing_file(str(compare_payload.get("figma_baseline_file", "")), "figma_baseline_file")
+    baseline_payload = _read_json_file(baseline_file)
+    target_height = float(
+        arguments.get(
+            "image_target_height",
+            baseline_payload.get("expected_image_height", 120),
+        )
+    )
+    node_pattern = str(arguments.get("image_node_pattern", "Image|Preview")).strip() or "Image|Preview"
+    scene_file = _resolve_project_file(project_root, str(arguments.get("scene_file", "")), "scenes/main_scene_example.tscn")
+    uniform_plan: dict[str, Any] = {"target_height": target_height, "matched_nodes": [], "adjustments": []}
+    if scene_file.exists():
+        uniform_plan = _build_uniform_height_plan(scene_file, target_height, node_pattern)
+    suggestions: list[dict[str, Any]] = []
+    layout = compare_payload.get("layout_diff", {})
+    if isinstance(layout, dict) and layout.get("dimension_mismatch"):
+        suggestions.append(
+            {
+                "file": "scenes/main_scene_example.tscn",
+                "reason": "scene root dimension differs from figma baseline",
+                "figma_expected": {"width": layout.get("expected_width"), "height": layout.get("expected_height")},
+                "game_actual": {"width": layout.get("actual_width"), "height": layout.get("actual_height")},
+                "proposed_change": "adjust root control anchors/size to match figma frame dimensions",
+                "confidence": 0.72,
+                "risk": "medium",
+            }
+        )
+    visual = compare_payload.get("visual_diff", {})
+    if isinstance(visual, dict) and float(visual.get("pixel_diff_ratio", 0.0)) > float(visual.get("pixel_threshold", 0.03)):
+        suggestions.append(
+            {
+                "file": str(scene_file),
+                "reason": "visual diff exceeds threshold",
+                "figma_expected": {"pixel_diff_ratio_max": visual.get("pixel_threshold")},
+                "game_actual": {"pixel_diff_ratio": visual.get("pixel_diff_ratio")},
+                "proposed_change": "align spacing/font/color tokens with figma design context",
+                "confidence": 0.64,
+                "risk": "low",
+            }
+        )
+        if uniform_plan.get("adjustments"):
+            suggestions.append(
+                {
+                    "file": str(scene_file),
+                    "reason": "image size drift can be reduced by uniform scaling to target height",
+                    "figma_expected": {"image_height": target_height},
+                    "game_actual": {
+                        "matched_nodes": uniform_plan.get("matched_nodes", []),
+                        "first_old_height": (
+                            uniform_plan.get("adjustments", [{}])[0].get("old_size", {}).get("height")
+                            if uniform_plan.get("adjustments")
+                            else None
+                        ),
+                    },
+                    "proposed_change": "apply uniform scaling to matched image nodes so rendered height equals target",
+                    "uniform_scale_plan": uniform_plan,
+                    "confidence": 0.86,
+                    "risk": "low",
+                }
+            )
+    max_suggestions = int(arguments.get("max_suggestions", 10))
+    if max_suggestions <= 0:
+        max_suggestions = 1
+    suggestions = suggestions[:max_suggestions]
+    run_id = _slugify(str(compare_payload.get("run_id", "last")))
+    payload = {
+        "tool": "suggest_ui_fix_patch",
+        "generated_at": _utc_iso(),
+        "project_root": str(project_root),
+        "run_id": compare_payload.get("run_id"),
+        "compare_report_file": str(resolved_compare_report),
+        "approval_file": str(approval_file),
+        "uniform_scale_plan": uniform_plan,
+        "suggestions": suggestions,
+        "suggestion_count": len(suggestions),
+    }
+    suggestion_file = _exp_runtime_dir(project_root, cfg) / f"ui_fix_suggestions_{run_id}.json"
+    _write_text(suggestion_file, json.dumps(payload, ensure_ascii=False, indent=2))
+    return {
+        "status": "suggested",
+        "project_root": str(project_root),
+        "suggestion_file": str(suggestion_file),
+        "run_id": compare_payload.get("run_id"),
+        "suggestion_count": len(suggestions),
+    }
+
+
 def _tool_get_adapter_contract(ctx: ServerCtx, _arguments: dict[str, Any]) -> dict[str, Any]:
     contract_path = ctx.repo_root / "mcp" / "adapter_contract_v1.json"
     if not contract_path.exists():
@@ -1264,6 +1910,11 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "init_project_context",
             "refresh_project_context",
             "generate_flow_seed",
+            "figma_design_to_baseline",
+            "compare_figma_game_ui",
+            "annotate_ui_mismatch",
+            "approve_ui_fix_plan",
+            "suggest_ui_fix_patch",
         ],
     }
 
@@ -1279,6 +1930,11 @@ def _build_tool_map() -> dict[str, Any]:
         "init_project_context": _tool_init_project_context,
         "refresh_project_context": _tool_refresh_project_context,
         "generate_flow_seed": _tool_generate_flow_seed,
+        "figma_design_to_baseline": _tool_figma_design_to_baseline,
+        "compare_figma_game_ui": _tool_compare_figma_game_ui,
+        "annotate_ui_mismatch": _tool_annotate_ui_mismatch,
+        "approve_ui_fix_plan": _tool_approve_ui_fix_plan,
+        "suggest_ui_fix_patch": _tool_suggest_ui_fix_patch,
     }
 
 
@@ -1364,6 +2020,78 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "flow_name": {"type": "string"},
                     "output_file": {"type": "string"},
                     "strategy": {"type": "string", "enum": ["auto", "ui", "exploration", "builder", "generic"]},
+                },
+            },
+        },
+        "figma_design_to_baseline": {
+            "description": "Persist Figma design context and screenshot as baseline artifact.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "figma_file_key", "figma_node_id", "figma_screenshot_file"],
+                "properties": {
+                    **base_props,
+                    "figma_file_key": {"type": "string"},
+                    "figma_node_id": {"type": "string"},
+                    "figma_version": {"type": "string"},
+                    "figma_screenshot_file": {"type": "string"},
+                    "figma_design_context": {"type": "object"},
+                    "image_target_height": {"type": "number"},
+                },
+            },
+        },
+        "compare_figma_game_ui": {
+            "description": "Compare Figma baseline screenshot/context against game UI screenshot.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "figma_baseline_file", "game_snapshot_file"],
+                "properties": {
+                    **base_props,
+                    "figma_baseline_file": {"type": "string"},
+                    "game_snapshot_file": {"type": "string"},
+                    "pixel_threshold": {"type": "number"},
+                    "perceptual_threshold": {"type": "number"},
+                    "resize_to_baseline": {"type": "boolean"},
+                    "report_basename": {"type": "string"},
+                },
+            },
+        },
+        "annotate_ui_mismatch": {
+            "description": "Generate mismatch annotation report from compare result.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "compare_report_file"],
+                "properties": {
+                    **base_props,
+                    "compare_report_file": {"type": "string"},
+                },
+            },
+        },
+        "approve_ui_fix_plan": {
+            "description": "Record approval gate result for UI fix suggestions.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "compare_report_file", "approved"],
+                "properties": {
+                    **base_props,
+                    "compare_report_file": {"type": "string"},
+                    "approved": {"type": "boolean"},
+                    "approval_token": {"type": "string"},
+                },
+            },
+        },
+        "suggest_ui_fix_patch": {
+            "description": "Generate UI fix suggestion patch draft from compare report.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "compare_report_file", "approval_file"],
+                "properties": {
+                    **base_props,
+                    "compare_report_file": {"type": "string"},
+                    "approval_file": {"type": "string"},
+                    "max_suggestions": {"type": "integer"},
+                    "scene_file": {"type": "string"},
+                    "image_target_height": {"type": "number"},
+                    "image_node_pattern": {"type": "string"},
                 },
             },
         },

@@ -45,8 +45,21 @@
     "openMenu",
     "loadSlot",
     "saveSlot",
-    "getState"
+    "getState",
+    "checkVisualHard",
+    "captureUiSnapshot"
   ],
+  "check_kind_contract": {
+    "visual_hard": {
+      "description": "When check.kind=visual_hard, adapter should provide deterministic evidence for UI visual validation.",
+      "expected_details_fields": [
+        "status",
+        "artifactPath",
+        "resolution",
+        "message"
+      ]
+    }
+  },
   "error_codes": [
     "INVALID_ARGUMENT",
     "TARGET_NOT_FOUND",

@@ -83,6 +83,9 @@ jobs:
           tool_names = {t["name"] for t in list_res["result"]["tools"]}
           assert "get_mcp_runtime_info" in tool_names
           assert "init_project_context" in tool_names
+          assert "figma_design_to_baseline" in tool_names
+          assert "compare_figma_game_ui" in tool_names
+          assert "approve_ui_fix_plan" in tool_names
 
           send_msg(
               {
@@ -142,3 +145,59 @@ jobs:
           if ($sw.Elapsed.TotalSeconds -gt 90) {
             throw "Smoke execution exceeded 90s. Actual=$($sw.Elapsed.TotalSeconds)s"
           }
+
+      - name: Figma collaboration smoke (minimal sample)
+        shell: pwsh
+        run: |
+          @'
+          import base64
+          import json
+          import subprocess
+          from pathlib import Path
+
+          repo_root = Path(".").resolve()
+          project = (repo_root / "examples" / "godot_minimal").resolve()
+          fixture = project / "pointer_gpf" / "gpf-exp" / "runtime" / "ci_figma_fixture.png"
+          fixture.parent.mkdir(parents=True, exist_ok=True)
+          fixture.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2r8lUAAAAASUVORK5CYII="))
+
+          def run_tool(name, args):
+              cmd = ["python", "mcp/server.py", "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
+              p = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
+              if p.returncode != 0:
+                  raise RuntimeError(f"{name} failed: {p.stdout}\n{p.stderr}")
+              payload = json.loads(p.stdout)
+              if not payload.get("ok"):
+                  raise RuntimeError(f"{name} returned error: {p.stdout}")
+              return payload["result"]
+
+          baseline = run_tool("figma_design_to_baseline", {
+              "project_root": str(project),
+              "figma_file_key": "ci_file",
+              "figma_node_id": "1:1",
+              "figma_screenshot_file": str(fixture),
+              "figma_design_context": {"frame": {"width": 1, "height": 1}}
+          })
+          compare = run_tool("compare_figma_game_ui", {
+              "project_root": str(project),
+              "figma_baseline_file": baseline["baseline_file"],
+              "game_snapshot_file": str(fixture),
+          })
+          run_tool("annotate_ui_mismatch", {
+              "project_root": str(project),
+              "compare_report_file": compare["report_file"],
+          })
+          approval = run_tool("approve_ui_fix_plan", {
+              "project_root": str(project),
+              "compare_report_file": compare["report_file"],
+              "approved": True,
+              "approval_token": "ci-approved"
+          })
+          run_tool("suggest_ui_fix_patch", {
+              "project_root": str(project),
+              "compare_report_file": compare["report_file"],
+              "approval_file": approval["approval_file"],
+          })
+          '@ | Set-Content -LiteralPath "__mcp_figma_smoke.py" -Encoding UTF8
+          python "__mcp_figma_smoke.py"
+          Remove-Item -LiteralPath "__mcp_figma_smoke.py" -Force

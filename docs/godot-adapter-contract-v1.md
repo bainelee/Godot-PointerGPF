@@ -31,6 +31,19 @@ Each required action must return a structured response with:
 - `loadSlot`
 - `saveSlot`
 - `getState`
+- `checkVisualHard`
+- `captureUiSnapshot`
+
+## `check.kind=visual_hard` Recommendation
+
+For Figma collaboration scenarios, when a step uses `check` with `kind=visual_hard`, adapter should return `details` with at least:
+
+- `status`
+- `artifactPath`
+- `resolution`
+- `message`
+
+This allows MCP-side tools to align Figma baseline data with runtime evidence.
 
 ## Error Model
 

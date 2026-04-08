@@ -11,7 +11,14 @@ config_version=5
 [application]
 
 config/name="PointerGPF Minimal"
+run/main_scene="uid://bt36ffouad4nf"
 config/features=PackedStringArray("4.6")
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/stretch/mode="canvas_items"
 
 [editor_plugins]
 
