@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.2",
+    "current_version":  "0.2.3",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.2",
-                                    "min_compatible_version":  "0.2.0",
+                                    "version":  "0.2.3",
+                                    "min_compatible_version":  "0.2.3",
                                     "release_notes":  "Add Figma-driven UI sync/compare/approve/suggest MCP loop, improve visual diff robustness, and sync godot_minimal example assets/layout.",
-                                    "published_at_utc":  "2026-04-08T19:10:30Z",
+                                    "published_at_utc":  "2026-04-08T19:53:35Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.2.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.2/pointer-gpf-mcp-0.2.2.zip",
-                                                     "sha256":  "bd40d823272cb32b7e130c0773f1c432c0087a6f271bcad24166156b9e5b4687",
-                                                     "size_bytes":  4474270,
+                                                     "filename":  "pointer-gpf-mcp-0.2.3.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.3/pointer-gpf-mcp-0.2.3.zip",
+                                                     "sha256":  "4a9d47f42da21c6de8e606f57bc062a9f040d56c2c2e527c11c74a24a11d2dfe",
+                                                     "size_bytes":  4474583,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }
