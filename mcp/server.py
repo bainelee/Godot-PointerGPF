@@ -18,7 +18,7 @@ from typing import Any
 
 
 DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
-DEFAULT_SERVER_VERSION = "0.2.3"
+DEFAULT_SERVER_VERSION = "0.2.4"
 DEFAULT_PLUGIN_ID = "pointer_gpf"
 DEFAULT_PLUGIN_CFG_REL = f"addons/{DEFAULT_PLUGIN_ID}/plugin.cfg"
 DEFAULT_WORKSPACE_DIR_REL = "pointer_gpf"
@@ -27,6 +27,7 @@ DEFAULT_SEED_FLOW_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/generated_flows"
 DEFAULT_REPORT_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/reports"
 DEFAULT_EXP_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/gpf-exp"
 DEFAULT_SCAN_ROOTS = ["scripts", "scenes", "addons", "datas", "docs", "flows", "tests", "test", "src"]
+_MCP_IO_MODE = "header"
 
 
 class AppError(Exception):
@@ -2099,39 +2100,71 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
 
 
 def _read_mcp_message() -> dict[str, Any] | None:
-    headers: dict[str, str] = {}
+    global _MCP_IO_MODE
+    # Be lenient on transport framing:
+    # 1) Standard MCP stdio headers (Content-Length)
+    # 2) JSON lines (some clients/proxies write one JSON object per line)
     while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
+        first = sys.stdin.buffer.readline()
+        if not first:
             return None
-        if line in (b"\r\n", b"\n"):
-            break
-        text = line.decode("utf-8", errors="replace").strip()
-        if not text or ":" not in text:
+        if first in (b"\r\n", b"\n"):
             continue
-        key, value = text.split(":", 1)
-        headers[key.strip().lower()] = value.strip()
-    content_length_raw = headers.get("content-length", "")
-    if not content_length_raw:
-        return None
-    try:
-        content_length = int(content_length_raw)
-    except ValueError:
-        return None
-    body = sys.stdin.buffer.read(content_length)
-    if not body:
-        return None
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    return payload
+
+        first_text = first.decode("utf-8", errors="replace").strip()
+        if first_text.startswith("{"):
+            try:
+                payload = json.loads(first_text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                _MCP_IO_MODE = "jsonl"
+                return payload
+            continue
+
+        headers: dict[str, str] = {}
+        if ":" in first_text:
+            key, value = first_text.split(":", 1)
+            headers[key.strip().lower()] = value.strip()
+
+        while True:
+            line = sys.stdin.buffer.readline()
+            if not line:
+                return None
+            if line in (b"\r\n", b"\n"):
+                break
+            text = line.decode("utf-8", errors="replace").strip()
+            if not text or ":" not in text:
+                continue
+            key, value = text.split(":", 1)
+            headers[key.strip().lower()] = value.strip()
+
+        content_length_raw = headers.get("content-length", "")
+        if not content_length_raw:
+            continue
+        try:
+            content_length = int(content_length_raw)
+        except ValueError:
+            continue
+        body = sys.stdin.buffer.read(content_length)
+        if not body:
+            continue
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            _MCP_IO_MODE = "header"
+            return payload
 
 
 def _write_mcp_message(payload: dict[str, Any]) -> None:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body_text = json.dumps(payload, ensure_ascii=False)
+    if _MCP_IO_MODE == "jsonl":
+        sys.stdout.buffer.write((body_text + "\n").encode("utf-8"))
+        sys.stdout.buffer.flush()
+        return
+    body = body_text.encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
     sys.stdout.buffer.write(header)
     sys.stdout.buffer.write(body)

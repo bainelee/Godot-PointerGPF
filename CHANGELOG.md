@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.4 - 2026-04-09
+
+- 修复 MCP stdio 传输兼容性：服务端可自动识别 `Content-Length` 与 JSON 行输入，并按同协议回包，避免客户端握手后超时/Aborted。
+- 新增传输兼容回归测试 `tests/test_mcp_transport_protocol.py`，覆盖两类 initialize 往返。
+- 清理跨项目联调阶段的临时调试流程文档，保持发行包内容精简。
+
 ## v0.2.3 - 2026-04-09
 
 - 修复 `install/start-mcp.ps1` 生成的 Cursor MCP 配置，默认输出解析后的 Python 可执行路径并显式加入 `-u` 与 `--stdio`，降低连接超时与 `Aborted` 风险。
