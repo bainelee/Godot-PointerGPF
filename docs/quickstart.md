@@ -41,9 +41,11 @@ powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -ForceRemote
 {
   "mcpServers": {
     "pointer-gpf": {
-      "command": "python",
+      "command": "C:/Users/your-user/AppData/Local/Programs/Python/Python311/python.exe",
       "args": [
-        "D:/AI/pointer_gpf/mcp/server.py"
+        "-u",
+        "D:/AI/pointer_gpf/mcp/server.py",
+        "--stdio"
       ]
     }
   }

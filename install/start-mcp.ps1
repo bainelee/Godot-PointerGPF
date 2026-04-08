@@ -13,6 +13,16 @@ if (-not (Test-Path -LiteralPath $serverPath)) {
     throw "Missing MCP server: $serverPath"
 }
 
+$resolvedPython = $PythonExe
+try {
+    $pythonCmd = Get-Command $PythonExe -ErrorAction Stop | Select-Object -First 1
+    if ($pythonCmd -and $pythonCmd.Source) {
+        $resolvedPython = $pythonCmd.Source
+    }
+} catch {
+    # Keep original value; runtime check below will fail with clear output if command is invalid.
+}
+
 $cli = @($serverPath, "--tool", "get_mcp_runtime_info", "--args", "{}")
 if (-not [string]::IsNullOrWhiteSpace($ConfigFile)) {
     $cli += @("--config-file", $ConfigFile)
@@ -27,13 +37,13 @@ Write-Output "[MCP] Cursor settings snippet:"
 Write-Output '{'
 Write-Output '  "mcpServers": {'
 Write-Output '    "pointer-gpf": {'
-Write-Output '      "command": "python",'
-$argsLine = @('"' + $serverPath.Replace("\", "/") + '"')
+Write-Output ('      "command": "' + $resolvedPython.Replace("\", "/") + '",')
+$cursorArgs = @("-u", $serverPath.Replace("\", "/"), "--stdio")
 if (-not [string]::IsNullOrWhiteSpace($ConfigFile)) {
-    $argsLine += '"' + "--config-file" + '"'
-    $argsLine += '"' + $ConfigFile.Replace("\", "/") + '"'
+    $cursorArgs += @("--config-file", $ConfigFile.Replace("\", "/"))
 }
-Write-Output ('      "args": [' + ($argsLine -join ", ") + ']')
+$cursorArgsJson = $cursorArgs | ConvertTo-Json -Compress
+Write-Output ('      "args": ' + $cursorArgsJson)
 Write-Output '    }'
 Write-Output '  }'
 Write-Output '}'
