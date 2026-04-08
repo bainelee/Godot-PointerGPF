@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.3 - 2026-04-09
+
+- 修复 `install/start-mcp.ps1` 生成的 Cursor MCP 配置，默认输出解析后的 Python 可执行路径并显式加入 `-u` 与 `--stdio`，降低连接超时与 `Aborted` 风险。
+- 更新 `README.md` 与 `docs/quickstart.md` 的 MCP 配置示例，统一为更稳健的 stdio 启动参数。
+- 新增回归测试 `tests/test_start_mcp_config.py`，防止启动配置回退到易超时形态。
+
 ## v0.2.2 - 2026-04-09
 
 - 新增 Figma 协同 UI 对比工具链：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`。
