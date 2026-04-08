@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.1",
+    "current_version":  "0.2.2",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.1",
+                                    "version":  "0.2.2",
                                     "min_compatible_version":  "0.2.0",
-                                    "release_notes":  "Finalize stdio MCP routing, add artifact-contract checks, and add integration trend reporting.",
-                                    "published_at_utc":  "2026-04-06T12:17:02Z",
+                                    "release_notes":  "Add Figma-driven UI sync/compare/approve/suggest MCP loop, improve visual diff robustness, and sync godot_minimal example assets/layout.",
+                                    "published_at_utc":  "2026-04-08T19:10:30Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.1.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.1/pointer-gpf-mcp-0.2.1.zip",
-                                                     "sha256":  "31764e951f9599055408f7997bc734f104698b8dd4b6f584b15c2f1f8a36f8a2",
-                                                     "size_bytes":  1445758,
+                                                     "filename":  "pointer-gpf-mcp-0.2.2.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.2/pointer-gpf-mcp-0.2.2.zip",
+                                                     "sha256":  "bd40d823272cb32b7e130c0773f1c432c0087a6f271bcad24166156b9e5b4687",
+                                                     "size_bytes":  4474270,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }

@@ -181,8 +181,8 @@ powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -Pr
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
-  -Version "0.2.1" `
-  -ArtifactUrl "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.1/pointer-gpf-mcp-0.2.1.zip" `
+  -Version "0.2.2" `
+  -ArtifactUrl "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.2/pointer-gpf-mcp-0.2.2.zip" `
   -Sha256 "<zip_sha256>" `
   -SizeBytes 123456
 ```
