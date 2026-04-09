@@ -141,8 +141,8 @@ function Get-StagedPaths {
 
 function Assert-NoPreStagedChanges {
     param([string]$Root)
-    $staged = Get-StagedPaths -Root $Root
-    if ($staged.Count -gt 0) {
+    [array]$staged = @(Get-StagedPaths -Root $Root)
+    if ($staged.Length -gt 0) {
         $detail = ($staged | ForEach-Object { "  - $_" }) -join "`n"
         throw ("[RELEASE] Detected pre-staged files before release run. Please clean index first to avoid accidental mixed release commit:`n{0}" -f $detail)
     }
