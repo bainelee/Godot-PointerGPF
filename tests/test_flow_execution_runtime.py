@@ -45,17 +45,18 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         code, payload = _run_tool_cli_raw(
             self.repo_root,
             "run_game_basic_test_flow",
-            {"project_root": str(self.project_root)},
+            {"project_root": str(self.project_root), "flow_id": "missing_flow"},
         )
         self.assertEqual(code, 1, msg=f"expected failure, got: {payload}")
         self.assertFalse(payload.get("ok"))
         err = payload.get("error") or {}
         self.assertEqual(err.get("code"), "INVALID_ARGUMENT")
-        self.assertIn("flow_id", str(err.get("message", "")))
-        self.assertIn("flow_file", str(err.get("message", "")))
-        self.assertIn("required", str(err.get("message", "")))
+        self.assertIn("flow file not found", str(err.get("message", "")))
 
     def test_cli_run_game_basic_test_flow_with_flow_id_returns_not_implemented(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "smoke_flow.json").write_text("{\"flowId\":\"smoke_flow\"}", encoding="utf-8")
         code, payload = _run_tool_cli_raw(
             self.repo_root,
             "run_game_basic_test_flow",

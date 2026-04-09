@@ -1504,11 +1504,20 @@ def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict
 
 def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
-    _ = _resolve_runtime_config(ctx, arguments, project_root=project_root)
-    flow_id = str(arguments.get("flow_id", "")).strip()
-    flow_file = str(arguments.get("flow_file", "")).strip()
-    if not flow_id and not flow_file:
-        raise AppError("INVALID_ARGUMENT", "flow_id or flow_file required")
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    flow_file_raw = str(arguments.get("flow_file", "")).strip()
+    if flow_file_raw:
+        flow_file = Path(flow_file_raw)
+        if not flow_file.is_absolute():
+            flow_file = (project_root / flow_file).resolve()
+        else:
+            flow_file = flow_file.resolve()
+    else:
+        flow_id = str(arguments.get("flow_id", "")).strip() or "basic_game_test_flow"
+        flow_slug = _slugify(flow_id)
+        flow_file = (project_root / cfg.seed_flow_dir_rel / f"{flow_slug}.json").resolve()
+    if not flow_file.exists() or not flow_file.is_file():
+        raise AppError("INVALID_ARGUMENT", f"flow file not found: {flow_file}")
     raise AppError("NOT_IMPLEMENTED", "run_game_basic_test_flow execution is not implemented yet")
 
 
