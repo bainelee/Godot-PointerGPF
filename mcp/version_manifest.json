@@ -6,14 +6,14 @@
                      "stable":  {
                                     "version":  "0.2.4.3",
                                     "min_compatible_version":  "0.2.4.3",
-                                   "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
-                                    "published_at_utc":  "2026-04-09T08:05:38Z",
+                                    "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
+                                    "published_at_utc":  "2026-04-09T09:36:53Z",
                                     "artifact":  {
                                                      "format":  "zip",
                                                      "filename":  "pointer-gpf-mcp-0.2.4.3.zip",
                                                      "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.3/pointer-gpf-mcp-0.2.4.3.zip",
-                                                     "sha256":  "6abc340ae58df63efd993bc764469b7d00949440a0d8e248432a8200d724efff",
-                                                     "size_bytes":  3708525,
+                                                     "sha256":  "325a8d73ea15806c925b92907886fcb138cccf5ca9b077e36e24428c98253fff",
+                                                     "size_bytes":  3081755,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }

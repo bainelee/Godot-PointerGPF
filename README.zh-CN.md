@@ -166,6 +166,10 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 ## 开发与 CI
 
+- **版本单一来源：** 仓库根目录 `VERSION`（四段式 `major.minor.patch.build`）。发版流程以该文件为准；`scripts/sync-version.ps1`（由 `scripts/release.ps1` 调用）将版本同步到各受管文件，避免多处手工改版本号导致漂移。
+- **一键发布（维护者）：** 在仓库根目录执行 `scripts/release.ps1`。加 `-DryRun` 仅打印计划，不写文件、不执行 git/GitHub。正常执行会同步版本、打与 CI 一致的 zip、更新 `mcp/version_manifest.json`、提交并推送 **`v*`** 标签。**GitHub Release 由 CI 在推送 tag 后创建**（`.github/workflows/release-package.yml`），脚本默认不再本地执行 `gh release create`，以免与工作流竞态。
+- **发布工作流：** `.github/workflows/release-package.yml` 以推送 **`v*`** 标签为主触发；另可选 **`workflow_dispatch`** 手动触发（可填写 `version`，或从 tag 运行以对应版本）。
+- **CI 分层：** **`mcp-smoke.yml`** 在 `main` 的 push/PR 上提供快反馈（短超时）。**`mcp-integration.yml`** 由 **nightly** 定时与 **`workflow_dispatch`** 触发，校验范围可选 **`quick`**（小样本）与 **`full`**（仓库级、Figma 流水线、趋势报告产物）。
 - 工作流：
   - `.github/workflows/mcp-smoke.yml`
   - `.github/workflows/mcp-integration.yml`
@@ -174,6 +178,7 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
   - `scripts/assert-mcp-artifacts.ps1`
   - `scripts/verify-cross-project.ps1`
   - `scripts/update-version-manifest.ps1`
+  - `scripts/release.ps1`
 
 ## 许可证
 

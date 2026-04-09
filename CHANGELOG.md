@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 发布流程简化与维护者交接：`VERSION` 明确为版本单一来源；文档补充 `scripts/release.ps1`（`-DryRun` 与正常发版示例）、**`v*`** tag 驱动发布及可选 `workflow_dispatch`，以及 CI 分层说明（smoke 快反馈；integration 用于 nightly / 手动的 **quick** / **full**）。
+
 ## v0.2.4.3 - 2026-04-09
 
 - 修复 `install/update-mcp.ps1`：`-ForceRemote` 现在始终优先于本地 `artifact.url` 分支，确保“强制远端更新”语义正确。

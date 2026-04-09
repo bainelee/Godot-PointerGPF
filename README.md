@@ -166,6 +166,10 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 ## Development & CI
 
+- **Version source of truth:** the repo root `VERSION` file (four-part `major.minor.patch.build`). Release automation reads it; use `scripts/sync-version.ps1` (invoked by `scripts/release.ps1`) to propagate it to tracked files—avoid editing version strings in multiple places by hand.
+- **One-click release (maintainers):** from the repo root, run `scripts/release.ps1`. Use `-DryRun` to print the planned steps without writing files or calling git/GitHub. A normal run syncs versions, builds the zip (same layout as CI), updates `mcp/version_manifest.json`, commits, and pushes a **`v*`** tag. **GitHub Release is created by CI** (`.github/workflows/release-package.yml` on tag push), not by local `gh release create`, to avoid racing the workflow.
+- **Release workflow:** `.github/workflows/release-package.yml` is **tag-driven** on push of tags matching **`v*`**. **`workflow_dispatch`** is optional for manual reruns (you can pass a `version` input, or run the workflow from a tag ref).
+- **CI layers:** **`mcp-smoke.yml`** runs on `main` pushes/PRs for fast feedback (short timeout). **`mcp-integration.yml`** runs on a **nightly** schedule and via **`workflow_dispatch`**, with scope **`quick`** (small sample) vs **`full`** (repo-scale checks, Figma pipeline, trend report artifact).
 - Workflows:
   - `.github/workflows/mcp-smoke.yml`
   - `.github/workflows/mcp-integration.yml`
@@ -174,6 +178,7 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
   - `scripts/assert-mcp-artifacts.ps1`
   - `scripts/verify-cross-project.ps1`
   - `scripts/update-version-manifest.ps1`
+  - `scripts/release.ps1`
 
 ## License
 

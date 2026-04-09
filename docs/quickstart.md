@@ -186,9 +186,41 @@ powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -Pr
 powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -ProjectRoot "D:/path/to/your/godot/project"
 ```
 
-## 12) 发布后回填 manifest（维护者）
+## 12) 版本单一来源与一键发布（维护者）
 
-发布 zip 后可用以下命令更新 `mcp/version_manifest.json`：
+**版本单一来源：** 仓库根目录的 `VERSION` 文件为版本号的唯一权威来源（四段式 `major.minor.patch.build`）。维护发版时请先在 `VERSION` 中写入目标版本；`scripts/sync-version.ps1` 会把该版本同步到插件与清单等受管文件。不要在与 `VERSION` 不一致的情况下手工改散处版本号。
+
+**一键发布：** 在仓库根目录执行 `scripts/release.ps1`，会按 `VERSION` 同步版本、打与 CI 一致的 zip、`update-version-manifest.ps1` 回填下载地址与校验和，并（默认）提交、推送 `v*` 标签。**GitHub Release 与 zip 上传不再由本脚本默认执行**，推送 tag 后由 `.github/workflows/release-package.yml` 自动完成（避免与 CI 重复创建 release 的竞态）。无需为发版单独登录 `gh` CLI。
+
+仅打印计划、不写文件、不跑 git/gh（演练）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun
+```
+
+正常发版（确认 `VERSION`、工作区干净、远程与凭证就绪后）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/release.ps1"
+```
+
+预期日志（关键行）：
+
+- 演练：`[RELEASE] version=<VERSION> tag=v<VERSION>`，并看到若干 `Would ...` 行；应出现说明 **不会** 本地 `gh release create`、由 **tag push 触发 CI 发布** 的提示
+- 实发：推送 tag 后应看到由 **CI 负责 GitHub Release** 的说明，末尾仍为 `[RELEASE] Release pipeline finished.`
+
+若只需同步版本 + 打包 + 更新 manifest，暂不提交/打标签/发 Release，可使用 `-PrepareOnly`（仍会写本地文件；与 `-DryRun` 同时指定时以 `-DryRun` 为准）。
+
+**GitHub Actions 发布工作流：** `.github/workflows/release-package.yml` 以推送 **`v*`** 标签为主触发（与 `release.ps1` 推送的标签一致）。另支持 **`workflow_dispatch`** 手动触发：可填写 `version`，或从某一 **tag** 运行以复用该标签对应的版本；在分支上 dispatch 且未填版本时会失败，这是刻意约束。
+
+**CI 分层：**
+
+- **Smoke（`mcp-smoke.yml`）**：在 `main` 的 push/PR 上提供快反馈（短超时），覆盖安装/更新脚本、stdio、最小样例项目上下文与 Figma 闭环等。
+- **Integration（`mcp-integration.yml`）**：按计划 **nightly**（cron）与 **`workflow_dispatch`** 手动运行；输入 **`quick`**（默认，小样本）或 **`full`**（仓库级上下文、产物校验、Figma 流水线与趋势报告产物）。日常开发以 smoke 为主；深度回归用 integration 的 **full** 或夜间任务。
+
+## 13) 发布后回填 manifest（维护者，手工）
+
+若未走 `scripts/release.ps1`，可在发布 zip 后用手工命令更新 `mcp/version_manifest.json`（`-Version` 须与根目录 `VERSION` 一致）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
@@ -198,7 +230,7 @@ powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
   -SizeBytes 123456
 ```
 
-## 13) 更新链路冒烟（维护者）
+## 14) 更新链路冒烟（维护者）
 
 建议每次改动 `install/update-mcp.ps1` 后执行：
 

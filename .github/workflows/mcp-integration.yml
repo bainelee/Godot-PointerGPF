@@ -2,6 +2,14 @@ name: mcp-integration
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "Validation scope (quick = minimal sample; full = repo-scale + Figma pipeline + trend report)"
+        type: choice
+        options:
+          - quick
+          - full
+        default: quick
   schedule:
     - cron: "0 3 * * *"
 
@@ -22,7 +30,23 @@ jobs:
         run: |
           python "mcp/server.py" --tool get_mcp_runtime_info --args "{}"
 
+      - name: Context init (quick sample)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.scope != 'full'
+        shell: pwsh
+        run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $project = "examples/godot_minimal"
+          python "mcp/server.py" --tool init_project_context --project-root $project --max-files 120
+          $sw.Stop()
+          $metric = @{
+            stage = "init_project_context"
+            status = "ok"
+            elapsed_sec = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath "mcp_integration_init_metrics.json" -Value $metric -Encoding UTF8
+
       - name: Context init (repo scale)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.scope == 'full')
         shell: pwsh
         run: |
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -35,7 +59,23 @@ jobs:
           } | ConvertTo-Json -Compress
           Set-Content -LiteralPath "mcp_integration_init_metrics.json" -Value $metric -Encoding UTF8
 
+      - name: Flow seed (quick sample)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.scope != 'full'
+        shell: pwsh
+        run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $project = "examples/godot_minimal"
+          python "mcp/server.py" --tool generate_flow_seed --project-root $project --flow-id "ci_integration_quick_seed" --strategy "generic"
+          $sw.Stop()
+          $metric = @{
+            stage = "generate_flow_seed"
+            status = "ok"
+            elapsed_sec = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath "mcp_integration_seed_metrics.json" -Value $metric -Encoding UTF8
+
       - name: Flow seed (repo scale)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.scope == 'full')
         shell: pwsh
         run: |
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -48,12 +88,20 @@ jobs:
           } | ConvertTo-Json -Compress
           Set-Content -LiteralPath "mcp_integration_seed_metrics.json" -Value $metric -Encoding UTF8
 
-      - name: Artifact contract assertions
+      - name: Artifact contract assertions (quick sample)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.scope != 'full'
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "examples/godot_minimal" -FlowId "ci_integration_quick_seed"
+
+      - name: Artifact contract assertions (repo scale)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.scope == 'full')
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "." -FlowId "ci_integration_seed"
 
       - name: Figma collaboration pipeline (repo scale sample)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.scope == 'full')
         shell: pwsh
         run: |
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -117,6 +165,7 @@ jobs:
           Set-Content -LiteralPath "mcp_integration_figma_metrics.json" -Value $metric -Encoding UTF8
 
       - name: Build trend metrics report
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.scope == 'full')
         shell: pwsh
         run: |
           $init = Get-Content -LiteralPath "mcp_integration_init_metrics.json" -Raw | ConvertFrom-Json
@@ -130,6 +179,7 @@ jobs:
           Set-Content -LiteralPath "mcp_integration_trend_report.json" -Value $report -Encoding UTF8
 
       - name: Upload integration trend report
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.scope == 'full')
         uses: actions/upload-artifact@v4
         with:
           name: mcp-integration-trend

@@ -3,8 +3,16 @@ name: mcp-smoke
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
   pull_request:
     branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+
+concurrency:
+  group: mcp-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke:

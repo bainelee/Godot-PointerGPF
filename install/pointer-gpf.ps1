@@ -1,9 +1,11 @@
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("update", "check", "start", "help")]
+    [ValidateSet("update", "check", "start", "release", "help")]
     [string]$Command = "help",
     [string]$PackageDir = "",
-    [string]$ConfigFile = ""
+    [string]$ConfigFile = "",
+    [switch]$DryRun,
+    [switch]$PrepareOnly
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +14,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $updateScript = Join-Path $repoRoot "install/update-mcp.ps1"
 $startScript = Join-Path $repoRoot "install/start-mcp.ps1"
+$releaseScript = Join-Path $repoRoot "scripts/release.ps1"
 
 switch ($Command) {
     "update" {
@@ -36,6 +39,13 @@ switch ($Command) {
         & powershell @args
         exit $LASTEXITCODE
     }
+    "release" {
+        $rArgs = @("-ExecutionPolicy", "Bypass", "-File", $releaseScript)
+        if ($DryRun) { $rArgs += "-DryRun" }
+        if ($PrepareOnly) { $rArgs += "-PrepareOnly" }
+        & powershell @rArgs
+        exit $LASTEXITCODE
+    }
     default {
         Write-Output "PointerGPF command helper"
         Write-Output ""
@@ -43,6 +53,7 @@ switch ($Command) {
         Write-Output "  powershell -ExecutionPolicy Bypass -File `"install/pointer-gpf.ps1`" update"
         Write-Output "  powershell -ExecutionPolicy Bypass -File `"install/pointer-gpf.ps1`" check"
         Write-Output "  powershell -ExecutionPolicy Bypass -File `"install/pointer-gpf.ps1`" start"
+        Write-Output "  powershell -ExecutionPolicy Bypass -File `"install/pointer-gpf.ps1`" release [-DryRun] [-PrepareOnly]"
         Write-Output ""
         Write-Output "Options:"
         Write-Output "  update -PackageDir `"D:/path/to/package`"   # local package update"
