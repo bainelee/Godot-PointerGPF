@@ -82,6 +82,7 @@ flowchart TD
 - `generated_flows/<flow_id>.json` 存在并符合 chat contract 最小契约
 - `gpf-exp/runtime/` 目录存在且包含运行时产物
 - 若启用 Figma 协同链路：`compare/annotate/approval/suggestion` 报告存在且 `run_id` 一致
+- **执行层验证（非仅 seed/smoke）**：在具备文件桥与运行中游戏的前提下，应对 `run_game_basic_test_flow` 的落地结果做校验；推荐在 CI 或本地通过 `scripts/assert-mcp-artifacts.ps1` 的 **`-ValidateExecutionPipeline`** 断言执行报告、事件流与三阶段（`started` / `result` / `verify`）覆盖，而不是只确认 `generate_flow_seed` 或“命令曾成功退出”。
 
 ### L3 Capacity And Trend (Nightly/Manual)
 

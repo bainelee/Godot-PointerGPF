@@ -28,6 +28,7 @@ The result is a repeatable agent workflow that stays grounded in project files a
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
 - Figma validation loop: `figma_design_to_baseline`, `compare_figma_game_ui`, `annotate_ui_mismatch`, `approve_ui_fix_plan`, `suggest_ui_fix_patch`
 - Contract + runtime diagnostics: `get_adapter_contract`, `get_mcp_runtime_info`
+- Executable basic flow: `generate_flow_seed` → `run_game_basic_test_flow` (file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
 - Runtime outputs under `pointer_gpf/gpf-exp/runtime/` for traceability
 
 ## Supported MCP Clients
@@ -155,6 +156,20 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 - Decide whether to approve UI fix plan (human approval gate).
 - Verify screenshot/baseline inputs are the correct design version before approval.
+
+### 4) Executable basic test flow (file bridge)
+
+**Give this to your coding agent:**
+
+```powershell
+python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --strategy "auto"
+python "mcp/server.py" --tool run_game_basic_test_flow --args "{""project_root"":""D:/path/to/your/godot/project"",""flow_id"":""basic_exec"",""step_timeout_ms"":30000}"
+powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "D:/path/to/your/godot/project" -FlowId "basic_exec" -ValidateExecutionPipeline
+```
+
+**You must do this manually (human-only):**
+
+- Run the game in Godot with the PointerGPF plugin enabled so `runtime_bridge` can service `command.json` / `response.json` (see [`docs/godot-adapter-contract-v1.md`](./docs/godot-adapter-contract-v1.md)).
 
 ## Documentation
 

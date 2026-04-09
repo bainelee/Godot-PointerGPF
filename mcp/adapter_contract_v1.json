@@ -68,6 +68,13 @@
     "RUNTIME_EXCEPTION",
     "IO_ERROR"
   ],
+  "runtime_bridge": {
+    "transport_mode": "file_bridge",
+    "command_file_rel": "pointer_gpf/tmp/command.json",
+    "response_file_rel": "pointer_gpf/tmp/response.json",
+    "required_response_fields": ["ok", "seq", "run_id"],
+    "timeout_error_code": "TIMEOUT"
+  },
   "chat_protocol": {
     "mode": "three_phase",
     "required_phases": ["started", "result", "verify"]

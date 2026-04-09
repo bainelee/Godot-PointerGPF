@@ -28,6 +28,7 @@
 - 项目上下文流水线：`init_project_context`、`refresh_project_context`、`generate_flow_seed`
 - Figma 验证闭环：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`
 - 契约与运行时诊断：`get_adapter_contract`、`get_mcp_runtime_info`
+- 可执行基础流程：`generate_flow_seed` → `run_game_basic_test_flow`（文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
 - 运行产物统一落盘到 `pointer_gpf/gpf-exp/runtime/`
 
 ## 支持的 MCP 客户端
@@ -155,6 +156,20 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 - 决定是否批准 UI 修复计划（这是人工授权门禁）。
 - 在批准前，确认截图与基线确实对应同一版设计。
+
+### 4）可执行基础测试流（文件桥）
+
+**交给你的 Agent 执行：**
+
+```powershell
+python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --strategy "auto"
+python "mcp/server.py" --tool run_game_basic_test_flow --args "{""project_root"":""D:/path/to/your/godot/project"",""flow_id"":""basic_exec"",""step_timeout_ms"":30000}"
+powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "D:/path/to/your/godot/project" -FlowId "basic_exec" -ValidateExecutionPipeline
+```
+
+**你需要亲自动手（不可替代的人类操作）：**
+
+- 在 Godot 中**运行游戏**并启用 PointerGPF 插件，使 `runtime_bridge` 能处理 `command.json` / `response.json`（见 [`docs/godot-adapter-contract-v1.md`](./docs/godot-adapter-contract-v1.md)）。
 
 ## 文档导航
 

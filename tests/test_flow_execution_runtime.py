@@ -490,5 +490,17 @@ class PluginBridgePackagingTests(unittest.TestCase):
         self.assertIn("get_tree().root.add_child(_runtime_bridge)", src)
 
 
+class DocumentContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[1]
+
+    def test_quickstart_runtime_command_exists(self) -> None:
+        quickstart = self.repo_root / "docs" / "quickstart.md"
+        self.assertTrue(quickstart.is_file(), msg=f"missing {quickstart}")
+        text = quickstart.read_text(encoding="utf-8")
+        self.assertIn("run_game_basic_test_flow", text)
+        self.assertIn("ValidateExecutionPipeline", text)
+
+
 if __name__ == "__main__":
     unittest.main()
