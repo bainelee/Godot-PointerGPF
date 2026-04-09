@@ -34,7 +34,7 @@ func _poll_bridge() -> void:
     f.close()
     var data: Variant = JSON.parse_string(text)
     if typeof(data) != TYPE_DICTIONARY:
-        _write_error_response("INVALID_COMMAND_FORMAT", "command must be a JSON object", -1, "")
+        _write_error_response("INVALID_ARGUMENT", "command must be a JSON object", -1, "")
         _delete_command_file()
         return
     var d: Dictionary = data
@@ -42,7 +42,7 @@ func _poll_bridge() -> void:
     var seq_raw: Variant = d.get("seq", null)
     var seq: int = _coerce_int(seq_raw)
     if seq < 0:
-        _write_error_response("INVALID_SEQUENCE", "seq is required and must be int/float", -1, run_id)
+        _write_error_response("INVALID_ARGUMENT", "seq is required and must be int/float", -1, run_id)
         _delete_command_file()
         return
     if seq == _last_seq:
@@ -50,14 +50,14 @@ func _poll_bridge() -> void:
     var step: Variant = d.get("step", {})
     if typeof(step) != TYPE_DICTIONARY:
         step = {}
-    var action := str((step as Dictionary).get("action", ""))
+    var action := _resolve_action(d, step as Dictionary)
     if action.strip_edges() == "":
-        _write_error_response("MISSING_ACTION", "step.action is required", seq, run_id)
+        _write_error_response("INVALID_ARGUMENT", "action is required (supports top-level action or step.action)", seq, run_id)
         _delete_command_file()
         _last_seq = seq
         return
     _last_seq = seq
-    var rsp := _dispatch_action(action, seq, run_id, step as Dictionary)
+    var rsp := _dispatch_action(action, seq, run_id, d, step as Dictionary)
     _write_response(rsp)
     _delete_command_file()
 
@@ -72,27 +72,59 @@ func _coerce_int(v: Variant) -> int:
             return -1
 
 
-func _dispatch_action(action: String, seq: int, run_id: String, _step: Dictionary) -> Dictionary:
+func _resolve_action(command: Dictionary, step: Dictionary) -> String:
+    var top_level_action := str(command.get("action", "")).strip_edges()
+    if top_level_action != "":
+        return top_level_action
+    return str(step.get("action", "")).strip_edges()
+
+
+func _extract_target(command: Dictionary, step: Dictionary) -> Variant:
+    if step.has("target"):
+        return step.get("target")
+    return command.get("target", "")
+
+
+func _dispatch_action(action: String, seq: int, run_id: String, command: Dictionary, step: Dictionary) -> Dictionary:
     var key := action.to_lower()
     match key:
         "launchgame":
             return {"ok": true, "seq": seq, "run_id": run_id, "message": "launchGame acknowledged"}
         "click":
-            return {"ok": true, "seq": seq, "run_id": run_id, "message": "click acknowledged"}
-        "wait":
-            return {"ok": true, "seq": seq, "run_id": run_id, "message": "wait acknowledged"}
-        "check":
-            return {"ok": true, "seq": seq, "run_id": run_id, "message": "check acknowledged"}
-        "snapshot":
-            return {"ok": true, "seq": seq, "run_id": run_id, "message": "snapshot acknowledged"}
-        _:
             return {
-                "ok": false,
+                "ok": true,
                 "seq": seq,
                 "run_id": run_id,
-                "code": "ACTION_NOT_SUPPORTED",
-                "message": "unsupported action: %s" % action,
+                "message": "click acknowledged",
+                "target": _extract_target(command, step),
             }
+        "wait":
+            return {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "message": "wait acknowledged",
+                "elapsedMs": max(0, _coerce_int(step.get("timeoutMs", command.get("timeoutMs", 0)))),
+                "conditionMet": true,
+            }
+        "check":
+            return {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "message": "check acknowledged",
+                "details": {"status": "ok", "kind": str(step.get("kind", command.get("kind", "")))},
+            }
+        "snapshot":
+            return {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "message": "snapshot acknowledged",
+                "artifactPath": str(step.get("artifactPath", command.get("artifactPath", "user://pointer_gpf_snapshot.png"))),
+            }
+        _:
+            return _error_payload("ACTION_NOT_SUPPORTED", "unsupported action: %s" % action, seq, run_id)
 
 
 func _write_response(rsp: Dictionary) -> void:
@@ -105,15 +137,11 @@ func _write_response(rsp: Dictionary) -> void:
 
 
 func _write_error_response(code: String, message: String, seq: int, run_id: String) -> void:
-    _write_response(
-        {
-            "ok": false,
-            "code": code,
-            "message": message,
-            "seq": seq,
-            "run_id": run_id,
-        }
-    )
+    _write_response(_error_payload(code, message, seq, run_id))
+
+
+func _error_payload(code: String, message: String, seq: int, run_id: String) -> Dictionary:
+    return {"ok": false, "seq": seq, "run_id": run_id, "error": {"code": code, "message": message}}
 
 
 func _delete_command_file() -> void:

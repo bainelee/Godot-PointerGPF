@@ -445,7 +445,7 @@ class PluginBridgePackagingTests(unittest.TestCase):
         bridge_gd = self.project_root / "addons" / "pointer_gpf" / "runtime_bridge.gd"
         self.assertTrue(bridge_gd.is_file(), msg=f"missing packaged bridge script: {bridge_gd}")
 
-    def test_packaged_runtime_bridge_contains_error_response_and_command_cleanup_semantics(self) -> None:
+    def test_packaged_runtime_bridge_contains_contract_compatible_semantics(self) -> None:
         code, payload = _run_tool_cli_raw(
             self.repo_root,
             "install_godot_plugin",
@@ -456,10 +456,21 @@ class PluginBridgePackagingTests(unittest.TestCase):
         bridge_gd = self.project_root / "addons" / "pointer_gpf" / "runtime_bridge.gd"
         self.assertTrue(bridge_gd.is_file(), msg=f"missing packaged bridge script: {bridge_gd}")
         src = bridge_gd.read_text(encoding="utf-8")
-        # Ensure invalid command branches produce structured error responses.
-        self.assertIn("_write_error_response(\"INVALID_COMMAND_FORMAT\"", src)
-        self.assertIn("_write_error_response(\"INVALID_SEQUENCE\"", src)
-        self.assertIn("_write_error_response(\"MISSING_ACTION\"", src)
+        # Command shape compatibility: supports top-level action and step.action.
+        self.assertIn("func _resolve_action(command: Dictionary, step: Dictionary) -> String:", src)
+        self.assertIn("var top_level_action := str(command.get(\"action\", \"\")).strip_edges()", src)
+        self.assertIn("return str(step.get(\"action\", \"\")).strip_edges()", src)
+        # Error compatibility: nested error object and planned codes.
+        self.assertIn("\"error\": {\"code\": code, \"message\": message}", src)
+        self.assertIn("_write_error_response(\"INVALID_ARGUMENT\", \"command must be a JSON object\", -1, \"\")", src)
+        self.assertIn("_write_error_response(\"INVALID_ARGUMENT\", \"seq is required and must be int/float\", -1, run_id)", src)
+        self.assertIn("return _error_payload(\"ACTION_NOT_SUPPORTED\", \"unsupported action: %s\" % action, seq, run_id)", src)
+        # Action-specific response fields expected by plan examples.
+        self.assertIn("\"target\": _extract_target(command, step)", src)
+        self.assertIn("\"elapsedMs\": max(0, _coerce_int(step.get(\"timeoutMs\", command.get(\"timeoutMs\", 0))))", src)
+        self.assertIn("\"conditionMet\": true", src)
+        self.assertIn("\"details\": {\"status\": \"ok\", \"kind\": str(step.get(\"kind\", command.get(\"kind\", \"\")))}", src)
+        self.assertIn("\"artifactPath\": str(step.get(\"artifactPath\", command.get(\"artifactPath\", \"user://pointer_gpf_snapshot.png\")))", src)
         # Ensure command file cleanup is implemented and called after handling.
         self.assertIn("func _delete_command_file() -> void:", src)
         self.assertIn("_write_response(rsp)", src)
