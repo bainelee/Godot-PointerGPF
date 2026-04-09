@@ -105,7 +105,12 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         code, payload = _run_tool_cli_raw(
             self.repo_root,
             "run_game_basic_test_flow",
-            {"project_root": str(self.project_root), "flow_id": "smoke_flow", "step_timeout_ms": 8000},
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "smoke_flow",
+                "step_timeout_ms": 8000,
+                "shell_report": True,
+            },
         )
         self.assertEqual(code, 0, msg=f"expected success, got: {payload}")
         self.assertTrue(payload.get("ok"), msg=payload)
@@ -113,6 +118,7 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(result.get("status"), "passed")
         self.assertIn("execution_report", result)
         self.assertIn("exp_runtime", result)
+        self.assertTrue((result.get("execution_report") or {}).get("shell_report"))
 
     def test_cli_run_game_basic_test_flow_with_flow_file_succeeds(self) -> None:
         flow_file = self.work / "seed_flow.json"
@@ -244,12 +250,15 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         report = (payload.get("result") or {}).get("execution_report") or {}
         self.assertEqual(report.get("status"), "passed")
         self.assertEqual(report.get("step_count"), 2)
+        self.assertFalse(report.get("shell_report"))
         cov = report.get("phase_coverage") or {}
         self.assertEqual(cov.get("started"), 2)
         self.assertEqual(cov.get("result"), 2)
         self.assertEqual(cov.get("verify"), 2)
         events_path = Path(str(report.get("events_file", "")))
         self.assertTrue(events_path.is_file(), msg=f"missing {events_path}")
+        runtime_dir = (self.project_root / "pointer_gpf" / "gpf-exp" / "runtime").resolve()
+        self.assertEqual(events_path.parent.resolve(), runtime_dir)
         lines = [ln for ln in events_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
         self.assertEqual(len(lines), 6)
         phases = [json.loads(ln).get("phase") for ln in lines]
@@ -258,6 +267,7 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(phases.count("verify"), 2)
         report_path = Path(str(report.get("report_file", "")))
         self.assertTrue(report_path.is_file())
+        self.assertEqual(report_path.parent.resolve(), runtime_dir)
 
     def test_run_flow_times_out_when_bridge_no_response(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"

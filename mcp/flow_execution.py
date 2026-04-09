@@ -48,6 +48,7 @@ class FlowRunOptions:
     step_timeout_ms: int = 30_000
     run_id: str | None = None
     fail_fast: bool = True
+    shell_report: bool = False
 
 
 class FlowRunner:
@@ -79,6 +80,7 @@ class FlowRunner:
             "step_index": step_index,
             "step_id": step_id,
             "ts": _utc_iso(),
+            "shell_report": bool(self.options.shell_report),
         }
         if extra:
             row.update(extra)
@@ -237,6 +239,7 @@ class FlowRunner:
             "report_file": str(report_path),
             "flow_file": str(self.options.flow_file.resolve()),
             "flow_id": flow_id,
+            "shell_report": bool(self.options.shell_report),
         }
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if reraise is not None:

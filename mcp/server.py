@@ -1529,14 +1529,15 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
     if step_timeout_ms <= 0:
         step_timeout_ms = 30_000
     run_id_opt = str(arguments.get("run_id", "")).strip() or None
-    report_dir = (project_root / cfg.report_dir_rel).resolve()
+    runtime_dir = _exp_runtime_dir(project_root, cfg)
     opts = FlowRunOptions(
         project_root=project_root,
         flow_file=flow_file,
-        report_dir=report_dir,
+        report_dir=runtime_dir,
         step_timeout_ms=step_timeout_ms,
         run_id=run_id_opt,
         fail_fast=bool(arguments.get("fail_fast", True)),
+        shell_report=bool(arguments.get("shell_report", False)),
     )
     runner = FlowRunner(opts)
     try:
