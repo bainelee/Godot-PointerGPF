@@ -113,16 +113,16 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 与仅生成 seed 或跑通 `generate_flow_seed` 不同，下面链路会在 **Godot 运行时** 通过文件桥执行 flow，并用 `-ValidateExecutionPipeline` 校验 **执行层** 产物（执行报告、事件 NDJSON、三阶段覆盖等）。前提：已 `install_godot_plugin` 并启用插件，且**运行游戏**时 `runtime_bridge` 会处理 `pointer_gpf/tmp/command.json` → `response.json`（契约见 `docs/godot-adapter-contract-v1.md` 与 `mcp/adapter_contract_v1.json` 的 `runtime_bridge`）。
 
-**1) 设计（生成 flow）**
+**1) 设计（生成基础测试 flow）**
 
 ```powershell
-python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --strategy "auto"
+python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""strategy"":""auto""}"
 ```
 
 **2) 运行（MCP 执行；需游戏进程已启动）**
 
 ```powershell
-python "mcp/server.py" --tool run_game_basic_test_flow --args "{""project_root"":""D:/path/to/your/godot/project"",""flow_id"":""basic_exec"",""step_timeout_ms"":30000}"
+python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true}"
 ```
 
 **3) 断言（产物契约 + 执行层）**
