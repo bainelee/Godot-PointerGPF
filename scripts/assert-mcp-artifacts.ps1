@@ -141,9 +141,32 @@ if ($ValidateExecutionPipeline) {
         throw "Missing basic_game_test_execution_last.json under runtime dir"
     }
     $execLastJson = Get-Content -LiteralPath $execLastPath -Raw | ConvertFrom-Json
+    if ($execLastJson.flow_id -ne $FlowId) {
+        throw "execution artifact flow_id mismatch. expected=$FlowId, actual=$($execLastJson.flow_id)"
+    }
+    if ($execLastJson.status -ne "passed") {
+        throw "execution artifact status must be passed. actual=$($execLastJson.status)"
+    }
     $executionReport = $execLastJson.execution_report
     if (-not $executionReport) {
         throw "basic_game_test_execution_last.json missing execution_report"
+    }
+    $reportFile = [string]$executionReport.report_file
+    $eventsFile = [string]$executionReport.events_file
+    if ([string]::IsNullOrWhiteSpace($reportFile)) {
+        throw "execution_report missing report_file"
+    }
+    if ([string]::IsNullOrWhiteSpace($eventsFile)) {
+        throw "execution_report missing events_file"
+    }
+    if (-not (Test-Path -LiteralPath $reportFile)) {
+        throw "execution_report.report_file not found: $reportFile"
+    }
+    if (-not (Test-Path -LiteralPath $eventsFile)) {
+        throw "execution_report.events_file not found: $eventsFile"
+    }
+    if (($executionReport.PSObject.Properties.Name -contains "status") -and ($executionReport.status -ne "passed")) {
+        throw "execution_report.status must be passed when present. actual=$($executionReport.status)"
     }
     $phaseCoverage = $executionReport.phase_coverage
     if (-not $phaseCoverage) {
