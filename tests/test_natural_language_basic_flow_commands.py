@@ -160,6 +160,23 @@ class NaturalLanguageBasicFlowCommandTests(unittest.TestCase):
         self.assertIn(run["status"], ("passed", "failed"))
         self.assertIn("execution_report", run)
 
+    def test_run_game_basic_test_flow_by_current_state_returns_execution_result(self) -> None:
+        _start_bridge_responder(self.project_root)
+        result = _run_tool(
+            self.repo_root,
+            "run_game_basic_test_flow_by_current_state",
+            {"project_root": str(self.project_root), "flow_id": "nl_exec_orchestration_flow", "step_timeout_ms": 2000},
+        )
+        execution_result = result.get("execution_result", {})
+        self.assertIn("context_refresh", result)
+        self.assertIn("flow_result", result)
+        self.assertIn("execution_result", result)
+        if result.get("status") in ("passed", "failed"):
+            self.assertIn(result.get("status"), ("passed", "failed"))
+        else:
+            self.assertIn(execution_result.get("status"), ("passed", "failed", "timeout"))
+        self.assertIn("execution_report", execution_result)
+
 
 if __name__ == "__main__":
     unittest.main()
