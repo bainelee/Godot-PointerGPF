@@ -5,6 +5,7 @@ const _CMD_REL := "res://pointer_gpf/tmp/command.json"
 const _RSP_REL := "res://pointer_gpf/tmp/response.json"
 const _TMP_DIR_REL := "res://pointer_gpf/tmp"
 
+var _last_run_id: String = ""
 var _last_seq: int = -1
 var _poll_accum: float = 0.0
 
@@ -45,7 +46,17 @@ func _poll_bridge() -> void:
         _write_error_response("INVALID_ARGUMENT", "seq is required and must be int/float", -1, run_id)
         _delete_command_file()
         return
-    if seq == _last_seq:
+    if run_id == _last_run_id and seq == _last_seq:
+        _write_response(
+            {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "duplicate": true,
+                "message": "duplicate command (same run_id+seq already processed)",
+            }
+        )
+        _delete_command_file()
         return
     var step: Variant = d.get("step", {})
     if typeof(step) != TYPE_DICTIONARY:
@@ -54,8 +65,10 @@ func _poll_bridge() -> void:
     if action.strip_edges() == "":
         _write_error_response("INVALID_ARGUMENT", "action is required (supports top-level action or step.action)", seq, run_id)
         _delete_command_file()
+        _last_run_id = run_id
         _last_seq = seq
         return
+    _last_run_id = run_id
     _last_seq = seq
     var rsp := _dispatch_action(action, seq, run_id, d, step as Dictionary)
     _write_response(rsp)

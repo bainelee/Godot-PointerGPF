@@ -1,5 +1,7 @@
+import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -471,6 +473,15 @@ class PluginBridgePackagingTests(unittest.TestCase):
         self.assertIn("\"conditionMet\": true", src)
         self.assertIn("\"details\": {\"status\": \"ok\", \"kind\": str(step.get(\"kind\", command.get(\"kind\", \"\")))}", src)
         self.assertIn("\"artifactPath\": str(step.get(\"artifactPath\", command.get(\"artifactPath\", \"user://pointer_gpf_snapshot.png\")))", src)
+        # Dedup uses (run_id, seq) so a new run can reuse seq without being skipped.
+        self.assertIn("var _last_run_id: String = \"\"", src)
+        self.assertIn("run_id == _last_run_id and seq == _last_seq", src)
+        # Duplicate delivery: respond then remove command.json to avoid a stuck poll loop.
+        self.assertIn("\"duplicate\": true", src)
+        self.assertRegex(
+            src,
+            r"_write_response\([\s\S]*?\"duplicate\":\s*true[\s\S]*?\)[\s\S]*?_delete_command_file\(\)",
+        )
         # Ensure command file cleanup is implemented and called after handling.
         self.assertIn("func _delete_command_file() -> void:", src)
         self.assertIn("_write_response(rsp)", src)
@@ -488,6 +499,48 @@ class PluginBridgePackagingTests(unittest.TestCase):
         self.assertTrue(plugin_gd.is_file(), msg=f"missing plugin script: {plugin_gd}")
         src = plugin_gd.read_text(encoding="utf-8")
         self.assertIn("get_tree().root.add_child(_runtime_bridge)", src)
+
+
+def _load_mcp_server_module(repo_root: Path):
+    mcp_dir = repo_root / "mcp"
+    mcp_str = str(mcp_dir)
+    inserted = False
+    if mcp_str not in sys.path:
+        sys.path.insert(0, mcp_str)
+        inserted = True
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "gpf_mcp_server",
+            mcp_dir / "server.py",
+            submodule_search_locations=[mcp_str],
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("failed to load mcp/server.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(mcp_str)
+            except ValueError:
+                pass
+
+
+class McpToolSchemaTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[1]
+
+    def test_design_and_update_basic_flow_schemas_include_strategy_like_generate_flow_seed(self) -> None:
+        mod = _load_mcp_server_module(self.repo_root)
+        specs = mod._build_tool_specs()
+        seed_enum = specs["generate_flow_seed"]["inputSchema"]["properties"]["strategy"]["enum"]
+        for name in ("design_game_basic_test_flow", "update_game_basic_design_flow_by_current_state"):
+            strat = specs[name]["inputSchema"]["properties"].get("strategy")
+            self.assertIsNotNone(strat, msg=f"missing strategy on {name}")
+            self.assertEqual(strat.get("type"), "string")
+            self.assertEqual(strat.get("enum"), seed_enum)
 
 
 class DocumentContractTests(unittest.TestCase):
