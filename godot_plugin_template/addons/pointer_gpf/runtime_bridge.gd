@@ -34,22 +34,32 @@ func _poll_bridge() -> void:
     f.close()
     var data: Variant = JSON.parse_string(text)
     if typeof(data) != TYPE_DICTIONARY:
+        _write_error_response("INVALID_COMMAND_FORMAT", "command must be a JSON object", -1, "")
+        _delete_command_file()
         return
     var d: Dictionary = data
+    var run_id := str(d.get("run_id", ""))
     var seq_raw: Variant = d.get("seq", null)
     var seq: int = _coerce_int(seq_raw)
     if seq < 0:
+        _write_error_response("INVALID_SEQUENCE", "seq is required and must be int/float", -1, run_id)
+        _delete_command_file()
         return
     if seq == _last_seq:
         return
-    var run_id := str(d.get("run_id", ""))
     var step: Variant = d.get("step", {})
     if typeof(step) != TYPE_DICTIONARY:
         step = {}
     var action := str((step as Dictionary).get("action", ""))
+    if action.strip_edges() == "":
+        _write_error_response("MISSING_ACTION", "step.action is required", seq, run_id)
+        _delete_command_file()
+        _last_seq = seq
+        return
     _last_seq = seq
     var rsp := _dispatch_action(action, seq, run_id, step as Dictionary)
     _write_response(rsp)
+    _delete_command_file()
 
 
 func _coerce_int(v: Variant) -> int:
@@ -92,3 +102,25 @@ func _write_response(rsp: Dictionary) -> void:
         return
     out.store_string(JSON.stringify(rsp))
     out.close()
+
+
+func _write_error_response(code: String, message: String, seq: int, run_id: String) -> void:
+    _write_response(
+        {
+            "ok": false,
+            "code": code,
+            "message": message,
+            "seq": seq,
+            "run_id": run_id,
+        }
+    )
+
+
+func _delete_command_file() -> void:
+    var cmd_path := ProjectSettings.globalize_path(_CMD_REL)
+    if not FileAccess.file_exists(cmd_path):
+        return
+    var err := DirAccess.remove_absolute(cmd_path)
+    if err != OK:
+        # Ignore cleanup failure; next poll will retry.
+        pass

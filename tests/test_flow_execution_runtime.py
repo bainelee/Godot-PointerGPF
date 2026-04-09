@@ -445,6 +445,39 @@ class PluginBridgePackagingTests(unittest.TestCase):
         bridge_gd = self.project_root / "addons" / "pointer_gpf" / "runtime_bridge.gd"
         self.assertTrue(bridge_gd.is_file(), msg=f"missing packaged bridge script: {bridge_gd}")
 
+    def test_packaged_runtime_bridge_contains_error_response_and_command_cleanup_semantics(self) -> None:
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "install_godot_plugin",
+            {"project_root": str(self.project_root)},
+        )
+        self.assertEqual(code, 0, msg=f"{payload}")
+        self.assertTrue(payload.get("ok"), msg=payload)
+        bridge_gd = self.project_root / "addons" / "pointer_gpf" / "runtime_bridge.gd"
+        self.assertTrue(bridge_gd.is_file(), msg=f"missing packaged bridge script: {bridge_gd}")
+        src = bridge_gd.read_text(encoding="utf-8")
+        # Ensure invalid command branches produce structured error responses.
+        self.assertIn("_write_error_response(\"INVALID_COMMAND_FORMAT\"", src)
+        self.assertIn("_write_error_response(\"INVALID_SEQUENCE\"", src)
+        self.assertIn("_write_error_response(\"MISSING_ACTION\"", src)
+        # Ensure command file cleanup is implemented and called after handling.
+        self.assertIn("func _delete_command_file() -> void:", src)
+        self.assertIn("_write_response(rsp)", src)
+        self.assertIn("_delete_command_file()", src)
+
+    def test_packaged_plugin_mounts_bridge_on_scene_tree_root(self) -> None:
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "install_godot_plugin",
+            {"project_root": str(self.project_root)},
+        )
+        self.assertEqual(code, 0, msg=f"{payload}")
+        self.assertTrue(payload.get("ok"), msg=payload)
+        plugin_gd = self.project_root / "addons" / "pointer_gpf" / "plugin.gd"
+        self.assertTrue(plugin_gd.is_file(), msg=f"missing plugin script: {plugin_gd}")
+        src = plugin_gd.read_text(encoding="utf-8")
+        self.assertIn("get_tree().root.add_child(_runtime_bridge)", src)
+
 
 if __name__ == "__main__":
     unittest.main()
