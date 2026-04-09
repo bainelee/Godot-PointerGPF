@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from flow_execution import FlowExecutionStepFailed, FlowExecutionTimeout, FlowRunOptions, FlowRunner
+
 
 DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
 DEFAULT_SERVER_VERSION = "0.2.4.3"
@@ -1518,7 +1520,75 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         flow_file = (project_root / cfg.seed_flow_dir_rel / f"{flow_slug}.json").resolve()
     if not flow_file.exists() or not flow_file.is_file():
         raise AppError("INVALID_ARGUMENT", f"flow file not found: {flow_file}")
-    raise AppError("NOT_IMPLEMENTED", "run_game_basic_test_flow execution is not implemented yet")
+    flow_data = _read_json_file(flow_file)
+    raw_timeout = arguments.get("step_timeout_ms", 30_000)
+    try:
+        step_timeout_ms = int(raw_timeout) if raw_timeout is not None else 30_000
+    except (TypeError, ValueError):
+        step_timeout_ms = 30_000
+    if step_timeout_ms <= 0:
+        step_timeout_ms = 30_000
+    run_id_opt = str(arguments.get("run_id", "")).strip() or None
+    report_dir = (project_root / cfg.report_dir_rel).resolve()
+    opts = FlowRunOptions(
+        project_root=project_root,
+        flow_file=flow_file,
+        report_dir=report_dir,
+        step_timeout_ms=step_timeout_ms,
+        run_id=run_id_opt,
+        fail_fast=bool(arguments.get("fail_fast", True)),
+    )
+    runner = FlowRunner(opts)
+    try:
+        report = runner.run(flow_data)
+    except FlowExecutionTimeout as exc:
+        rep = exc.report or {}
+        raise AppError(
+            "TIMEOUT",
+            str(exc),
+            {
+                "run_id": exc.run_id,
+                "step_index": exc.step_index,
+                "step_id": exc.step_id,
+                "execution_report": rep,
+            },
+        ) from exc
+    except FlowExecutionStepFailed as exc:
+        rep = exc.report or {}
+        raise AppError(
+            "STEP_FAILED",
+            str(exc),
+            {
+                "run_id": exc.run_id,
+                "step_index": exc.step_index,
+                "step_id": exc.step_id,
+                "execution_report": rep,
+            },
+        ) from exc
+    legacy_hints = _legacy_layout_hints(project_root)
+    exp_artifact = _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name="basic_game_test_execution_last",
+        payload={
+            "tool": "run_game_basic_test_flow",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "flow_file": str(flow_file),
+            "flow_id": str(flow_data.get("flowId", "")),
+            "run_id": report["run_id"],
+            "status": report["status"],
+            "execution_report": report,
+        },
+    )
+    return {
+        "status": report.get("status", "completed"),
+        "project_root": str(project_root),
+        "flow_file": str(flow_file),
+        "execution_report": report,
+        "exp_runtime": exp_artifact,
+        "legacy_layout_hints": legacy_hints,
+    }
 
 
 def _tool_figma_design_to_baseline(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1922,9 +1992,9 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         "legacy_layout_hints": legacy_hints,
         "tool_capabilities": {
             "run_game_basic_test_flow": {
-                "implemented": False,
-                "status": "not_implemented",
-                "phase": "task1_interface_only",
+                "implemented": True,
+                "status": "implemented",
+                "phase": "task2_runtime",
             }
         },
         "tools": [
@@ -2053,7 +2123,7 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
             },
         },
         "run_game_basic_test_flow": {
-            "description": "Run a basic gameplay flow test in the Godot project (execution not yet implemented).",
+            "description": "Run a basic gameplay flow test via file bridge (command.json/response.json) with three-phase event reporting.",
             "inputSchema": {
                 "type": "object",
                 "required": ["project_root"],
