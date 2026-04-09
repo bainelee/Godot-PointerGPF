@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.4.1",
+    "current_version":  "0.2.4.2",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.4.1",
-                                    "min_compatible_version":  "0.2.4.1",
-                                    "release_notes":  "Add Figma-driven UI sync/compare/approve/suggest MCP loop, improve visual diff robustness, and sync godot_minimal example assets/layout.",
-                                    "published_at_utc":  "2026-04-09T06:17:41Z",
+                                    "version":  "0.2.4.2",
+                                    "min_compatible_version":  "0.2.4.2",
+                                   "release_notes":  "Fix Godot plugin template script path in addons/pointer_gpf/plugin.cfg to avoid duplicated res:// path resolution and plugin load failures after MCP install/update.",
+                                    "published_at_utc":  "2026-04-09T07:36:58Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.4.1.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.1/pointer-gpf-mcp-0.2.4.1.zip",
-                                                     "sha256":  "1749b96cb37907955535a8a0311160c2d8b8d26c99058843ef4b73789d4bc7bf",
-                                                     "size_bytes":  4475680,
+                                                     "filename":  "pointer-gpf-mcp-0.2.4.2.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.2/pointer-gpf-mcp-0.2.4.2.zip",
+                                                     "sha256":  "66f511d64afc2ce50e1c145f8d358134fad88144c0b4aa82bae7207afa2108ec",
+                                                     "size_bytes":  5109962,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }

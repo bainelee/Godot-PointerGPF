@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.4.2 - 2026-04-09
+
+- 修复 Godot 插件模板 `addons/pointer_gpf/plugin.cfg` 的 `script` 路径：由绝对路径 `res://addons/pointer_gpf/plugin.gd` 改为相对路径 `plugin.gd`，避免 Godot 在部分加载链路中拼接出错误路径导致插件无法加载。
+- 同步更新版本元数据与文档版本号，发布补丁包供 `update-mcp.ps1` 远端更新通道使用。
+
 ## v0.2.4.1 - 2026-04-09
 
 - 支持四段版本号发布策略（`major.minor.patch.build`），用于小更新快速迭代。
