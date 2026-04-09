@@ -18,7 +18,7 @@ from typing import Any
 
 
 DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
-DEFAULT_SERVER_VERSION = "0.2.4.5"
+DEFAULT_SERVER_VERSION = "0.2.4.6"
 DEFAULT_PLUGIN_ID = "pointer_gpf"
 DEFAULT_PLUGIN_CFG_REL = f"addons/{DEFAULT_PLUGIN_ID}/plugin.cfg"
 DEFAULT_WORKSPACE_DIR_REL = "pointer_gpf"

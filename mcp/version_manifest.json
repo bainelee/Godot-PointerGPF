@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.4.5",
+    "current_version":  "0.2.4.6",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.4.5",
-                                    "min_compatible_version":  "0.2.4.5",
+                                    "version":  "0.2.4.6",
+                                    "min_compatible_version":  "0.2.4.6",
                                     "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
-                                    "published_at_utc":  "2026-04-09T09:46:08Z",
+                                    "published_at_utc":  "2026-04-09T09:48:18Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.4.5.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.5/pointer-gpf-mcp-0.2.4.5.zip",
-                                                     "sha256":  "6cdf7f06994857f04be749d9f6b129a22e9e2b83a592537d3fb0b3b3312f9b65",
-                                                     "size_bytes":  3081758,
+                                                     "filename":  "pointer-gpf-mcp-0.2.4.6.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.6/pointer-gpf-mcp-0.2.4.6.zip",
+                                                     "sha256":  "0e417462645b9bb9672b262b93509b9e831414106fd5a8531f57a62d0f184aa4",
+                                                     "size_bytes":  3081761,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }
