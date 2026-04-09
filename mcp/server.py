@@ -33,6 +33,7 @@ _MCP_IO_MODE = "header"
 
 _LEGACY_GAMEPLAYFLOW_TOOL_NAMES: frozenset[str] = frozenset(
     {
+        "check_test_runner_environment",
         "list_test_scenarios",
         "run_game_test",
         "get_test_artifacts",

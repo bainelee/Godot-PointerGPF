@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Build package zip
         shell: pwsh
         run: |
@@ -28,17 +33,22 @@ jobs:
             Remove-Item -LiteralPath $stageDir -Recurse -Force
           }
           New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+          $payloadDir = Join-Path $stageDir "pointer_gpf"
+          New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
 
-          Copy-Item -LiteralPath "mcp" -Destination (Join-Path $stageDir "mcp") -Recurse -Force
-          Copy-Item -LiteralPath "install" -Destination (Join-Path $stageDir "install") -Recurse -Force
-          Copy-Item -LiteralPath "godot_plugin_template" -Destination (Join-Path $stageDir "godot_plugin_template") -Recurse -Force
-          Copy-Item -LiteralPath "docs" -Destination (Join-Path $stageDir "docs") -Recurse -Force
-          Copy-Item -LiteralPath "examples" -Destination (Join-Path $stageDir "examples") -Recurse -Force
+          Copy-Item -LiteralPath "mcp" -Destination (Join-Path $payloadDir "mcp") -Recurse -Force
+          Copy-Item -LiteralPath "install" -Destination (Join-Path $payloadDir "install") -Recurse -Force
+          Copy-Item -LiteralPath "godot_plugin_template" -Destination (Join-Path $payloadDir "godot_plugin_template") -Recurse -Force
+          Copy-Item -LiteralPath "docs" -Destination (Join-Path $payloadDir "docs") -Recurse -Force
+          Copy-Item -LiteralPath "examples" -Destination (Join-Path $payloadDir "examples") -Recurse -Force
+          Copy-Item -LiteralPath "tools/game-test-runner" -Destination (Join-Path $payloadDir "tools/game-test-runner") -Recurse -Force
+          Copy-Item -LiteralPath "flows" -Destination (Join-Path $payloadDir "flows") -Recurse -Force
           Copy-Item -LiteralPath "README.md" -Destination (Join-Path $stageDir "README.md") -Force
-          Copy-Item -LiteralPath "gtr.config.json" -Destination (Join-Path $stageDir "gtr.config.json") -Force
-          Copy-Item -LiteralPath ".gitignore" -Destination (Join-Path $stageDir ".gitignore") -Force
+          Copy-Item -LiteralPath "gtr.config.json" -Destination (Join-Path $payloadDir "gtr.config.json") -Force
+          Copy-Item -LiteralPath ".gitignore" -Destination (Join-Path $payloadDir ".gitignore") -Force
+          Copy-Item -LiteralPath "pointer-gpf.cmd" -Destination (Join-Path $stageDir "pointer-gpf.cmd") -Force
 
-          $cacheDirs = Get-ChildItem -LiteralPath (Join-Path $stageDir "examples") -Directory -Recurse -Force | Where-Object { $_.Name -eq ".godot" }
+          $cacheDirs = Get-ChildItem -LiteralPath (Join-Path $payloadDir "examples") -Directory -Recurse -Force | Where-Object { $_.Name -eq ".godot" }
           foreach ($dir in $cacheDirs) {
             Remove-Item -LiteralPath $dir.FullName -Recurse -Force
           }
@@ -48,6 +58,11 @@ jobs:
           Set-Content -Path (Join-Path $outDir "sha256.txt") -Value $sha -Encoding utf8
           Write-Output "ZIP_PATH=$zip" >> $env:GITHUB_ENV
           Write-Output "SHA256=$sha" >> $env:GITHUB_ENV
+
+      - name: Verify packaged layout and legacy assets
+        shell: pwsh
+        run: |
+          python "scripts/verify-release-package-layout.py" "$env:ZIP_PATH"
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

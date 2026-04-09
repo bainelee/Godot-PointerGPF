@@ -22,7 +22,9 @@ class LegacyToolSurfaceTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         mod = _load_server(repo)
         tool_map = mod._build_tool_map()
+        self.assertIn("check_test_runner_environment", tool_map)
         expected = {
+            "check_test_runner_environment",
             "list_test_scenarios",
             "run_game_test",
             "get_test_artifacts",
@@ -45,3 +47,14 @@ class LegacyToolSurfaceTests(unittest.TestCase):
             "pull_cursor_chat_plugin",
         }
         self.assertTrue(expected.issubset(set(tool_map.keys())))
+
+    def test_get_mcp_runtime_info_lists_check_test_runner_environment(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        mod = _load_server(repo)
+        ctx = mod.ServerCtx(
+            repo_root=repo,
+            template_plugin_dir=repo / "godot_plugin_template" / "addons" / mod.DEFAULT_PLUGIN_ID,
+        )
+        info = mod._tool_get_mcp_runtime_info(ctx, {})
+        tools = info.get("tools") or []
+        self.assertIn("check_test_runner_environment", tools)

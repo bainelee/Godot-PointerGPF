@@ -31,8 +31,13 @@ $artifact = $manifest.channels.$Channel.artifact
 $artifactUrl = [string]$artifact.url
 $artifactSha = [string]$artifact.sha256
 $artifactFilename = [string]$artifact.filename
+$zipLayout = [string]$artifact.zip_layout
 $gtrConfigPath = Join-Path $repoRoot "gtr.config.json"
 $pluginTemplateDir = Join-Path $repoRoot "godot_plugin_template"
+$installDir = Join-Path $repoRoot "install"
+$gameTestRunnerDir = Join-Path $repoRoot "tools/game-test-runner"
+$flowsDir = Join-Path $repoRoot "flows"
+$docsDir = Join-Path $repoRoot "docs"
 
 function Resolve-ReleaseAssetFromGitHub {
     param(
@@ -85,6 +90,11 @@ function Resolve-PackageRoot {
         [Parameter(Mandatory = $true)][string]$SourceLabel
     )
 
+    $directPayload = Join-Path $BaseDir "pointer_gpf"
+    if (Test-Path -LiteralPath (Join-Path $directPayload "mcp")) {
+        return $directPayload
+    }
+
     $directMcp = Join-Path $BaseDir "mcp"
     if (Test-Path -LiteralPath $directMcp) {
         return $BaseDir
@@ -103,9 +113,9 @@ function Resolve-PackageRoot {
         return [string]$childMatches[0]
     }
 
-    $candidateTips = @($directMcp) + ($childMatches | ForEach-Object { Join-Path $_ "mcp" })
+    $candidateTips = @((Join-Path $directPayload "mcp"), $directMcp) + ($childMatches | ForEach-Object { Join-Path $_ "mcp" })
     $tipText = if ($candidateTips.Count -gt 0) { ($candidateTips -join ", ") } else { "(none)" }
-    throw "$SourceLabel missing mcp/ directory. Checked candidates: $tipText"
+    throw "$SourceLabel missing payload root (pointer_gpf/mcp or mcp). Checked candidates: $tipText"
 }
 
 function Expand-PackageArchive {
@@ -130,7 +140,8 @@ function Expand-PackageArchive {
                         continue
                     }
                     $normalized = $entryPath.Replace("\", "/")
-                    $isWanted = $normalized.StartsWith("mcp/") -or
+                    $isWanted = $normalized.StartsWith("pointer_gpf/") -or
+                        $normalized.StartsWith("mcp/") -or
                         $normalized.StartsWith("godot_plugin_template/") -or
                         ($normalized -eq "gtr.config.json")
                     if (-not $isWanted) {
@@ -370,6 +381,12 @@ $syncSpecs = @(
 if (-not $NoRootSync) {
     $syncSpecs += @(
         @{
+            name = "install"
+            source = Join-Path $sourceRoot "install"
+            destination = $installDir
+            type = "dir"
+        },
+        @{
             name = "gtr.config.json"
             source = Join-Path $sourceRoot "gtr.config.json"
             destination = $gtrConfigPath
@@ -379,6 +396,24 @@ if (-not $NoRootSync) {
             name = "godot_plugin_template"
             source = Join-Path $sourceRoot "godot_plugin_template"
             destination = $pluginTemplateDir
+            type = "dir"
+        },
+        @{
+            name = "tools/game-test-runner"
+            source = Join-Path $sourceRoot "tools/game-test-runner"
+            destination = $gameTestRunnerDir
+            type = "dir"
+        },
+        @{
+            name = "flows"
+            source = Join-Path $sourceRoot "flows"
+            destination = $flowsDir
+            type = "dir"
+        },
+        @{
+            name = "docs"
+            source = Join-Path $sourceRoot "docs"
+            destination = $docsDir
             type = "dir"
         }
     )
@@ -446,7 +481,7 @@ try {
         Write-Output ("[UPDATE] installed_runtime_version=" + [string]$installed.runtimeVersion)
     }
     if ($NoRootSync) {
-        Write-Warning "[UPDATE] root sync disabled by -NoRootSync. Only mcp/ was updated."
+        Write-Warning "[UPDATE] root sync disabled by -NoRootSync. Only mcp/ was updated; install/tools/flows/docs remain unchanged."
     }
     if ($consistency.ok) {
         Write-Output "[UPDATE] version consistency check passed."

@@ -2,35 +2,42 @@
 
 ## 1) 启动 MCP
 
+release 包默认采用单目录载荷：`pointer_gpf/`。  
+若你通过 release zip 安装，优先使用以下路径：
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File "install/start-mcp.ps1"
+powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/start-mcp.ps1"
 ```
 
 也可先做安装检查：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "install/install-mcp.ps1"
+powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/install-mcp.ps1"
 # or
-powershell -ExecutionPolicy Bypass -File "install/install-mcp.ps1" -ConfigFile "D:/path/to/gtr.config.json"
+powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/install-mcp.ps1" -ConfigFile "D:/path/to/gtr.config.json"
 ```
 
 查看版本通道：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -CheckUpdateOnly
+powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/update-mcp.ps1" -CheckUpdateOnly
 ```
 
 本地包更新（离线）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -PackageDir "D:/path/to/pointer_gpf_package"
+powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/update-mcp.ps1" -PackageDir "D:/path/to/pointer_gpf_package"
 ```
 
 远端包更新（发布后）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -ForceRemote
+powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/update-mcp.ps1" -ForceRemote
 ```
+
+兼容入口：
+
+- 仍可使用根目录 `pointer-gpf.cmd`，它会优先转发到 `pointer_gpf/install/pointer-gpf.ps1`。
 
 更新行为说明（v0.2.4.3+）：
 
@@ -53,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -ForceRemote
       "command": "C:/Users/your-user/AppData/Local/Programs/Python/Python311/python.exe",
       "args": [
         "-u",
-        "D:/AI/pointer_gpf/mcp/server.py",
+        "D:/your-install-root/pointer_gpf/mcp/server.py",
         "--stdio"
       ]
     }
@@ -111,6 +118,8 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 ## 6.5) 可执行基础流程：设计 + 运行 + 执行层校验
 
+本链路面向 **通用 Godot 项目**。MCP 只定义执行契约与证据结构，不预设任何特定游戏剧情、系统或世界观。
+
 与仅生成 seed 或跑通 `generate_flow_seed` 不同，下面链路会在 **Godot 运行时** 通过文件桥执行 flow，并用 `-ValidateExecutionPipeline` 校验 **执行层** 产物（执行报告、事件 NDJSON、三阶段覆盖等）。前提：已 `install_godot_plugin` 并启用插件，且**运行游戏**时 `runtime_bridge` 会处理 `pointer_gpf/tmp/command.json` → `response.json`（契约见 `docs/godot-adapter-contract-v1.md` 与 `mcp/adapter_contract_v1.json` 的 `runtime_bridge`）。
 
 **1) 设计（生成基础测试 flow）**
@@ -138,8 +147,8 @@ powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
 
 - `auto`（默认）：按关键词自动挑选
 - `ui`
-- `exploration`
-- `builder`
+- `exploration`（通用“区域推进/导航”策略标签，不绑定具体游戏）
+- `builder`（通用“构建/布局”策略标签，不绑定具体游戏）
 - `generic`
 
 自然语言触发基础测试流程命令（推荐给 Agent 用户）：

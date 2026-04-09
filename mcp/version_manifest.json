@@ -14,7 +14,7 @@
                                                      "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.3/pointer-gpf-mcp-0.2.4.3.zip",
                                                      "sha256":  "6abc340ae58df63efd993bc764469b7d00949440a0d8e248432a8200d724efff",
                                                      "size_bytes":  3708525,
-                                                     "zip_layout":  "repo_root"
+                                                     "zip_layout":  "pointer_gpf_root"
                                                  }
                                 }
                  },
