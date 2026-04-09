@@ -209,6 +209,69 @@ jobs:
           } | ConvertTo-Json -Compress
           Set-Content -LiteralPath "mcp_integration_figma_metrics.json" -Value $metric -Encoding UTF8
 
+      - name: Legacy gameplayflow CLI (run_game_flow / start_stepwise_flow / pull_cursor_chat_plugin)
+        shell: pwsh
+        env:
+          MCP_ALLOW_NON_BROADCAST: "1"
+        run: |
+          @'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          repo = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          proj = repo / "examples" / "godot_minimal"
+          flow = repo / "flows" / "internal" / "contract_force_fail_invalid_scene.json"
+
+          def call(tool: str, args: dict) -> subprocess.CompletedProcess[str]:
+              return subprocess.run(
+                  [
+                      sys.executable,
+                      str(repo / "mcp" / "server.py"),
+                      "--tool",
+                      tool,
+                      "--args",
+                      json.dumps(args, ensure_ascii=False),
+                  ],
+                  cwd=str(repo),
+                  capture_output=True,
+                  text=True,
+                  check=False,
+              )
+
+          r0 = call(
+              "run_game_flow",
+              {
+                  "project_root": str(proj),
+                  "flow_file": str(flow),
+                  "dry_run": True,
+                  "allow_non_broadcast": True,
+              },
+          )
+          print(r0.stdout)
+          if r0.returncode != 0:
+              print(r0.stderr)
+              sys.exit(1)
+
+          r1 = call(
+              "start_stepwise_flow",
+              {
+                  "project_root": str(proj),
+                  "flow_file": str(flow),
+                  "allow_non_broadcast": True,
+              },
+          )
+          print("start_stepwise_flow rc=", r1.returncode)
+
+          r2 = call("pull_cursor_chat_plugin", {"run_id": ""})
+          print("pull_cursor_chat_plugin rc=", r2.returncode)
+          sys.exit(0)
+          '@ | Set-Content -LiteralPath "__legacy_gf_ci_integration.py" -Encoding UTF8
+          python "__legacy_gf_ci_integration.py"
+          Remove-Item -LiteralPath "__legacy_gf_ci_integration.py" -Force
+
       - name: Build trend metrics report
         shell: pwsh
         run: |

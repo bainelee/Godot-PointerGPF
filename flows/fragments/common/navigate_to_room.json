@@ -1,0 +1,20 @@
+{
+  "flowId": "common_navigate_to_room",
+  "steps": [
+    {
+      "id": "drag_camera",
+      "action": "dragCamera",
+      "delta": [-220, 120]
+    },
+    {
+      "id": "wait_after_drag",
+      "action": "sleep",
+      "ms": 2000
+    },
+    {
+      "id": "click_room",
+      "action": "click",
+      "target": { "testId": "${ROOM_TEST_ID}" }
+    }
+  ]
+}

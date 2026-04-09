@@ -1,0 +1,34 @@
+{
+  "flowId": "researcher_no_housing_info_penalty_slot0_phase1",
+  "name": "研究员无住房信息产出扣减校验：新游戏存档0，校验无住房日结扣减逻辑",
+  "system": "gameplay",
+  "profile": "regression",
+  "mode": "local",
+  "scene": "res://scenes/ui/start_menu.tscn",
+  "flowStepTimeoutSec": 30,
+  "driverReadyTimeoutSec": 20,
+  "driverNoActivityTimeoutSec": 8,
+  "steps": [
+    {
+      "id": "prepare_new_game",
+      "action": "runSubflow",
+      "file": "../../../fragments/common/new_game_enter_world.json"
+    },
+    {
+      "id": "wait_initial_info_amount_ready",
+      "action": "wait",
+      "until": {
+        "stateEquals": { "key": "info_amount", "value": 500 }
+      },
+      "minWaitMs": 200,
+      "timeoutMs": 20000
+    },
+    {
+      "id": "verify_researcher_no_housing_info_penalty",
+      "action": "check",
+      "kind": "researcher_no_housing_info_penalty",
+      "expect": {},
+      "timeoutMs": 1000
+    }
+  ]
+}

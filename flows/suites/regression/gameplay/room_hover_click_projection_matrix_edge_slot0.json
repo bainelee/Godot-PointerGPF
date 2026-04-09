@@ -1,0 +1,80 @@
+{
+  "flowId": "room_hover_click_projection_matrix_edge_slot0",
+  "name": "正厅聚焦后房间投影矩阵（屏幕侧边扰动）",
+  "system": "gameplay",
+  "profile": "regression",
+  "mode": "local",
+  "scene": "res://scenes/ui/start_menu.tscn",
+  "flowStepTimeoutSec": 20,
+  "driverReadyTimeoutSec": 20,
+  "driverNoActivityTimeoutSec": 5,
+  "env": {
+    "HALL_ROOM_TEST_ID": "room_node_room_00"
+  },
+  "steps": [
+    {
+      "id": "prepare_new_game",
+      "action": "runSubflow",
+      "file": "../../../fragments/common/new_game_enter_world.json"
+    },
+    {
+      "id": "focus_hall_room",
+      "action": "click",
+      "target": { "testId": "${HALL_ROOM_TEST_ID}" }
+    },
+    {
+      "id": "wait_hall_selected",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "selected_room_id", "value": "room_00" } },
+      "timeoutMs": 3000
+    },
+    {
+      "id": "drag_camera_left_edge_bias",
+      "action": "dragCamera",
+      "delta": [-360, 0]
+    },
+    {
+      "id": "wait_after_drag_left_edge",
+      "action": "sleep",
+      "ms": 400
+    },
+    {
+      "id": "verify_projection_matrix_left_edge",
+      "action": "check",
+      "kind": "room_projection_hover_click_matrix",
+      "expect": {
+        "minRooms": 1,
+        "maxRooms": 12,
+        "skipSelected": true,
+        "skipUiCovered": true,
+        "strict": true,
+        "failOnNoRawHit": true
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "id": "drag_camera_right_edge_bias",
+      "action": "dragCamera",
+      "delta": [720, 0]
+    },
+    {
+      "id": "wait_after_drag_right_edge",
+      "action": "sleep",
+      "ms": 400
+    },
+    {
+      "id": "verify_projection_matrix_right_edge",
+      "action": "check",
+      "kind": "room_projection_hover_click_matrix",
+      "expect": {
+        "minRooms": 1,
+        "maxRooms": 12,
+        "skipSelected": true,
+        "skipUiCovered": true,
+        "strict": true,
+        "failOnNoRawHit": true
+      },
+      "timeoutMs": 10000
+    }
+  ]
+}

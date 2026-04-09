@@ -1,0 +1,8 @@
+{
+  "required_visible": [
+    "room_detail_panel",
+    "room_detail_btn_destroy",
+    "room_detail_btn_shutdown"
+  ],
+  "size_equals": []
+}

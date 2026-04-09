@@ -37,6 +37,14 @@ This matrix records current implementation status based on repository evidence.
 - Trend analysis currently outputs per-run JSON artifact; long-term historical aggregation is not yet automated inside repository CI.
 - Runtime gate currently relies on runtime marker evidence (`pointer_gpf/tmp/runtime_gate.json`) for deterministic automation; automatic F5-equivalent launch is not fully implemented.
 
+## Legacy restoration (tracked)
+
+Repository work is restoring parity with the old archive MCP surface and runner contracts. Track these identifiers in audits and CI:
+
+- `legacy_gameplayflow_tool_surface` — tool names and handler wiring for gameplay-flow style tools vs. `tools/game-test-runner/mcp/mcp_tool_surface_snapshot.py` / gap audit.
+- `stepwise_chat_three_phase` — step broadcast / chat progress protocol aligned to `three_phase` execution reports (`step_broadcast_summary.protocol_mode`).
+- `fix_loop_rounds_contract` — fix-loop round boundaries, artifacts, and handler expectations in `tools/game-test-runner/mcp/fix_loop_service.py` and related tests.
+
 ## Not Implemented (Before this execution)
 
 - Legacy output path migration for `gameplayflow/*` and historical `gpf-exp` directories.

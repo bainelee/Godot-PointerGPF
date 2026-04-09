@@ -1,0 +1,506 @@
+{
+  "step_map": {
+    "prepare_new_game": {
+      "doing": "正在开始新游戏流程",
+      "goal": "目标：进入游戏世界并初始化本轮测试。"
+    },
+    "click_new_game": {
+      "doing": "正在点击“新游戏”",
+      "goal": "目标：进入存档选择并创建新流程。"
+    },
+    "click_slot0": {
+      "doing": "正在新建并覆盖存档0",
+      "goal": "目标：确保测试使用固定存档槽位。"
+    },
+    "wait_ingame": {
+      "doing": "正在等待进入游戏主场景",
+      "goal": "目标：确认已成功进入可操作状态。"
+    },
+    "sleep_boot": {
+      "doing": "正在等待游戏启动缓冲",
+      "goal": "目标：主菜单与驱动就绪后再继续操作。"
+    },
+    "set_game_speed_x6": {
+      "doing": "正在切换为六倍速",
+      "goal": "目标：加快流程验证时间。"
+    },
+    "start_cleanup_mode": {
+      "doing": "正在进入清理模式",
+      "goal": "目标：准备对目标房间发起清理。"
+    },
+    "select_cleanup_room": {
+      "doing": "正在选择清理房间",
+      "goal": "目标：锁定要清理的房间。"
+    },
+    "confirm_cleanup": {
+      "doing": "正在确认清理",
+      "goal": "目标：正式启动房间清理。"
+    },
+    "wait_clean_done": {
+      "doing": "正在等待清理房间完成",
+      "goal": "目标：确认房间状态变为 cleaned。"
+    },
+    "start_build_mode": {
+      "doing": "正在进入建设模式",
+      "goal": "目标：准备建造目标房间。"
+    },
+    "wait_research_zone_visible": {
+      "doing": "正在等待建设分区可见",
+      "goal": "目标：确认可选择建造分区。"
+    },
+    "select_build_zone": {
+      "doing": "正在选择建设分区",
+      "goal": "目标：进入指定建造类别。"
+    },
+    "select_build_room": {
+      "doing": "正在选择建设房间",
+      "goal": "目标：锁定要建设的房间。"
+    },
+    "wait_build_confirm_visible": {
+      "doing": "正在等待建设确认按钮出现",
+      "goal": "目标：确保建造可提交。"
+    },
+    "confirm_build": {
+      "doing": "正在确认建设",
+      "goal": "目标：正式启动建造流程。"
+    },
+    "wait_build_done": {
+      "doing": "正在等待建设房间完成",
+      "goal": "目标：确认房间状态变为 built。"
+    },
+    "save_game_slot0": {
+      "doing": "正在保存游戏到存档0",
+      "goal": "目标：写入持久化数据供继续游戏验证。"
+    },
+    "save_current_slot": {
+      "doing": "正在保存当前存档",
+      "goal": "目标：写入持久化数据供继续游戏验证。"
+    },
+    "click_continue": {
+      "doing": "正在点击“继续游戏”",
+      "goal": "目标：从已有存档恢复游戏状态。"
+    },
+    "verify_room_cleaned": {
+      "doing": "正在验证清理结果已持久化",
+      "goal": "目标：继续游戏后仍保持 cleaned。"
+    },
+    "verify_room_built": {
+      "doing": "正在验证建设结果已持久化",
+      "goal": "目标：继续游戏后仍保持 built。"
+    },
+    "start_cleanup_mode_room_a": {
+      "doing": "正在进入清理模式（房间 A）",
+      "goal": "目标：对第一间测试房发起清理。"
+    },
+    "select_cleanup_room_a": {
+      "doing": "正在选择待清理房间 A",
+      "goal": "目标：锁定 room_01 清理对象。"
+    },
+    "confirm_cleanup_room_a": {
+      "doing": "正在确认清理房间 A",
+      "goal": "目标：启动房间 A 清理流程。"
+    },
+    "wait_clean_done_room_a": {
+      "doing": "正在等待房间 A 清理完成",
+      "goal": "目标：确认 room_01 状态为 cleaned。"
+    },
+    "start_build_mode_room_a": {
+      "doing": "正在进入建设模式（房间 A）",
+      "goal": "目标：为房间 A 准备建造。"
+    },
+    "wait_research_zone_visible_room_a": {
+      "doing": "正在等待建设分区可见（房间 A）",
+      "goal": "目标：确认可选建造分区。"
+    },
+    "select_build_zone_room_a": {
+      "doing": "正在选择建设分区（房间 A）",
+      "goal": "目标：进入指定建造分区。"
+    },
+    "select_build_room_a": {
+      "doing": "正在选择建设目标房间 A",
+      "goal": "目标：锁定 room_01 为建设对象。"
+    },
+    "wait_build_confirm_visible_room_a": {
+      "doing": "正在等待建设确认按钮（房间 A）",
+      "goal": "目标：确保可提交建造。"
+    },
+    "confirm_build_room_a": {
+      "doing": "正在确认建设房间 A",
+      "goal": "目标：启动房间 A 建造流程。"
+    },
+    "wait_build_done_room_a": {
+      "doing": "正在等待房间 A 建设完成",
+      "goal": "目标：确认 room_01 状态为 built。"
+    },
+    "click_room_a_open_detail": {
+      "doing": "正在点击房间 A 打开详情面板",
+      "goal": "目标：进入房间详情界面以校验庇护显示。"
+    },
+    "focus_hall_room": {
+      "doing": "正在聚焦档案馆正厅房间",
+      "goal": "目标：复现“正厅聚焦后切换房间交互”的输入场景。"
+    },
+    "wait_hall_selected": {
+      "doing": "正在等待正厅房间被选中",
+      "goal": "目标：确认当前选中房间为 room_00。"
+    },
+    "click_room_a_projection": {
+      "doing": "正在用屏幕投影点击房间 A",
+      "goal": "目标：验证正厅聚焦后仍可切换到其它房间。"
+    },
+    "wait_room_a_selected_projection": {
+      "doing": "正在等待房间 A 被选中",
+      "goal": "目标：确认选中房间已从 room_00 切换为 room_01。"
+    },
+    "verify_projection_hover_click_matrix": {
+      "doing": "正在执行房间屏幕投影悬停/点击矩阵校验",
+      "goal": "目标：验证可见可交互房间在该视角下均可悬停并被点击选中。"
+    },
+    "zoom_in_for_projection_matrix": {
+      "doing": "正在执行镜头拉近扰动",
+      "goal": "目标：验证缩放后悬停与点击命中仍稳定。"
+    },
+    "wait_after_zoom_in": {
+      "doing": "正在等待拉近后的镜头稳定",
+      "goal": "目标：避免镜头更新与输入采样跨帧抖动。"
+    },
+    "verify_projection_matrix_after_zoom_in": {
+      "doing": "正在校验拉近后的房间投影矩阵",
+      "goal": "目标：拉近视距后仍可稳定悬停并点击房间。"
+    },
+    "zoom_out_for_projection_matrix": {
+      "doing": "正在执行镜头拉远扰动",
+      "goal": "目标：验证拉远后房间命中链路仍正确。"
+    },
+    "wait_after_zoom_out": {
+      "doing": "正在等待拉远后的镜头稳定",
+      "goal": "目标：保证后续校验采样稳定。"
+    },
+    "verify_projection_matrix_after_zoom_out": {
+      "doing": "正在校验拉远后的房间投影矩阵",
+      "goal": "目标：拉远视距后仍可稳定悬停并点击房间。"
+    },
+    "drag_camera_left_edge_bias": {
+      "doing": "正在向左拖拽镜头制造侧边场景",
+      "goal": "目标：复现房间位于屏幕侧边时的命中压力。"
+    },
+    "wait_after_drag_left_edge": {
+      "doing": "正在等待左侧边场景稳定",
+      "goal": "目标：确保镜头与输入状态稳定后再校验。"
+    },
+    "verify_projection_matrix_left_edge": {
+      "doing": "正在校验左侧边场景下的投影矩阵",
+      "goal": "目标：验证房间贴近屏幕侧边时仍可稳定命中。"
+    },
+    "drag_camera_right_edge_bias": {
+      "doing": "正在向右拖拽镜头制造侧边场景",
+      "goal": "目标：覆盖另一侧屏幕边缘的命中稳定性。"
+    },
+    "wait_after_drag_right_edge": {
+      "doing": "正在等待右侧边场景稳定",
+      "goal": "目标：保证右侧边缘校验前状态收敛。"
+    },
+    "verify_projection_matrix_right_edge": {
+      "doing": "正在校验右侧边场景下的投影矩阵",
+      "goal": "目标：验证右侧边缘房间仍可稳定悬停并点击。"
+    },
+    "focus_room_a_projection": {
+      "doing": "正在聚焦房间 A 以执行切换扰动",
+      "goal": "目标：建立“正厅→房间A”的聚焦切换链路。"
+    },
+    "refocus_hall_room_again": {
+      "doing": "正在重新聚焦正厅房间",
+      "goal": "目标：验证多次切换后命中链路不会漂移。"
+    },
+    "wait_hall_selected_again": {
+      "doing": "正在等待正厅再次被选中",
+      "goal": "目标：确认聚焦切换已回到 room_00。"
+    },
+    "verify_projection_matrix_after_refocus": {
+      "doing": "正在校验聚焦切换后的投影矩阵",
+      "goal": "目标：验证重复切换后仍可稳定悬停并点击房间。"
+    },
+    "wait_room_detail_visible_room_a": {
+      "doing": "正在等待房间详情面板显示（房间 A）",
+      "goal": "目标：确认 room_detail_panel 已可见。"
+    },
+    "verify_room_detail_shelter_after_build_room_a": {
+      "doing": "正在校验房间 A 建成后的庇护分配显示",
+      "goal": "目标：详情面板显示值与运行时分配保持一致。"
+    },
+    "verify_room_detail_shelter_progress_bar_room_a": {
+      "doing": "正在校验房间 A 庇护进度条显示",
+      "goal": "目标：进度条高度与分配值一致，分配为 0 时应为空条。"
+    },
+    "start_cleanup_mode_room_b": {
+      "doing": "正在进入清理模式（房间 B）",
+      "goal": "目标：对第二间测试房发起清理。"
+    },
+    "select_cleanup_room_b": {
+      "doing": "正在选择待清理房间 B",
+      "goal": "目标：锁定 room_03 清理对象。"
+    },
+    "confirm_cleanup_room_b": {
+      "doing": "正在确认清理房间 B",
+      "goal": "目标：启动房间 B 清理流程。"
+    },
+    "wait_clean_done_room_b": {
+      "doing": "正在等待房间 B 清理完成",
+      "goal": "目标：确认 room_03 状态为 cleaned。"
+    },
+    "start_build_mode_room_b": {
+      "doing": "正在进入建设模式（房间 B）",
+      "goal": "目标：为房间 B 准备建造。"
+    },
+    "wait_research_zone_visible_room_b": {
+      "doing": "正在等待建设分区可见（房间 B）",
+      "goal": "目标：确认可选建造分区。"
+    },
+    "select_build_zone_room_b": {
+      "doing": "正在选择建设分区（房间 B）",
+      "goal": "目标：进入指定建造分区。"
+    },
+    "select_build_room_b": {
+      "doing": "正在选择建设目标房间 B",
+      "goal": "目标：锁定 room_03 为建设对象。"
+    },
+    "wait_build_confirm_visible_room_b": {
+      "doing": "正在等待建设确认按钮（房间 B）",
+      "goal": "目标：确保可提交建造。"
+    },
+    "confirm_build_room_b": {
+      "doing": "正在确认建设房间 B",
+      "goal": "目标：启动房间 B 建造流程。"
+    },
+    "wait_build_done_room_b": {
+      "doing": "正在等待房间 B 建设完成",
+      "goal": "目标：确认 room_03 状态为 built。"
+    },
+    "snapshot_r0": {
+      "doing": "正在采集初始资源与时间快照（r0）",
+      "goal": "目标：为对账建立基线状态。"
+    },
+    "snapshot_room_a_cleaned": {
+      "doing": "正在采集房间 A 清理后快照",
+      "goal": "目标：记录清理阶段资源变化。"
+    },
+    "snapshot_room_a_built": {
+      "doing": "正在采集房间 A 建成后快照",
+      "goal": "目标：记录建设阶段资源变化。"
+    },
+    "snapshot_room_b_cleaned": {
+      "doing": "正在采集房间 B 清理后快照",
+      "goal": "目标：记录第二间房清理后的状态。"
+    },
+    "snapshot_room_b_built": {
+      "doing": "正在采集房间 B 建成后快照",
+      "goal": "目标：记录第二间房建设后的状态。"
+    },
+    "snapshot_r2": {
+      "doing": "正在采集存盘前终态快照（r2）",
+      "goal": "目标：固定保存前的逻辑状态。"
+    },
+    "snapshot_pre_save_risk": {
+      "doing": "正在采集存盘窗口风险字段快照",
+      "goal": "目标：记录结算钟与资源台账以便对账。"
+    },
+    "snapshot_r2_saved": {
+      "doing": "正在采集内存中保存后快照",
+      "goal": "目标：对比磁盘存档一致性。"
+    },
+    "snapshot_post_save_risk": {
+      "doing": "正在采集保存后风险字段快照",
+      "goal": "目标：确认保存边界无副作用。"
+    },
+    "pause_before_save_window": {
+      "doing": "正在全局暂停（保存窗口前）",
+      "goal": "目标：冻结运行态以便安全快照与存档。"
+    },
+    "resume_after_save_window": {
+      "doing": "正在恢复全局暂停（保存窗口后）",
+      "goal": "目标：继续后续步骤或结束流程。"
+    },
+    "set_game_speed_x1_before_save": {
+      "doing": "正在将游戏时间速度设为 1 倍（保存前）",
+      "goal": "目标：避免非 1 倍速影响存档口径。"
+    },
+    "set_game_speed_x1_stable": {
+      "doing": "正在将游戏时间速度设为 1 倍",
+      "goal": "目标：稳定时间流逝以便校验。"
+    },
+    "pause_before_verify_window": {
+      "doing": "正在全局暂停（读档校验前）",
+      "goal": "目标：冻结状态以便读取与断言。"
+    },
+    "snapshot_after_continue_risk": {
+      "doing": "正在采集继续游戏后的风险字段快照",
+      "goal": "目标：对比读档与内存状态。"
+    },
+    "snapshot_r3": {
+      "doing": "正在采集读档校验完成后的快照（r3）",
+      "goal": "目标：作为对账终态。"
+    },
+    "resume_after_verify_window": {
+      "doing": "正在恢复全局暂停（校验完成后）",
+      "goal": "目标：结束测试流程。"
+    },
+    "verify_room_a_cleaned": {
+      "doing": "正在校验房间 A 清理状态已持久化",
+      "goal": "目标：读档后 room_01 仍为 cleaned。"
+    },
+    "verify_room_a_built": {
+      "doing": "正在校验房间 A 建设状态已持久化",
+      "goal": "目标：读档后 room_01 仍为 built。"
+    },
+    "verify_room_b_cleaned": {
+      "doing": "正在校验房间 B 清理状态已持久化",
+      "goal": "目标：读档后 room_03 仍为 cleaned。"
+    },
+    "verify_room_b_built": {
+      "doing": "正在校验房间 B 建设状态已持久化",
+      "goal": "目标：读档后 room_03 仍为 built。"
+    },
+    "click_open_exploration_map": {
+      "doing": "正在打开探索地图界面",
+      "goal": "目标：通过底栏进入探索地图覆盖层。"
+    },
+    "verify_exploration_overlay_visible": {
+      "doing": "正在确认探索地图覆盖层已显示",
+      "goal": "目标：探索界面处于可操作可见状态。"
+    },
+    "click_close_exploration": {
+      "doing": "正在点击关闭探索地图",
+      "goal": "目标：通过顶栏关闭按钮收起探索覆盖层。"
+    },
+    "verify_exploration_overlay_hidden": {
+      "doing": "正在确认探索地图覆盖层已关闭",
+      "goal": "目标：返回主场景可操作状态，流程结束后由 Runner 结束 Godot 进程。"
+    },
+    "explore_region_white_cliff": {
+      "doing": "正在对白崖镇发起地区探索",
+      "goal": "目标：将 white_cliff 加入并行探索队列。"
+    },
+    "explore_region_durkin_mine": {
+      "doing": "正在对杜尔金矿区发起地区探索",
+      "goal": "目标：将 durkin_mine 加入并行探索队列。"
+    },
+    "advance_game_hours_complete_parallel_explore": {
+      "doing": "正在推进游戏内时间以完成并行探索",
+      "goal": "目标：计时结束后两地区均写入已探索列表。"
+    },
+    "verify_two_regions_explored_before_save": {
+      "doing": "正在校验内存中已探索地区列表",
+      "goal": "目标：存盘前已包含枢纽与两目标地区。"
+    },
+    "verify_save_slot_exploration_two_regions": {
+      "doing": "正在读取存档文件校验探索块",
+      "goal": "目标：磁盘存档 exploration 含旧日档案馆、白崖、杜尔金矿区。"
+    },
+    "verify_runtime_exploration_after_continue": {
+      "doing": "正在校验读档后的运行时探索状态",
+      "goal": "目标：继续游戏后内存与存档探索列表一致。"
+    },
+    "set_game_speed_x1_before_explore": {
+      "doing": "正在将游戏时间设为正常倍速（探索前）",
+      "goal": "目标：稳定推进探索计时与后续交互。"
+    },
+    "advance_game_hours_complete_one_region_explore": {
+      "doing": "正在推进游戏内时间以完成单地区探索",
+      "goal": "目标：计时结束后目标地区写入已探索列表。"
+    },
+    "verify_one_region_explored_before_save": {
+      "doing": "正在校验内存中已探索地区（单地区+枢纽）",
+      "goal": "目标：存盘前已包含旧日档案馆与杜尔金矿区。"
+    },
+    "verify_save_slot_exploration_one_region": {
+      "doing": "正在读取存档文件校验探索块（单地区）",
+      "goal": "目标：磁盘存档 exploration 含枢纽与已完成的单地区探索。"
+    },
+    "verify_runtime_exploration_one_region_after_continue": {
+      "doing": "正在校验读档后的运行时探索状态（单地区）",
+      "goal": "目标：继续游戏后内存探索列表与存档一致。"
+    },
+    "wait_initial_info_amount_ready": {
+      "doing": "正在等待 TopBar 信息货币同步为开局设计值",
+      "goal": "目标：确认 UIMain.info_amount 已与存档资源一致。"
+    },
+    "set_game_time_speed_x2": {
+      "doing": "正在将游戏时间设为 2 倍速",
+      "goal": "目标：按流程要求固定倍速（与 advance 前状态一致）。"
+    },
+    "verify_game_speed_x2": {
+      "doing": "正在确认当前时间倍速为 2",
+      "goal": "目标：倍速设置已生效。"
+    },
+    "advance_game_hours_one_week": {
+      "doing": "正在推进游戏内时间一整周（168 小时）",
+      "goal": "目标：触发 7 次日界与研究员信息日结等逻辑。"
+    },
+    "verify_info_currency_week_design": {
+      "doing": "正在校验一周内信息货币增量是否落在设计区间",
+      "goal": "目标：对比 researcher_system.info_daily 与总小时，确认增量合理。"
+    },
+    "verify_researcher_no_housing_info_penalty": {
+      "doing": "正在校验无住房研究员的信息日结扣减",
+      "goal": "目标：无住房研究员（不区分是否有工作）按 daily_info 规则扣减后结算。"
+    },
+    "return_to_start_menu_after_save": {
+      "doing": "正在切回主菜单（流程结束由 Runner 关闭进程）",
+      "goal": "目标：模拟存盘后退出游戏世界，完成本段自动化。"
+    }
+  },
+  "action_map": {
+    "click": {
+      "doing": "正在执行点击操作",
+      "goal": "目标：推进到下一交互步骤。"
+    },
+    "wait": {
+      "doing": "正在等待条件满足",
+      "goal": "目标：确保状态达到断言前置条件。"
+    },
+    "check": {
+      "doing": "正在执行状态校验",
+      "goal": "目标：验证当前状态符合预期。"
+    },
+    "savegame": {
+      "doing": "正在保存游戏",
+      "goal": "目标：写入持久化数据供继续游戏验证。"
+    },
+    "sleep": {
+      "doing": "正在等待短延时",
+      "goal": "目标：给界面与状态变更留出缓冲。"
+    },
+    "getstate": {
+      "doing": "正在读取游戏状态快照",
+      "goal": "目标：采集资源、时间等字段供对账或断言。"
+    },
+    "setgametimespeed": {
+      "doing": "正在调整游戏时间速度",
+      "goal": "目标：按流程要求固定为指定倍速。"
+    },
+    "setglobalpause": {
+      "doing": "正在切换全局暂停",
+      "goal": "目标：在关键窗口冻结或恢复模拟。"
+    },
+    "exploreregion": {
+      "doing": "正在发起地区探索（测试驱动）",
+      "goal": "目标：向探索服务提交 explore_region 并占用调查员计时。"
+    },
+    "advancegamehours": {
+      "doing": "正在推进游戏内小时并触发探索 tick",
+      "goal": "目标：使进行中的地区探索到达完成边界。"
+    },
+    "wheelzoom": {
+      "doing": "正在滚轮缩放镜头",
+      "goal": "目标：制造缩放扰动并验证输入命中稳定性。"
+    },
+    "verifysaveslotexploration": {
+      "doing": "正在校验指定存档槽的探索子树",
+      "goal": "目标：磁盘 JSON 中 explored_region_ids 包含预期地区。"
+    },
+    "changescene": {
+      "doing": "正在切换场景",
+      "goal": "目标：离开当前场景并进入指定场景路径。"
+    }
+  }
+}

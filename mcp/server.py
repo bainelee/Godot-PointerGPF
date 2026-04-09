@@ -31,6 +31,31 @@ DEFAULT_EXP_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/gpf-exp"
 DEFAULT_SCAN_ROOTS = ["scripts", "scenes", "addons", "datas", "docs", "flows", "tests", "test", "src"]
 _MCP_IO_MODE = "header"
 
+_LEGACY_GAMEPLAYFLOW_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "list_test_scenarios",
+        "run_game_test",
+        "get_test_artifacts",
+        "get_test_report",
+        "get_flow_timeline",
+        "run_game_flow",
+        "get_test_run_status",
+        "cancel_test_run",
+        "resume_fix_loop",
+        "start_game_flow_live",
+        "get_live_flow_progress",
+        "run_and_stream_flow",
+        "start_stepwise_flow",
+        "prepare_step",
+        "execute_step",
+        "verify_step",
+        "step_once",
+        "run_stepwise_autopilot",
+        "start_cursor_chat_plugin",
+        "pull_cursor_chat_plugin",
+    }
+)
+
 
 class AppError(Exception):
     def __init__(self, code: str, message: str, details: dict[str, Any] | None = None) -> None:
@@ -2271,12 +2296,87 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "suggest_ui_fix_patch",
             "run_game_basic_test_flow",
             "run_game_basic_test_flow_by_current_state",
-        ],
+        ]
+        + sorted(_LEGACY_GAMEPLAYFLOW_TOOL_NAMES),
+    }
+
+
+_LEGACY_MCP_DIR = Path(__file__).resolve().parents[1] / "tools" / "game-test-runner" / "mcp"
+_legacy_gameplayflow_mcp_class: type[Any] | None = None
+_legacy_gameplayflow_servers: dict[Path, Any] = {}
+
+
+def _legacy_gtr_mcp_class() -> type[Any]:
+    global _legacy_gameplayflow_mcp_class
+    if _legacy_gameplayflow_mcp_class is not None:
+        return _legacy_gameplayflow_mcp_class
+    leg = str(_LEGACY_MCP_DIR.resolve())
+    if leg not in sys.path:
+        sys.path.insert(0, leg)
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("pointer_gpf_legacy_gtr_mcp", _LEGACY_MCP_DIR / "server.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("failed to load legacy gameplayflow MCP module")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cls = getattr(mod, "GameTestMcpServer", None)
+    if cls is None:
+        raise RuntimeError("GameTestMcpServer missing in legacy gameplayflow MCP module")
+    _legacy_gameplayflow_mcp_class = cls
+    return cls
+
+
+def _get_legacy_gameplayflow_server(repo_root: Path) -> Any:
+    key = repo_root.resolve()
+    cached = _legacy_gameplayflow_servers.get(key)
+    if cached is not None:
+        return cached
+    server = _legacy_gtr_mcp_class()(default_project_root=key)
+    _legacy_gameplayflow_servers[key] = server
+    return server
+
+
+def _legacy_gameplayflow_tool_handler(tool_name: str):
+    def _handler(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return _get_legacy_gameplayflow_server(ctx.repo_root).invoke(tool_name, arguments)
+        except Exception as exc:
+            # game-test-runner MCP 使用独立的 AppError 类型；CLI/stdio 仅识别本模块的 AppError。
+            as_dict_fn = getattr(exc, "as_dict", None)
+            if callable(as_dict_fn):
+                try:
+                    payload = as_dict_fn()
+                except Exception:
+                    payload = None
+                if isinstance(payload, dict) and "code" in payload and "message" in payload:
+                    det = payload.get("details")
+                    details = det if isinstance(det, dict) else {}
+                    raise AppError(str(payload["code"]), str(payload["message"]), details) from exc
+            raise
+
+    return _handler
+
+
+def _build_legacy_bridge_tool_map() -> dict[str, Any]:
+    return {name: _legacy_gameplayflow_tool_handler(name) for name in _LEGACY_GAMEPLAYFLOW_TOOL_NAMES}
+
+
+def _legacy_gameplayflow_tool_specs(base_props: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": dict(base_props),
+        "additionalProperties": True,
+    }
+    desc = "Legacy gameplayflow tool (game-test-runner MCP compatibility layer)."
+    return {
+        name: {"description": f"{desc} Original tool name: {name}.", "inputSchema": schema}
+        for name in sorted(_LEGACY_GAMEPLAYFLOW_TOOL_NAMES)
     }
 
 
 def _build_tool_map() -> dict[str, Any]:
-    return {
+    tools: dict[str, Any] = {
         "get_mcp_runtime_info": _tool_get_mcp_runtime_info,
         "get_adapter_contract": _tool_get_adapter_contract,
         "install_godot_plugin": _tool_install_godot_plugin,
@@ -2296,6 +2396,8 @@ def _build_tool_map() -> dict[str, Any]:
         "run_game_basic_test_flow": _tool_run_game_basic_test_flow,
         "run_game_basic_test_flow_by_current_state": _tool_run_game_basic_test_flow_by_current_state,
     }
+    tools.update(_build_legacy_bridge_tool_map())
+    return tools
 
 
 def _build_tool_specs() -> dict[str, dict[str, Any]]:
@@ -2303,7 +2405,7 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
         "project_root": {"type": "string", "description": "Absolute path to target Godot project root."},
         "config_file": {"type": "string", "description": "Optional runtime config JSON file path."},
     }
-    return {
+    specs: dict[str, dict[str, Any]] = {
         "get_mcp_runtime_info": {
             "description": "Get runtime and tool metadata for PointerGPF MCP.",
             "inputSchema": {
@@ -2534,6 +2636,8 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
             },
         },
     }
+    specs.update(_legacy_gameplayflow_tool_specs(base_props))
+    return specs
 
 
 def _read_mcp_message() -> dict[str, Any] | None:

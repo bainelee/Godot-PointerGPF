@@ -1,0 +1,22 @@
+{
+  "flowId": "smoke_continue_chat_broadcast",
+  "name": "播报校验：主菜单缓冲 → 继续游戏 → 进主场景（结束后由 Runner 关闭进程）",
+  "system": "gameplay",
+  "profile": "regression",
+  "mode": "local",
+  "scene": "res://scenes/ui/start_menu.tscn",
+  "flowStepTimeoutSec": 25,
+  "driverReadyTimeoutSec": 25,
+  "driverNoActivityTimeoutSec": 8,
+  "steps": [
+    { "id": "sleep_boot", "action": "sleep", "ms": 800 },
+    { "id": "click_continue", "action": "click", "target": { "testId": "btn_continue" } },
+    {
+      "id": "wait_ingame",
+      "action": "wait",
+      "until": { "scene": "game_main" },
+      "minWaitMs": 200,
+      "timeoutMs": 15000
+    }
+  ]
+}

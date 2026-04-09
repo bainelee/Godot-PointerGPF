@@ -1,0 +1,57 @@
+{
+  "flowId": "explore_one_region_room_slot0_phase2",
+  "name": "探索单地区+单房清理建设 phase2：继续游戏，校验存档内探索块与 room_01 清理/建设持久化",
+  "system": "gameplay",
+  "profile": "regression",
+  "mode": "local",
+  "scene": "res://scenes/ui/start_menu.tscn",
+  "flowStepTimeoutSec": 25,
+  "driverReadyTimeoutSec": 20,
+  "driverNoActivityTimeoutSec": 5,
+  "env": {
+    "ROOM_A_ID": "room_01"
+  },
+  "steps": [
+    { "id": "sleep_boot", "action": "sleep", "ms": 500 },
+    { "id": "click_continue", "action": "click", "target": { "testId": "btn_continue" } },
+    {
+      "id": "wait_ingame",
+      "action": "wait",
+      "until": { "scene": "game_main" },
+      "minWaitMs": 200,
+      "timeoutMs": 2000
+    },
+    { "id": "set_game_speed_x1_stable", "action": "setGameTimeSpeed", "speed": 1.0 },
+    {
+      "id": "verify_save_slot_exploration_one_region",
+      "action": "verifySaveSlotExploration",
+      "slot": 0,
+      "mustContainExplored": ["old_archives", "durkin_mine"]
+    },
+    {
+      "id": "verify_runtime_exploration_one_region_after_continue",
+      "action": "check",
+      "kind": "logic_state",
+      "expect": {
+        "exploration_explored_ids": ["durkin_mine", "old_archives"]
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "verify_room_a_cleaned",
+      "action": "check",
+      "kind": "logic_state",
+      "roomId": "${ROOM_A_ID}",
+      "expect": { "room_clean_status": "cleaned" },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "verify_room_a_built",
+      "action": "check",
+      "kind": "logic_state",
+      "roomId": "${ROOM_A_ID}",
+      "expect": { "build_status": "built" },
+      "timeoutMs": 5000
+    }
+  ]
+}

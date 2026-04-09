@@ -1,0 +1,114 @@
+{
+  "flowId": "basic_data_slot0_phase1",
+  "name": "基础数据测试 phase1：与基础测试同款双房路径并打快照、保存",
+  "system": "gameplay",
+  "profile": "regression",
+  "mode": "local",
+  "scene": "res://scenes/ui/start_menu.tscn",
+  "flowStepTimeoutSec": 20,
+  "driverReadyTimeoutSec": 20,
+  "driverNoActivityTimeoutSec": 5,
+  "env": {
+    "ROOM_A_ID": "room_01",
+    "ROOM_A_TEST_ID": "room_node_room_01",
+    "ROOM_B_ID": "room_03",
+    "ROOM_B_TEST_ID": "room_node_room_03"
+  },
+  "steps": [
+    { "id": "sleep_boot", "action": "sleep", "ms": 500 },
+    { "id": "click_new_game", "action": "click", "target": { "testId": "btn_new_game" } },
+    { "id": "click_slot0", "action": "click", "target": { "testId": "save_slot_0" } },
+    {
+      "id": "wait_ingame",
+      "action": "wait",
+      "until": { "scene": "game_main" },
+      "minWaitMs": 200,
+      "timeoutMs": 2000
+    },
+    { "id": "snapshot_r0", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_A_ID}" },
+    { "id": "start_cleanup_mode_room_a", "action": "click", "target": { "testId": "btn_cleanup" } },
+    { "id": "select_cleanup_room_a", "action": "click", "target": { "testId": "${ROOM_A_TEST_ID}" } },
+    { "id": "confirm_cleanup_room_a", "action": "click", "target": { "testId": "cleanup_confirm_button" } },
+    {
+      "id": "wait_clean_done_room_a",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "room_clean_status", "value": "cleaned", "roomId": "${ROOM_A_ID}" } },
+      "timeoutMs": 7000
+    },
+    { "id": "snapshot_room_a_cleaned", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_A_ID}" },
+    { "id": "start_build_mode_room_a", "action": "click", "target": { "testId": "btn_build" } },
+    {
+      "id": "wait_research_zone_visible_room_a",
+      "action": "wait",
+      "until": { "nodeVisible": { "testId": "construction_zone_1" } },
+      "timeoutMs": 5000
+    },
+    { "id": "select_build_zone_room_a", "action": "click", "target": { "testId": "construction_zone_1" } },
+    { "id": "select_build_room_a", "action": "click", "target": { "testId": "${ROOM_A_TEST_ID}" } },
+    {
+      "id": "wait_build_confirm_visible_room_a",
+      "action": "wait",
+      "until": { "nodeVisible": { "testId": "construction_confirm_button" } },
+      "timeoutMs": 5000
+    },
+    { "id": "confirm_build_room_a", "action": "click", "target": { "testId": "construction_confirm_button" } },
+    {
+      "id": "wait_build_done_room_a",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "build_status", "value": "built", "roomId": "${ROOM_A_ID}" } },
+      "timeoutMs": 10000
+    },
+    { "id": "snapshot_room_a_built", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_A_ID}" },
+    { "id": "start_cleanup_mode_room_b", "action": "click", "target": { "testId": "btn_cleanup" } },
+    { "id": "select_cleanup_room_b", "action": "click", "target": { "testId": "${ROOM_B_TEST_ID}" } },
+    { "id": "confirm_cleanup_room_b", "action": "click", "target": { "testId": "cleanup_confirm_button" } },
+    {
+      "id": "wait_clean_done_room_b",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "room_clean_status", "value": "cleaned", "roomId": "${ROOM_B_ID}" } },
+      "timeoutMs": 7000
+    },
+    { "id": "snapshot_room_b_cleaned", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_B_ID}" },
+    { "id": "start_build_mode_room_b", "action": "click", "target": { "testId": "btn_build" } },
+    {
+      "id": "wait_research_zone_visible_room_b",
+      "action": "wait",
+      "until": { "nodeVisible": { "testId": "construction_zone_1" } },
+      "timeoutMs": 5000
+    },
+    { "id": "select_build_zone_room_b", "action": "click", "target": { "testId": "construction_zone_1" } },
+    { "id": "select_build_room_b", "action": "click", "target": { "testId": "${ROOM_B_TEST_ID}" } },
+    {
+      "id": "wait_build_confirm_visible_room_b",
+      "action": "wait",
+      "until": { "nodeVisible": { "testId": "construction_confirm_button" } },
+      "timeoutMs": 5000
+    },
+    { "id": "confirm_build_room_b", "action": "click", "target": { "testId": "construction_confirm_button" } },
+    {
+      "id": "wait_build_done_room_b",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "build_status", "value": "built", "roomId": "${ROOM_B_ID}" } },
+      "timeoutMs": 10000
+    },
+    { "id": "snapshot_room_b_built", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_B_ID}" },
+    { "id": "snapshot_r2", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_B_ID}" },
+    { "id": "pause_before_save_window", "action": "setGlobalPause", "paused": true },
+    {
+      "id": "snapshot_pre_save_risk",
+      "action": "getState",
+      "keys": ["resources", "game_total_hours", "settlement_clock", "resource_ledger"],
+      "roomId": "${ROOM_B_ID}"
+    },
+    { "id": "set_game_speed_x1_before_save", "action": "setGameTimeSpeed", "speed": 1.0 },
+    { "id": "save_game_slot0", "action": "saveGame" },
+    { "id": "snapshot_r2_saved", "action": "getState", "keys": ["resources", "game_total_hours"], "roomId": "${ROOM_B_ID}" },
+    {
+      "id": "snapshot_post_save_risk",
+      "action": "getState",
+      "keys": ["resources", "game_total_hours", "settlement_clock", "resource_ledger"],
+      "roomId": "${ROOM_B_ID}"
+    },
+    { "id": "resume_after_save_window", "action": "setGlobalPause", "paused": false }
+  ]
+}

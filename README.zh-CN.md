@@ -32,6 +32,7 @@
 - Figma 验证闭环：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`
 - 契约与运行时诊断：`get_adapter_contract`、`get_mcp_runtime_info`
 - 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow`（包含 `--project-root` + `--flow-id` + `--args` 的 `step_timeout_ms`/`fail_fast`/`shell_report`；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- Legacy gameplayflow（经根 MCP 桥接到 `tools/game-test-runner/mcp`）：`run_game_flow`、`start_stepwise_flow`、`pull_cursor_chat_plugin` 等；CI 覆盖见 `.github/workflows/mcp-smoke.yml` / `mcp-integration.yml`；脚本入口见 `tools/game-test-runner/scripts/`
 - 运行产物统一落盘到 `pointer_gpf/gpf-exp/runtime/`
 
 ## 支持的 MCP 客户端
@@ -186,6 +187,7 @@ powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -Pro
 - 适配契约：[`docs/godot-adapter-contract-v1.md`](./docs/godot-adapter-contract-v1.md)
 - 采用指南：[`docs/adoption-overview.md`](./docs/adoption-overview.md)、[`docs/migration-checklist.md`](./docs/migration-checklist.md)
 - 测试规范：[`docs/mcp-testing-spec.md`](./docs/mcp-testing-spec.md)
+- Legacy gameplayflow 设计说明：[`docs/design/99-tools/11-godot-mcp-gameplay-flow-architecture.md`](./docs/design/99-tools/11-godot-mcp-gameplay-flow-architecture.md)、[`12-gameplay-flow-automation-roadmap.md`](./docs/design/99-tools/12-gameplay-flow-automation-roadmap.md)、[`13-gameplayflow-fix-loop-runbook.md`](./docs/design/99-tools/13-gameplayflow-fix-loop-runbook.md)、[`14-mcp-core-invariants.md`](./docs/design/99-tools/14-mcp-core-invariants.md)
 
 ## 开发与 CI
 

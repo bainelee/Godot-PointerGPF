@@ -1,0 +1,69 @@
+{
+  "flowId": "room_hover_click_projection_matrix_refocus_slot0",
+  "name": "正厅聚焦后房间投影矩阵（聚焦切换扰动）",
+  "system": "gameplay",
+  "profile": "regression",
+  "mode": "local",
+  "scene": "res://scenes/ui/start_menu.tscn",
+  "flowStepTimeoutSec": 20,
+  "driverReadyTimeoutSec": 20,
+  "driverNoActivityTimeoutSec": 5,
+  "env": {
+    "HALL_ROOM_TEST_ID": "room_node_room_00",
+    "ROOM_A_TEST_ID": "room_node_room_03"
+  },
+  "steps": [
+    {
+      "id": "prepare_new_game",
+      "action": "runSubflow",
+      "file": "../../../fragments/common/new_game_enter_world.json"
+    },
+    {
+      "id": "focus_hall_room",
+      "action": "click",
+      "target": { "testId": "${HALL_ROOM_TEST_ID}" }
+    },
+    {
+      "id": "wait_hall_selected",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "selected_room_id", "value": "room_00" } },
+      "timeoutMs": 3000
+    },
+    {
+      "id": "focus_room_a_projection",
+      "action": "click",
+      "target": { "testId": "${ROOM_A_TEST_ID}" }
+    },
+    {
+      "id": "wait_room_a_selected_projection",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "selected_room_id", "value": "room_03" } },
+      "timeoutMs": 3000
+    },
+    {
+      "id": "refocus_hall_room_again",
+      "action": "click",
+      "target": { "testId": "${HALL_ROOM_TEST_ID}" }
+    },
+    {
+      "id": "wait_hall_selected_again",
+      "action": "wait",
+      "until": { "stateEquals": { "key": "selected_room_id", "value": "room_00" } },
+      "timeoutMs": 3000
+    },
+    {
+      "id": "verify_projection_matrix_after_refocus",
+      "action": "check",
+      "kind": "room_projection_hover_click_matrix",
+      "expect": {
+        "minRooms": 1,
+        "maxRooms": 12,
+        "skipSelected": true,
+        "skipUiCovered": true,
+        "strict": true,
+        "failOnNoRawHit": true
+      },
+      "timeoutMs": 10000
+    }
+  ]
+}
