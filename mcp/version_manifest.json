@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.4.4",
+    "current_version":  "0.3.0.0",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.4.4",
-                                    "min_compatible_version":  "0.2.4.4",
+                                    "version":  "0.3.0.0",
+                                    "min_compatible_version":  "0.3.0.0",
                                     "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
-                                    "published_at_utc":  "2026-04-09T17:14:44Z",
+                                    "published_at_utc":  "2026-04-09T17:17:04Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.4.4.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.4/pointer-gpf-mcp-0.2.4.4.zip",
-                                                     "sha256":  "b467967daa0dace96a49463934dd9b3264532ebae598b0769f740b0f0a2c93ba",
-                                                     "size_bytes":  3269071,
+                                                     "filename":  "pointer-gpf-mcp-0.3.0.0.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.3.0.0/pointer-gpf-mcp-0.3.0.0.zip",
+                                                     "sha256":  "f181f20e84f4254131226ceb6b40b3aa5929521920c15a9998c171a0a555fbe2",
+                                                     "size_bytes":  3269068,
                                                      "zip_layout":  "pointer_gpf_root"
                                                  }
                                 }
