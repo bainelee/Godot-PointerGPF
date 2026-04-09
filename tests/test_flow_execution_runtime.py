@@ -422,5 +422,29 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(cov.get("verify"), 1)
 
 
+class PluginBridgePackagingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[1]
+        self.tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self.tmp.name)
+        self.project_root = self.work / "proj"
+        self.project_root.mkdir(parents=True, exist_ok=True)
+        (self.project_root / "project.godot").write_text('[application]\nconfig/name="tmp"\n', encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_install_godot_plugin_includes_runtime_bridge_script(self) -> None:
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "install_godot_plugin",
+            {"project_root": str(self.project_root)},
+        )
+        self.assertEqual(code, 0, msg=f"{payload}")
+        self.assertTrue(payload.get("ok"), msg=payload)
+        bridge_gd = self.project_root / "addons" / "pointer_gpf" / "runtime_bridge.gd"
+        self.assertTrue(bridge_gd.is_file(), msg=f"missing packaged bridge script: {bridge_gd}")
+
+
 if __name__ == "__main__":
     unittest.main()
