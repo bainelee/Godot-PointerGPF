@@ -38,21 +38,37 @@ function Resolve-ReleaseAssetFromGitHub {
     param(
         [Parameter(Mandatory = $true)][string]$Repository,
         [Parameter(Mandatory = $true)][string]$Version,
-        [string]$ExpectedZipName = ""
+        [string]$ExpectedZipName = "",
+        [switch]$PreferLatest
     )
 
     $tagUrl = "https://api.github.com/repos/$Repository/releases/tags/v$Version"
     $latestUrl = "https://api.github.com/repos/$Repository/releases/latest"
     $release = $null
-    try {
-        $release = Invoke-RestMethod -Method Get -Uri $tagUrl -UseBasicParsing
-    }
-    catch {
+    if ($PreferLatest) {
         try {
             $release = Invoke-RestMethod -Method Get -Uri $latestUrl -UseBasicParsing
         }
         catch {
-            throw "No GitHub release found for $Repository (tag v$Version or latest). Publish release-package first."
+            try {
+                $release = Invoke-RestMethod -Method Get -Uri $tagUrl -UseBasicParsing
+            }
+            catch {
+                throw "No GitHub release found for $Repository (latest or tag v$Version). Publish release-package first."
+            }
+        }
+    }
+    else {
+        try {
+            $release = Invoke-RestMethod -Method Get -Uri $tagUrl -UseBasicParsing
+        }
+        catch {
+            try {
+                $release = Invoke-RestMethod -Method Get -Uri $latestUrl -UseBasicParsing
+            }
+            catch {
+                throw "No GitHub release found for $Repository (tag v$Version or latest). Publish release-package first."
+            }
         }
     }
     if ($null -eq $release) {
@@ -311,22 +327,50 @@ elseif ($ForceRemote) {
     if ([string]::IsNullOrWhiteSpace($repoSlug)) {
         throw "version_manifest.json missing repository field."
     }
-    $resolved = Resolve-ReleaseAssetFromGitHub -Repository $repoSlug -Version $targetVersion -ExpectedZipName $artifactFilename
+    $manifestTargetVersion = $targetVersion
+    $resolved = Resolve-ReleaseAssetFromGitHub -Repository $repoSlug -Version $targetVersion -ExpectedZipName $artifactFilename -PreferLatest
     $artifactUrl = [string]$resolved.zipUrl
     $resolvedTagName = [string]$resolved.tagName
     if ([string]::IsNullOrWhiteSpace($artifactUrl)) {
         throw "Resolved release has empty zip url."
     }
+    $resolvedVersion = ""
+    if (-not [string]::IsNullOrWhiteSpace($resolvedTagName)) {
+        if ($resolvedTagName.StartsWith("v")) {
+            $resolvedVersion = $resolvedTagName.Substring(1)
+        }
+        else {
+            $resolvedVersion = $resolvedTagName
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($resolvedVersion) -and ($resolvedVersion -ne $targetVersion)) {
+        Write-Warning ("[UPDATE] local manifest version " + $manifestTargetVersion + " lags remote release " + $resolvedVersion + "; using remote release metadata.")
+        $targetVersion = $resolvedVersion
+    }
     Write-Output ("[UPDATE] resolved release tag=" + $resolvedTagName)
     Write-Output ("[UPDATE] resolved artifact url=" + $artifactUrl)
 
-    if ([string]::IsNullOrWhiteSpace($artifactSha) -and -not [string]::IsNullOrWhiteSpace([string]$resolved.shaUrl)) {
+    $shaFromRelease = ""
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolved.shaUrl)) {
         $shaPath = Join-Path $workDir "sha256.txt"
         Invoke-WebRequest -Uri ([string]$resolved.shaUrl) -OutFile $shaPath -UseBasicParsing
         $shaRaw = (Get-Content -LiteralPath $shaPath -Raw -Encoding UTF8).Trim()
         if (-not [string]::IsNullOrWhiteSpace($shaRaw)) {
-            $artifactSha = $shaRaw
+            $shaMatch = [regex]::Match($shaRaw, '[0-9a-fA-F]{64}')
+            if ($shaMatch.Success) {
+                $shaFromRelease = $shaMatch.Value.ToLowerInvariant()
+            }
         }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($shaFromRelease)) {
+        $artifactSha = $shaFromRelease
+        Write-Output "[UPDATE] using sha256 from release asset (sha256.txt)."
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($resolvedVersion) -and ($resolvedVersion -ne $manifestTargetVersion)) {
+        if (-not [string]::IsNullOrWhiteSpace($artifactSha)) {
+            Write-Warning "[UPDATE] sha256.txt missing/unreadable for remote release; ignoring stale local manifest sha256 to avoid false mismatch."
+        }
+        $artifactSha = ""
     }
 
     $zipPath = Join-Path $workDir "pointer-gpf-mcp.zip"
