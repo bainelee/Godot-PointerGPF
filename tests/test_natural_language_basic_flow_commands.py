@@ -167,15 +167,25 @@ class NaturalLanguageBasicFlowCommandTests(unittest.TestCase):
             "run_game_basic_test_flow_by_current_state",
             {"project_root": str(self.project_root), "flow_id": "nl_exec_orchestration_flow", "step_timeout_ms": 2000},
         )
-        execution_result = result.get("execution_result", {})
         self.assertIn("context_refresh", result)
         self.assertIn("flow_result", result)
         self.assertIn("execution_result", result)
-        if result.get("status") in ("passed", "failed"):
-            self.assertIn(result.get("status"), ("passed", "failed"))
-        else:
-            self.assertIn(execution_result.get("status"), ("passed", "failed", "timeout"))
+        self.assertEqual(result["context_refresh"]["status"], "refreshed")
+
+        flow_result = result["flow_result"]
+        flow_file = str(flow_result.get("flow_file", "")).strip()
+        self.assertTrue(flow_file)
+        self.assertTrue(Path(flow_file).exists())
+
+        execution_result = result["execution_result"]
+        execution_status = execution_result.get("status")
+        self.assertIn(execution_status, ("passed", "failed", "timeout"))
+        status_mapping = {"passed": "passed", "failed": "failed", "timeout": "failed"}
+        self.assertEqual(result.get("status"), status_mapping[execution_status])
+
         self.assertIn("execution_report", execution_result)
+        execution_report = execution_result["execution_report"]
+        self.assertEqual(execution_report.get("status"), execution_status)
 
 
 if __name__ == "__main__":
