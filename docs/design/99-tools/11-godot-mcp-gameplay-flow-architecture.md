@@ -1,5 +1,10 @@
 # Godot MCP Gameplay Flow 架构（legacy + 根 MCP 桥接）
 
+## 设计前提
+
+- 本架构面向 **全类型 Godot 项目**，不绑定单一游戏。
+- `tools/game-test-runner` 中可能存在 legacy fixture（历史流程资产），其作用是兼容历史回放，不代表默认产品能力模型。
+
 ## 分层
 
 1. **根 MCP**（`mcp/server.py`）：面向 Cursor 等客户端的统一入口；除 Figma/画像/基础测试流外，通过桥接表暴露 **legacy gameplayflow** 工具名（与 `tools/game-test-runner/mcp` 一致）。

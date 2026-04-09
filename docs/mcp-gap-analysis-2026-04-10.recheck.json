@@ -1,0 +1,110 @@
+{
+  "old_tool_surface": [
+    "cancel_test_run",
+    "check_test_runner_environment",
+    "execute_step",
+    "get_flow_timeline",
+    "get_live_flow_progress",
+    "get_mcp_runtime_info",
+    "get_test_artifacts",
+    "get_test_report",
+    "get_test_run_status",
+    "list_test_scenarios",
+    "prepare_step",
+    "pull_cursor_chat_plugin",
+    "resume_fix_loop",
+    "run_and_stream_flow",
+    "run_game_flow",
+    "run_game_test",
+    "run_stepwise_autopilot",
+    "start_cursor_chat_plugin",
+    "start_game_flow_live",
+    "start_stepwise_flow",
+    "step_once",
+    "verify_step"
+  ],
+  "new_tool_surface": [
+    "annotate_ui_mismatch",
+    "approve_ui_fix_plan",
+    "check_plugin_status",
+    "compare_figma_game_ui",
+    "design_game_basic_test_flow",
+    "enable_godot_plugin",
+    "figma_design_to_baseline",
+    "generate_flow_seed",
+    "get_adapter_contract",
+    "get_mcp_runtime_info",
+    "init_project_context",
+    "install_godot_plugin",
+    "refresh_project_context",
+    "run_game_basic_test_flow",
+    "run_game_basic_test_flow_by_current_state",
+    "suggest_ui_fix_patch",
+    "update_game_basic_design_flow_by_current_state",
+    "update_godot_plugin"
+  ],
+  "missing_tools": [
+    "cancel_test_run",
+    "check_test_runner_environment",
+    "execute_step",
+    "get_flow_timeline",
+    "get_live_flow_progress",
+    "get_test_artifacts",
+    "get_test_report",
+    "get_test_run_status",
+    "list_test_scenarios",
+    "prepare_step",
+    "pull_cursor_chat_plugin",
+    "resume_fix_loop",
+    "run_and_stream_flow",
+    "run_game_flow",
+    "run_game_test",
+    "run_stepwise_autopilot",
+    "start_cursor_chat_plugin",
+    "start_game_flow_live",
+    "start_stepwise_flow",
+    "step_once",
+    "verify_step"
+  ],
+  "missing_paths_by_prefix": {
+    "tools/game-test-runner/scripts/": 7,
+    "tools/game-test-runner/config/": 3,
+    "docs/design/99-tools/": 5,
+    "docs/testing/": 17
+  },
+  "missing_path_samples": {
+    "tools/game-test-runner/scripts/": [
+      "tools/game-test-runner/scripts/live_event_bridge.py",
+      "tools/game-test-runner/scripts/run_acceptance_ci.ps1",
+      "tools/game-test-runner/scripts/run_exploration_two_regions_stepwise.ps1",
+      "tools/game-test-runner/scripts/run_gameplay_base_template.ps1",
+      "tools/game-test-runner/scripts/run_gameplay_flow_live_chat.ps1",
+      "tools/game-test-runner/scripts/run_gameplay_stepwise_chat.ps1",
+      "tools/game-test-runner/scripts/run_gf_exp_cycle.ps1"
+    ],
+    "tools/game-test-runner/config/": [
+      "tools/game-test-runner/config/gf_exp_allowlist.json",
+      "tools/game-test-runner/config/godot_executable.example.json",
+      "tools/game-test-runner/config/godot_executable.json"
+    ],
+    "docs/design/99-tools/": [
+      "docs/design/99-tools/01-framelink-mcp-setup.md",
+      "docs/design/99-tools/02-full-project-code-audit.md",
+      "docs/design/99-tools/03-debug-logging-and-frame-print.md",
+      "docs/design/99-tools/04-game-test-runner-contract-v1.md",
+      "docs/design/99-tools/10-maestro-research-deep-dive.md"
+    ],
+    "docs/testing/": [
+      "docs/testing/00-overview.md",
+      "docs/testing/01-install-and-config.md",
+      "docs/testing/02-scenario-authoring.md",
+      "docs/testing/03-troubleshooting.md",
+      "docs/testing/04-handoff-current-state.md",
+      "docs/testing/05-chat-relay-guardrails.md",
+      "docs/testing/06-chat-first-status-and-requirements.md",
+      "docs/testing/07-shell-broadcast-troubleshooting.md",
+      "docs/testing/08-resource-reconcile-flow.md",
+      "docs/testing/09-exploration-gameplayflow-validation.md"
+    ]
+  }
+}

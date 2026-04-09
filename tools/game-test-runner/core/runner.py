@@ -227,12 +227,12 @@ class GameTestRunner:
     def _read_app_name(self) -> str:
         project_file = self.project_root / "project.godot"
         if not project_file.exists():
-            return "Old Archives"
+            return "GodotGame"
         text = project_file.read_text(encoding="utf-8")
         match = re.search(r'config/name="([^"]+)"', text)
         if not match:
-            return "Old Archives"
-        return match.group(1).strip() or "Old Archives"
+            return "GodotGame"
+        return match.group(1).strip() or "GodotGame"
 
     def _resolve_user_data_dir(self) -> Optional[Path]:
         appdata = os.environ.get("APPDATA")
@@ -390,7 +390,7 @@ class GameTestRunner:
                 category = "click_target_disabled"
                 expected = "target should be enabled before click"
             elif code == "ROOM_SELECTION_FAILED":
-                category = "room_selection_not_confirmed"
+                category = "target_selection_not_confirmed"
                 expected = "room click should enter cleanup/build confirm state"
             elif code == "UNSUPPORTED_TARGET":
                 category = "click_unsupported_target"

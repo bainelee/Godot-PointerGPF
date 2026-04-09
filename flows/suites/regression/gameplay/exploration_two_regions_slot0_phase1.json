@@ -1,5 +1,5 @@
 {
-  "flowId": "exploration_two_regions_slot0_phase1",
+  "flowId": "region_progress_two_regions_slot0_phase1",
   "name": "探索回归 phase1：新游戏覆盖存档0，在探索地图界面并行探索两地区，推进时间完成后保存",
   "system": "gameplay",
   "profile": "regression",
@@ -9,8 +9,8 @@
   "driverReadyTimeoutSec": 20,
   "driverNoActivityTimeoutSec": 5,
   "env": {
-    "REGION_A": "white_cliff",
-    "REGION_B": "durkin_mine"
+    "REGION_A": "area_beta",
+    "REGION_B": "area_gamma"
   },
   "steps": [
     {
@@ -24,24 +24,28 @@
       "speed": 1.0
     },
     {
-      "id": "click_open_exploration_map",
+      "id": "click_open_region_progress_map",
       "action": "click",
-      "target": { "testId": "btn_center" }
+      "target": {
+        "testId": "btn_center"
+      }
     },
     {
-      "id": "verify_exploration_overlay_visible",
+      "id": "verify_region_progress_overlay_visible",
       "action": "check",
       "kind": "logic_state",
-      "expect": { "exploration_overlay_visible": true },
+      "expect": {
+        "region_progress_overlay_visible": true
+      },
       "timeoutMs": 5000
     },
     {
-      "id": "explore_region_white_cliff",
+      "id": "explore_region_area_beta",
       "action": "exploreRegion",
       "regionId": "${REGION_A}"
     },
     {
-      "id": "explore_region_durkin_mine",
+      "id": "explore_region_area_gamma",
       "action": "exploreRegion",
       "regionId": "${REGION_B}"
     },
@@ -55,10 +59,17 @@
       "action": "check",
       "kind": "logic_state",
       "expect": {
-        "exploration_explored_ids": ["durkin_mine", "old_archives", "white_cliff"]
+        "region_progress_explored_ids": [
+          "area_gamma",
+          "area_alpha",
+          "area_beta"
+        ]
       },
       "timeoutMs": 5000
     },
-    { "id": "save_game_slot0", "action": "saveGame" }
+    {
+      "id": "save_game_slot0",
+      "action": "saveGame"
+    }
   ]
 }

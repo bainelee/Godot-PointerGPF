@@ -205,7 +205,8 @@
 - root 入口兼容转发已完成（根目录 `pointer-gpf.cmd` 等薄入口指向 `pointer_gpf/` 内脚本与实现）。
 - `install/update-mcp.ps1` 已支持 `pointer_gpf` 载荷识别与关键目录同步（含 `tools/game-test-runner`、`flows` 等 legacy 资产路径）。
 - legacy 缺口 `check_test_runner_environment` 已在根 MCP 工具面补齐（与 `get_mcp_runtime_info` 所列工具一致）。
-- **仍待执行事项**：发布新版本 release 包，并回填 `mcp/version_manifest.json` 中的 `url` / `sha256` / `size_bytes`（使远端 stable 与仓库能力一致；可用 `scripts/verify-release-manifest-artifact.py` 对发布后产物做门禁验证）。
+- 已完成发布收口：已重新发布 `v0.3.0.0`，并回填 `mcp/version_manifest.json` 的 `url` / `sha256` / `size_bytes`。
+- 发布后门禁验证通过：`python scripts/verify-release-manifest-artifact.py` 返回 `ok=true`，远端 stable 包已满足单目录结构与关键工具面要求。
 
 ---
 

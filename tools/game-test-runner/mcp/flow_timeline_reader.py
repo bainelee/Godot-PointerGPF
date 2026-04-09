@@ -256,8 +256,8 @@ def _collect_key_screenshot_cards(
 
 def _infer_screenshot_label(raw_path: str, step_id: str, step_desc: str) -> str:
     name = Path(raw_path).name.lower()
-    if "room_detail" in name:
-        return "房间详情节点已打开"
+    if "detail_panel" in name:
+        return "详情面板已打开"
     if "build_t0" in name:
         return "建造阶段起始截图"
     if "build_tmid" in name:
@@ -270,12 +270,12 @@ def _infer_screenshot_label(raw_path: str, step_id: str, step_desc: str) -> str:
         return "清理阶段中间截图"
     if "clean_tdone" in name:
         return "清理阶段完成截图"
-    if "flow_exploration_step_01" in name:
-        return "探索流程步骤1截图"
-    if "flow_exploration_step_02" in name:
-        return "探索流程步骤2截图"
-    if "flow_exploration_step_03" in name:
-        return "探索流程步骤3截图"
+    if "flow_region_progress_step_01" in name:
+        return "流程步骤1截图"
+    if "flow_region_progress_step_02" in name:
+        return "流程步骤2截图"
+    if "flow_region_progress_step_03" in name:
+        return "流程步骤3截图"
     if step_desc:
         return f"关键节点截图（{step_desc}）"
     if step_id:

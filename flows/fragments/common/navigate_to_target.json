@@ -15,7 +15,7 @@
       "ms": 2000
     },
     {
-      "id": "click_room",
+      "id": "click_target",
       "action": "click",
       "target": {
         "testId": "${TARGET_TEST_ID}"
@@ -23,3 +23,4 @@
     }
   ]
 }
+

@@ -9,17 +9,23 @@
     {
       "id": "click_new_game",
       "action": "click",
-      "target": { "testId": "btn_new_game" }
+      "target": {
+        "testId": "btn_new_game"
+      }
     },
     {
       "id": "click_slot0",
       "action": "click",
-      "target": { "testId": "save_slot_0" }
+      "target": {
+        "testId": "save_slot_0"
+      }
     },
     {
       "id": "wait_ingame",
       "action": "wait",
-      "until": { "scene": "game_main" },
+      "until": {
+        "scene": "game_main"
+      },
       "minWaitMs": 200,
       "timeoutMs": 2000
     }

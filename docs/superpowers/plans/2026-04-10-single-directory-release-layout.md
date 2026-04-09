@@ -373,11 +373,18 @@ git commit -m "ci: verify single-directory release package after build"
 
 ---
 
-Plan complete and saved to `docs/superpowers/plans/2026-04-10-single-directory-release-layout.md`. Two execution options:
+## 执行结果记录（2026-04-10）
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
-
-**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
-
-Which approach?
+- 已按 Subagent-Driven 方式执行并完成核心任务（单目录发布链路、兼容工具面补齐、release 门禁脚本）。
+- 发布 workflow（`release-package.yml`）已支持：
+  - 打包载荷根目录：`pointer_gpf/`
+  - 打包后自动执行 `scripts/verify-release-package-layout.py`
+- 已恢复根 MCP 兼容项：`check_test_runner_environment`。
+- 已完成重新发布与回填：
+  - 发布版本：`v0.3.0.0`
+  - Actions run: `https://github.com/bainelee/Godot-PointerGPF/actions/runs/24203516497`
+  - `mcp/version_manifest.json` 已更新到 `0.3.0.0` 且 `zip_layout=pointer_gpf_root`
+- 发布后验收：
+  - `python scripts/verify-release-manifest-artifact.py` 返回 `ok=true`
+  - `powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -CheckUpdateOnly` 显示 stable=`0.3.0.0`
 

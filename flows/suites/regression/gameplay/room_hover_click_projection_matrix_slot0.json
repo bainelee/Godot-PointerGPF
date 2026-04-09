@@ -1,5 +1,5 @@
 {
-  "flowId": "room_hover_click_projection_matrix_slot0",
+  "flowId": "target_hover_click_projection_matrix_slot0",
   "name": "正厅聚焦后房间屏幕投影悬停点击矩阵",
   "system": "gameplay",
   "profile": "regression",
@@ -9,9 +9,9 @@
   "driverReadyTimeoutSec": 20,
   "driverNoActivityTimeoutSec": 5,
   "env": {
-    "HALL_ROOM_TEST_ID": "room_node_room_00",
-    "ROOM_A_TEST_ID": "room_node_room_03",
-    "ROOM_A_ID": "room_03"
+    "HALL_TARGET_TEST_ID": "target_node_target_00",
+    "TARGET_A_TEST_ID": "target_node_target_03",
+    "TARGET_A_ID": "target_03"
   },
   "steps": [
     {
@@ -22,18 +22,25 @@
     {
       "id": "focus_hall_room",
       "action": "click",
-      "target": { "testId": "${HALL_ROOM_TEST_ID}" }
+      "target": {
+        "testId": "${HALL_TARGET_TEST_ID}"
+      }
     },
     {
       "id": "wait_hall_selected",
       "action": "wait",
-      "until": { "stateEquals": { "key": "selected_room_id", "value": "room_00" } },
+      "until": {
+        "stateEquals": {
+          "key": "selected_target_id",
+          "value": "target_00"
+        }
+      },
       "timeoutMs": 3000
     },
     {
       "id": "verify_projection_hover_click_matrix",
       "action": "check",
-      "kind": "room_projection_hover_click_matrix",
+      "kind": "target_projection_hover_click_matrix",
       "expect": {
         "minRooms": 4,
         "maxRooms": 12,

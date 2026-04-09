@@ -1,7 +1,7 @@
 {
   "aliases": {
     "flows/common/new_game_enter_world.json": "flows/fragments/common/new_game_enter_world.json",
-    "flows/common/navigate_to_room.json": "flows/fragments/common/navigate_to_room.json",
+    "flows/common/navigate_to_target.json": "flows/fragments/common/navigate_to_target.json",
     "flows/base_validation_slot0_phase1.json": "flows/suites/regression/gameplay/basic_gameplay_slot0_phase1.json",
     "flows/base_validation_slot0_phase2.json": "flows/suites/regression/gameplay/basic_gameplay_slot0_phase2.json"
   }

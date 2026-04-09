@@ -1,6 +1,6 @@
 {
-  "flowId": "explore_one_region_room_slot0_phase1",
-  "name": "探索单地区+单房清理建设 phase1：新游戏覆盖存档0，完成一处地区探索、room_01 清理与建设后保存",
+  "flowId": "explore_one_region_target_slot0_phase1",
+  "name": "探索单地区+单房清理建设 phase1：新游戏覆盖存档0，完成一处地区探索、target_01 清理与建设后保存",
   "system": "gameplay",
   "profile": "regression",
   "mode": "local",
@@ -9,9 +9,9 @@
   "driverReadyTimeoutSec": 20,
   "driverNoActivityTimeoutSec": 5,
   "env": {
-    "REGION_ID": "durkin_mine",
-    "ROOM_A_ID": "room_01",
-    "ROOM_A_TEST_ID": "room_node_room_01"
+    "REGION_ID": "area_gamma",
+    "TARGET_A_ID": "target_01",
+    "TARGET_A_TEST_ID": "target_node_target_01"
   },
   "steps": [
     {
@@ -25,19 +25,23 @@
       "speed": 1.0
     },
     {
-      "id": "click_open_exploration_map",
+      "id": "click_open_region_progress_map",
       "action": "click",
-      "target": { "testId": "btn_center" }
+      "target": {
+        "testId": "btn_center"
+      }
     },
     {
-      "id": "verify_exploration_overlay_visible",
+      "id": "verify_region_progress_overlay_visible",
       "action": "check",
       "kind": "logic_state",
-      "expect": { "exploration_overlay_visible": true },
+      "expect": {
+        "region_progress_overlay_visible": true
+      },
       "timeoutMs": 5000
     },
     {
-      "id": "explore_region_durkin_mine",
+      "id": "explore_region_area_gamma",
       "action": "exploreRegion",
       "regionId": "${REGION_ID}"
     },
@@ -51,42 +55,114 @@
       "action": "check",
       "kind": "logic_state",
       "expect": {
-        "exploration_explored_ids": ["durkin_mine", "old_archives"]
+        "region_progress_explored_ids": [
+          "area_gamma",
+          "area_alpha"
+        ]
       },
       "timeoutMs": 5000
     },
-    { "id": "start_cleanup_mode_room_a", "action": "click", "target": { "testId": "btn_cleanup" } },
-    { "id": "select_cleanup_room_a", "action": "click", "target": { "testId": "${ROOM_A_TEST_ID}" } },
-    { "id": "confirm_cleanup_room_a", "action": "click", "target": { "testId": "cleanup_confirm_button" } },
     {
-      "id": "wait_clean_done_room_a",
+      "id": "start_cleanup_mode_target_a",
+      "action": "click",
+      "target": {
+        "testId": "btn_cleanup"
+      }
+    },
+    {
+      "id": "select_cleanup_target_a",
+      "action": "click",
+      "target": {
+        "testId": "${TARGET_A_TEST_ID}"
+      }
+    },
+    {
+      "id": "confirm_cleanup_target_a",
+      "action": "click",
+      "target": {
+        "testId": "cleanup_confirm_button"
+      }
+    },
+    {
+      "id": "wait_clean_done_target_a",
       "action": "wait",
-      "until": { "stateEquals": { "key": "room_clean_status", "value": "cleaned", "roomId": "${ROOM_A_ID}" } },
+      "until": {
+        "stateEquals": {
+          "key": "target_clean_status",
+          "value": "cleaned",
+          "roomId": "${TARGET_A_ID}"
+        }
+      },
       "timeoutMs": 7000
     },
-    { "id": "start_build_mode_room_a", "action": "click", "target": { "testId": "btn_build" } },
     {
-      "id": "wait_research_zone_visible_room_a",
+      "id": "start_build_mode_target_a",
+      "action": "click",
+      "target": {
+        "testId": "btn_build"
+      }
+    },
+    {
+      "id": "wait_research_zone_visible_target_a",
       "action": "wait",
-      "until": { "nodeVisible": { "testId": "construction_zone_1" } },
+      "until": {
+        "nodeVisible": {
+          "testId": "construction_zone_1"
+        }
+      },
       "timeoutMs": 5000
     },
-    { "id": "select_build_zone_room_a", "action": "click", "target": { "testId": "construction_zone_1" } },
-    { "id": "select_build_room_a", "action": "click", "target": { "testId": "${ROOM_A_TEST_ID}" } },
     {
-      "id": "wait_build_confirm_visible_room_a",
+      "id": "select_build_zone_target_a",
+      "action": "click",
+      "target": {
+        "testId": "construction_zone_1"
+      }
+    },
+    {
+      "id": "select_build_target_a",
+      "action": "click",
+      "target": {
+        "testId": "${TARGET_A_TEST_ID}"
+      }
+    },
+    {
+      "id": "wait_build_confirm_visible_target_a",
       "action": "wait",
-      "until": { "nodeVisible": { "testId": "construction_confirm_button" } },
+      "until": {
+        "nodeVisible": {
+          "testId": "construction_confirm_button"
+        }
+      },
       "timeoutMs": 5000
     },
-    { "id": "confirm_build_room_a", "action": "click", "target": { "testId": "construction_confirm_button" } },
     {
-      "id": "wait_build_done_room_a",
+      "id": "confirm_build_target_a",
+      "action": "click",
+      "target": {
+        "testId": "construction_confirm_button"
+      }
+    },
+    {
+      "id": "wait_build_done_target_a",
       "action": "wait",
-      "until": { "stateEquals": { "key": "build_status", "value": "built", "roomId": "${ROOM_A_ID}" } },
+      "until": {
+        "stateEquals": {
+          "key": "build_status",
+          "value": "built",
+          "roomId": "${TARGET_A_ID}"
+        }
+      },
       "timeoutMs": 10000
     },
-    { "id": "set_game_speed_x1_before_save", "action": "setGameTimeSpeed", "speed": 1.0 },
-    { "id": "save_game_slot0", "action": "saveGame" }
+    {
+      "id": "set_game_speed_x1_before_save",
+      "action": "setGameTimeSpeed",
+      "speed": 1.0
+    },
+    {
+      "id": "save_game_slot0",
+      "action": "saveGame"
+    }
   ]
 }

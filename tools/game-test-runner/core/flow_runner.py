@@ -302,7 +302,7 @@ def execute_flow_file(
             "or run_gameplay_stepwise_chat.ps1 (see docs/testing/README.md).",
             file=sys.stderr,
         )
-    system = str(flow.get("system", "exploration"))
+    system = str(flow.get("system", "gameplay"))
     scene = flow.get("scene")
     scenario = flow.get("scenario")
     screenshot_prefix = str(flow.get("screenshotPrefix", "")).strip() or None

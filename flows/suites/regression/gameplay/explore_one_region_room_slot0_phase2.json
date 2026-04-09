@@ -1,6 +1,6 @@
 {
-  "flowId": "explore_one_region_room_slot0_phase2",
-  "name": "探索单地区+单房清理建设 phase2：继续游戏，校验存档内探索块与 room_01 清理/建设持久化",
+  "flowId": "explore_one_region_target_slot0_phase2",
+  "name": "探索单地区+单房清理建设 phase2：继续游戏，校验存档内探索块与 target_01 清理/建设持久化",
   "system": "gameplay",
   "profile": "regression",
   "mode": "local",
@@ -9,48 +9,74 @@
   "driverReadyTimeoutSec": 20,
   "driverNoActivityTimeoutSec": 5,
   "env": {
-    "ROOM_A_ID": "room_01"
+    "TARGET_A_ID": "target_01"
   },
   "steps": [
-    { "id": "sleep_boot", "action": "sleep", "ms": 500 },
-    { "id": "click_continue", "action": "click", "target": { "testId": "btn_continue" } },
+    {
+      "id": "sleep_boot",
+      "action": "sleep",
+      "ms": 500
+    },
+    {
+      "id": "click_continue",
+      "action": "click",
+      "target": {
+        "testId": "btn_continue"
+      }
+    },
     {
       "id": "wait_ingame",
       "action": "wait",
-      "until": { "scene": "game_main" },
+      "until": {
+        "scene": "game_main"
+      },
       "minWaitMs": 200,
       "timeoutMs": 2000
     },
-    { "id": "set_game_speed_x1_stable", "action": "setGameTimeSpeed", "speed": 1.0 },
     {
-      "id": "verify_save_slot_exploration_one_region",
-      "action": "verifySaveSlotExploration",
-      "slot": 0,
-      "mustContainExplored": ["old_archives", "durkin_mine"]
+      "id": "set_game_speed_x1_stable",
+      "action": "setGameTimeSpeed",
+      "speed": 1.0
     },
     {
-      "id": "verify_runtime_exploration_one_region_after_continue",
+      "id": "verify_save_slot_region_progress_one_region",
+      "action": "verifySaveSlotExploration",
+      "slot": 0,
+      "mustContainExplored": [
+        "area_alpha",
+        "area_gamma"
+      ]
+    },
+    {
+      "id": "verify_runtime_region_progress_one_region_after_continue",
       "action": "check",
       "kind": "logic_state",
       "expect": {
-        "exploration_explored_ids": ["durkin_mine", "old_archives"]
+        "region_progress_explored_ids": [
+          "area_gamma",
+          "area_alpha"
+        ]
       },
       "timeoutMs": 5000
     },
     {
-      "id": "verify_room_a_cleaned",
+      "id": "verify_target_a_cleaned",
       "action": "check",
       "kind": "logic_state",
-      "roomId": "${ROOM_A_ID}",
-      "expect": { "room_clean_status": "cleaned" },
+      "roomId": "${TARGET_A_ID}",
+      "expect": {
+        "target_clean_status": "cleaned"
+      },
       "timeoutMs": 5000
     },
     {
-      "id": "verify_room_a_built",
+      "id": "verify_target_a_built",
       "action": "check",
       "kind": "logic_state",
-      "roomId": "${ROOM_A_ID}",
-      "expect": { "build_status": "built" },
+      "roomId": "${TARGET_A_ID}",
+      "expect": {
+        "build_status": "built"
+      },
       "timeoutMs": 5000
     }
   ]

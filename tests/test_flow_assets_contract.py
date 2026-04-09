@@ -28,9 +28,9 @@ class FlowAssetsContractTests(unittest.TestCase):
     def test_flows_tree_restored_from_baseline(self) -> None:
         root = _repo_root()
         self.assertTrue((root / "flows" / "migration_map.json").is_file())
-        self.assertTrue((root / "flows" / "rules" / "room_detail_strict_v1.json").is_file())
+        self.assertTrue((root / "flows" / "rules" / "detail_panel_strict_v1.json").is_file())
         self.assertTrue((root / "flows" / "fragments" / "common" / "new_game_enter_world.json").is_file())
-        self.assertTrue((root / "flows" / "fragments" / "common" / "navigate_to_room.json").is_file())
+        self.assertTrue((root / "flows" / "fragments" / "common" / "navigate_to_target.json").is_file())
         self.assertTrue((root / "flows" / "internal" / "contract_force_fail_invalid_scene.json").is_file())
         gameplay = root / "flows" / "suites" / "regression" / "gameplay"
         self.assertTrue(gameplay.is_dir())

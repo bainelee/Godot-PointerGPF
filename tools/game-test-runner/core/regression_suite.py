@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run a quick regression suite and generate a summary report.
+"""Run a quick generic regression suite and generate a summary report.
 
 Suite cases:
-1) exploration_smoke should pass
+1) gameplay_smoke should pass
 2) visual_regression_probe baseline record should pass
 3) visual_regression_probe check should fail with visual_regression (canary)
 """
@@ -38,18 +38,18 @@ def run_suite(project_root: Path, godot_bin: str, timeout_sec: int) -> tuple[dic
     runner = GameTestRunner(project_root=project_root)
     cases: list[dict] = []
 
-    # Case 1: exploration smoke should pass.
+    # Case 1: generic gameplay smoke should pass.
     r1 = runner.run(
         RunRequest(
-            system="exploration",
+            system="gameplay",
             project_root=project_root,
-            scenario="exploration_smoke",
+            scenario="gameplay_smoke",
             timeout_sec=timeout_sec,
             godot_bin=godot_bin,
             dry_run=False,
         )
     )
-    cases.append(_case_record("exploration_smoke", r1, "finished", r1.status == "finished"))
+    cases.append(_case_record("gameplay_smoke", r1, "finished", r1.status == "finished"))
 
     # Case 2: visual baseline record should pass.
     r2 = runner.run(

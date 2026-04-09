@@ -8,16 +8,16 @@
 
 ## 2. 约定来源（历史规则回溯）
 
-以下内容来自旧规则与旧实现，作为本次设计的依据：
+以下内容来自历史规则与历史实现，作为本次设计的依据：
 
-- `./.tmp_old_archives/chat-first-stepwise-core.mdc`
+- `./historical/chat-first-stepwise-core.mdc`（历史样例）
   - 主观测渠道为 shell，逐步输出。
   - 每步固定 `started -> result -> verify`，失败即停。
-- `./.tmp_old_archives/06-chat-first-status-and-requirements.md`
+- `./historical/06-chat-first-status-and-requirements.md`（历史样例）
   - 要求聊天播报与游戏内动作时序一致。
   - 要求可审计（聊天时间戳与游戏时间戳可对照）。
   - 在思考间隙允许暂停游戏时间，避免状态偷跑。
-- 旧实现 `bainelee/old_archives_sp/scripts/test/test_driver_actions.gd`
+- 历史实现样例 `scripts/test/test_driver_actions.gd`
   - 输入执行通过 `Input.parse_input_event(...)` 注入到游戏进程内。
   - 点击/移动/滚轮/拖拽均在游戏内部处理，不需要接管 OS 全局鼠标键盘。
 

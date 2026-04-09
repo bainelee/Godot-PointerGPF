@@ -4,6 +4,7 @@ This matrix records current implementation status based on repository evidence.
 
 ## Implemented
 
+- Game-agnostic positioning is explicit: MCP contracts and runtime/report schemas are designed for cross-project Godot reuse rather than any single game.
 - stdio + CLI dual entry: `mcp/server.py` (`_run_stdio_mcp`, `_run_cli_mode`, `main` routing).
 - MCP tool schema + handler reuse: `mcp/server.py` (`_build_tool_specs`, `_build_tool_map`, `tools/list`, `tools/call`).
 - Figma collaboration pipeline tools:

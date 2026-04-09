@@ -24,6 +24,7 @@
 
 ## 当前能力（v0.2.4.3）
 
+- 通用性约束：MCP 契约与工具设计面向全类型 Godot 项目，不绑定某一个具体游戏设定。
 - 插件生命周期工具：`install_godot_plugin`、`enable_godot_plugin`、`update_godot_plugin`、`check_plugin_status`
 - 项目上下文流水线：`init_project_context`、`refresh_project_context`、`generate_flow_seed`
 - 自然语言触发命令：
@@ -32,7 +33,7 @@
 - Figma 验证闭环：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`
 - 契约与运行时诊断：`get_adapter_contract`、`get_mcp_runtime_info`
 - 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow`（包含 `--project-root` + `--flow-id` + `--args` 的 `step_timeout_ms`/`fail_fast`/`shell_report`；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
-- Legacy gameplayflow（经根 MCP 桥接到 `tools/game-test-runner/mcp`）：`run_game_flow`、`start_stepwise_flow`、`pull_cursor_chat_plugin` 等；CI 覆盖见 `.github/workflows/mcp-smoke.yml` / `mcp-integration.yml`；脚本入口见 `tools/game-test-runner/scripts/`
+- Legacy gameplayflow（经根 MCP 桥接到 `tools/game-test-runner/mcp`）：`run_game_flow`、`start_stepwise_flow`、`pull_cursor_chat_plugin` 等；该部分用于历史兼容与回放，不代表单一游戏默认能力模型；CI 覆盖见 `.github/workflows/mcp-smoke.yml` / `mcp-integration.yml`；脚本入口见 `tools/game-test-runner/scripts/`
 - 运行产物统一落盘到 `pointer_gpf/gpf-exp/runtime/`
 
 ## 支持的 MCP 客户端

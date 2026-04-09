@@ -1,5 +1,5 @@
 {
-  "flowId": "smoke_continue_exploration_toggle",
+  "flowId": "smoke_continue_region_progress_toggle",
   "name": "烟测：继续游戏 → 打开探索界面 → 关闭 → 结束后由 Runner 退出进程",
   "system": "gameplay",
   "profile": "regression",
@@ -9,37 +9,57 @@
   "driverReadyTimeoutSec": 25,
   "driverNoActivityTimeoutSec": 8,
   "steps": [
-    { "id": "sleep_boot", "action": "sleep", "ms": 800 },
-    { "id": "click_continue", "action": "click", "target": { "testId": "btn_continue" } },
+    {
+      "id": "sleep_boot",
+      "action": "sleep",
+      "ms": 800
+    },
+    {
+      "id": "click_continue",
+      "action": "click",
+      "target": {
+        "testId": "btn_continue"
+      }
+    },
     {
       "id": "wait_ingame",
       "action": "wait",
-      "until": { "scene": "game_main" },
+      "until": {
+        "scene": "game_main"
+      },
       "minWaitMs": 200,
       "timeoutMs": 15000
     },
     {
-      "id": "click_open_exploration_map",
+      "id": "click_open_region_progress_map",
       "action": "click",
-      "target": { "testId": "btn_center" }
+      "target": {
+        "testId": "btn_center"
+      }
     },
     {
-      "id": "verify_exploration_overlay_visible",
+      "id": "verify_region_progress_overlay_visible",
       "action": "check",
       "kind": "logic_state",
-      "expect": { "exploration_overlay_visible": true },
+      "expect": {
+        "region_progress_overlay_visible": true
+      },
       "timeoutMs": 5000
     },
     {
-      "id": "click_close_exploration",
+      "id": "click_close_region_progress",
       "action": "click",
-      "target": { "testId": "btn_exploration_close" }
+      "target": {
+        "testId": "btn_region_progress_close"
+      }
     },
     {
-      "id": "verify_exploration_overlay_hidden",
+      "id": "verify_region_progress_overlay_hidden",
       "action": "check",
       "kind": "logic_state",
-      "expect": { "exploration_overlay_visible": false },
+      "expect": {
+        "region_progress_overlay_visible": false
+      },
       "timeoutMs": 5000
     }
   ]

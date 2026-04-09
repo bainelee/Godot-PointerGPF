@@ -1,5 +1,5 @@
 {
-  "flowId": "room_hover_click_projection_matrix_zoom_slot0",
+  "flowId": "target_hover_click_projection_matrix_zoom_slot0",
   "name": "正厅聚焦后房间投影矩阵（缩放扰动）",
   "system": "gameplay",
   "profile": "regression",
@@ -9,7 +9,7 @@
   "driverReadyTimeoutSec": 20,
   "driverNoActivityTimeoutSec": 5,
   "env": {
-    "HALL_ROOM_TEST_ID": "room_node_room_00"
+    "HALL_TARGET_TEST_ID": "target_node_target_00"
   },
   "steps": [
     {
@@ -20,12 +20,19 @@
     {
       "id": "focus_hall_room",
       "action": "click",
-      "target": { "testId": "${HALL_ROOM_TEST_ID}" }
+      "target": {
+        "testId": "${HALL_TARGET_TEST_ID}"
+      }
     },
     {
       "id": "wait_hall_selected",
       "action": "wait",
-      "until": { "stateEquals": { "key": "selected_room_id", "value": "room_00" } },
+      "until": {
+        "stateEquals": {
+          "key": "selected_target_id",
+          "value": "target_00"
+        }
+      },
       "timeoutMs": 3000
     },
     {
@@ -42,7 +49,7 @@
     {
       "id": "verify_projection_matrix_after_zoom_in",
       "action": "check",
-      "kind": "room_projection_hover_click_matrix",
+      "kind": "target_projection_hover_click_matrix",
       "expect": {
         "minRooms": 0,
         "maxRooms": 12,
@@ -67,7 +74,7 @@
     {
       "id": "verify_projection_matrix_after_zoom_out",
       "action": "check",
-      "kind": "room_projection_hover_click_matrix",
+      "kind": "target_projection_hover_click_matrix",
       "expect": {
         "minRooms": 0,
         "maxRooms": 12,

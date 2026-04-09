@@ -18,7 +18,10 @@
       "id": "wait_initial_info_amount_ready",
       "action": "wait",
       "until": {
-        "stateEquals": { "key": "info_amount", "value": 500 }
+        "stateEquals": {
+          "key": "info_amount",
+          "value": 500
+        }
       },
       "minWaitMs": 200,
       "timeoutMs": 20000
@@ -32,7 +35,9 @@
       "id": "verify_game_speed_x2",
       "action": "check",
       "kind": "logic_state",
-      "expect": { "game_speed_multiplier": 2.0 },
+      "expect": {
+        "game_speed_multiplier": 2.0
+      },
       "timeoutMs": 3000
     },
     {
@@ -49,7 +54,7 @@
         "days": 7,
         "min_game_total_hours": 168.0,
         "require_speed_multiplier_2": true,
-        "researcher_count_cap": 10
+        "staff_count_cap": 10
       },
       "timeoutMs": 1000
     },

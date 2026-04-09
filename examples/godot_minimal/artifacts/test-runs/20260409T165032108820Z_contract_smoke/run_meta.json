@@ -1,0 +1,28 @@
+{
+  "run_id": "20260409T165032108820Z_contract_smoke",
+  "status": "finished",
+  "system": "contract",
+  "scenario": "contract_smoke",
+  "profile": "smoke",
+  "mode": "headless",
+  "timeoutSec": 300,
+  "retry": 0,
+  "projectRoot": "D:\\AI\\pointer_gpf\\examples\\godot_minimal",
+  "command": [
+    "D:\\GODOT\\Godot_v4.6.1-stable_win64.exe\\Godot_v4.6.1-stable_win64.exe",
+    "--path",
+    "D:\\AI\\pointer_gpf\\examples\\godot_minimal",
+    "--user-data-dir",
+    "D:\\AI\\pointer_gpf\\examples\\godot_minimal\\artifacts\\test-runs\\20260409T165032108820Z_contract_smoke\\user_data",
+    "--headless",
+    "res://scenes/__contract__/missing_scene_for_failure.tscn",
+    "--",
+    "--test-driver",
+    "--test-driver-session=20260409T165032108820Z_contract_smoke"
+  ],
+  "startedAt": "2026-04-09T16:50:32.109826+00:00",
+  "dryRun": true,
+  "screenshotPrefix": "",
+  "finishedAt": "2026-04-09T16:50:32.109826+00:00",
+  "exitCode": 0
+}

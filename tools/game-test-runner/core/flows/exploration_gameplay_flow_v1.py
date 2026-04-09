@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-"""First real gameplay debug flow template.
+"""First generic gameplay debug flow template.
 
 This template intentionally keeps scope small and stable:
-- Reuse exploration smoke scene as the first executable gameplay probe.
+- Reuse a generic smoke scene as the first executable gameplay probe.
 - Add explicit wait/verify steps around generated artifacts for debugging.
 """
 
 from __future__ import annotations
 
 
-FLOW_ID = "exploration_gameplay_flow_v1"
+FLOW_ID = "generic_gameplay_flow_v1"
 
 
 def get_flow_definition() -> dict:
     return {
         "flow_id": FLOW_ID,
-        "name": "Exploration Gameplay Flow v1",
-        "description": "Run exploration gameplay template with step markers and evidence checks.",
+        "name": "Generic Gameplay Flow v1",
+        "description": "Run a generic gameplay template with step markers and evidence checks.",
         "steps": [
             {
-                "name": "run_exploration_gameplay_scene",
+                "name": "run_generic_gameplay_scene",
                 "type": "run_scenario",
-                "system": "exploration",
-                "scenario": "exploration_gameplay_flow_test",
-                "screenshot_prefix": "flow_exploration_",
+                "system": "gameplay",
+                "scenario": "flow_runtime_sanity",
+                "screenshot_prefix": "flow_runtime_",
                 "wait_condition": {
                     "type": "process_exit",
                     "description": "Godot process exits within timeout.",
@@ -39,8 +39,8 @@ def get_flow_definition() -> dict:
                 "path": "logs/stdout.log",
                 "markers": [
                     "[GameplayFlowV1] STEP bootstrap PASS",
-                    "[GameplayFlowV1] STEP enter_exploration_map PASS",
-                    "[GameplayFlowV1] STEP execute_exploration_action PASS",
+                    "[GameplayFlowV1] STEP enter_runtime_path PASS",
+                    "[GameplayFlowV1] STEP execute_runtime_action PASS",
                     "[GameplayFlowV1] FLOW PASS",
                 ],
                 "wait_condition": {
@@ -71,18 +71,18 @@ def get_flow_definition() -> dict:
                     {"type": "file_exists", "path": "run_meta.json"},
                     {"type": "file_exists", "path": "logs/stdout.log"},
                     {"type": "file_exists", "path": "logs/stderr.log"},
-                    {"type": "file_exists", "path": "screenshots/flow_exploration_step_01_bootstrap.png"},
-                    {"type": "file_exists", "path": "screenshots/flow_exploration_step_02_enter_map.png"},
-                    {"type": "file_exists", "path": "screenshots/flow_exploration_step_03_explore_action.png"},
+                    {"type": "file_exists", "path": "screenshots/flow_runtime_step_01_bootstrap.png"},
+                    {"type": "file_exists", "path": "screenshots/flow_runtime_step_02_enter_path.png"},
+                    {"type": "file_exists", "path": "screenshots/flow_runtime_step_03_execute_action.png"},
                 ],
             },
             {
                 "name": "assert_step_screenshots_distinct",
                 "type": "assert_files_distinct",
                 "files": [
-                    "screenshots/flow_exploration_step_01_bootstrap.png",
-                    "screenshots/flow_exploration_step_02_enter_map.png",
-                    "screenshots/flow_exploration_step_03_explore_action.png",
+                    "screenshots/flow_runtime_step_01_bootstrap.png",
+                    "screenshots/flow_runtime_step_02_enter_path.png",
+                    "screenshots/flow_runtime_step_03_execute_action.png",
                 ],
                 "wait_condition": {
                     "type": "visual_step_variation",

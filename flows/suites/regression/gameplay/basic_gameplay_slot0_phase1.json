@@ -9,10 +9,10 @@
   "driverReadyTimeoutSec": 20,
   "driverNoActivityTimeoutSec": 5,
   "env": {
-    "ROOM_A_ID": "room_01",
-    "ROOM_A_TEST_ID": "room_node_room_01",
-    "ROOM_B_ID": "room_03",
-    "ROOM_B_TEST_ID": "room_node_room_03"
+    "TARGET_A_ID": "target_01",
+    "TARGET_A_TEST_ID": "target_node_target_01",
+    "TARGET_B_ID": "target_03",
+    "TARGET_B_TEST_ID": "target_node_target_03"
   },
   "steps": [
     {
@@ -20,69 +20,200 @@
       "action": "runSubflow",
       "file": "../../../fragments/common/new_game_enter_world.json"
     },
-    { "id": "start_cleanup_mode_room_a", "action": "click", "target": { "testId": "btn_cleanup" } },
-    { "id": "select_cleanup_room_a", "action": "click", "target": { "testId": "${ROOM_A_TEST_ID}" } },
-    { "id": "confirm_cleanup_room_a", "action": "click", "target": { "testId": "cleanup_confirm_button" } },
     {
-      "id": "wait_clean_done_room_a",
+      "id": "start_cleanup_mode_target_a",
+      "action": "click",
+      "target": {
+        "testId": "btn_cleanup"
+      }
+    },
+    {
+      "id": "select_cleanup_target_a",
+      "action": "click",
+      "target": {
+        "testId": "${TARGET_A_TEST_ID}"
+      }
+    },
+    {
+      "id": "confirm_cleanup_target_a",
+      "action": "click",
+      "target": {
+        "testId": "cleanup_confirm_button"
+      }
+    },
+    {
+      "id": "wait_clean_done_target_a",
       "action": "wait",
-      "until": { "stateEquals": { "key": "room_clean_status", "value": "cleaned", "roomId": "${ROOM_A_ID}" } },
+      "until": {
+        "stateEquals": {
+          "key": "target_clean_status",
+          "value": "cleaned",
+          "roomId": "${TARGET_A_ID}"
+        }
+      },
       "timeoutMs": 7000
     },
-    { "id": "start_build_mode_room_a", "action": "click", "target": { "testId": "btn_build" } },
     {
-      "id": "wait_research_zone_visible_room_a",
+      "id": "start_build_mode_target_a",
+      "action": "click",
+      "target": {
+        "testId": "btn_build"
+      }
+    },
+    {
+      "id": "wait_research_zone_visible_target_a",
       "action": "wait",
-      "until": { "nodeVisible": { "testId": "construction_zone_1" } },
+      "until": {
+        "nodeVisible": {
+          "testId": "construction_zone_1"
+        }
+      },
       "timeoutMs": 5000
     },
-    { "id": "select_build_zone_room_a", "action": "click", "target": { "testId": "construction_zone_1" } },
-    { "id": "select_build_room_a", "action": "click", "target": { "testId": "${ROOM_A_TEST_ID}" } },
     {
-      "id": "wait_build_confirm_visible_room_a",
+      "id": "select_build_zone_target_a",
+      "action": "click",
+      "target": {
+        "testId": "construction_zone_1"
+      }
+    },
+    {
+      "id": "select_build_target_a",
+      "action": "click",
+      "target": {
+        "testId": "${TARGET_A_TEST_ID}"
+      }
+    },
+    {
+      "id": "wait_build_confirm_visible_target_a",
       "action": "wait",
-      "until": { "nodeVisible": { "testId": "construction_confirm_button" } },
+      "until": {
+        "nodeVisible": {
+          "testId": "construction_confirm_button"
+        }
+      },
       "timeoutMs": 5000
     },
-    { "id": "confirm_build_room_a", "action": "click", "target": { "testId": "construction_confirm_button" } },
     {
-      "id": "wait_build_done_room_a",
+      "id": "confirm_build_target_a",
+      "action": "click",
+      "target": {
+        "testId": "construction_confirm_button"
+      }
+    },
+    {
+      "id": "wait_build_done_target_a",
       "action": "wait",
-      "until": { "stateEquals": { "key": "build_status", "value": "built", "roomId": "${ROOM_A_ID}" } },
+      "until": {
+        "stateEquals": {
+          "key": "build_status",
+          "value": "built",
+          "roomId": "${TARGET_A_ID}"
+        }
+      },
       "timeoutMs": 10000
     },
-    { "id": "start_cleanup_mode_room_b", "action": "click", "target": { "testId": "btn_cleanup" } },
-    { "id": "select_cleanup_room_b", "action": "click", "target": { "testId": "${ROOM_B_TEST_ID}" } },
-    { "id": "confirm_cleanup_room_b", "action": "click", "target": { "testId": "cleanup_confirm_button" } },
     {
-      "id": "wait_clean_done_room_b",
+      "id": "start_cleanup_mode_target_b",
+      "action": "click",
+      "target": {
+        "testId": "btn_cleanup"
+      }
+    },
+    {
+      "id": "select_cleanup_target_b",
+      "action": "click",
+      "target": {
+        "testId": "${TARGET_B_TEST_ID}"
+      }
+    },
+    {
+      "id": "confirm_cleanup_target_b",
+      "action": "click",
+      "target": {
+        "testId": "cleanup_confirm_button"
+      }
+    },
+    {
+      "id": "wait_clean_done_target_b",
       "action": "wait",
-      "until": { "stateEquals": { "key": "room_clean_status", "value": "cleaned", "roomId": "${ROOM_B_ID}" } },
+      "until": {
+        "stateEquals": {
+          "key": "target_clean_status",
+          "value": "cleaned",
+          "roomId": "${TARGET_B_ID}"
+        }
+      },
       "timeoutMs": 7000
     },
-    { "id": "start_build_mode_room_b", "action": "click", "target": { "testId": "btn_build" } },
     {
-      "id": "wait_research_zone_visible_room_b",
+      "id": "start_build_mode_target_b",
+      "action": "click",
+      "target": {
+        "testId": "btn_build"
+      }
+    },
+    {
+      "id": "wait_research_zone_visible_target_b",
       "action": "wait",
-      "until": { "nodeVisible": { "testId": "construction_zone_1" } },
+      "until": {
+        "nodeVisible": {
+          "testId": "construction_zone_1"
+        }
+      },
       "timeoutMs": 5000
     },
-    { "id": "select_build_zone_room_b", "action": "click", "target": { "testId": "construction_zone_1" } },
-    { "id": "select_build_room_b", "action": "click", "target": { "testId": "${ROOM_B_TEST_ID}" } },
     {
-      "id": "wait_build_confirm_visible_room_b",
+      "id": "select_build_zone_target_b",
+      "action": "click",
+      "target": {
+        "testId": "construction_zone_1"
+      }
+    },
+    {
+      "id": "select_build_target_b",
+      "action": "click",
+      "target": {
+        "testId": "${TARGET_B_TEST_ID}"
+      }
+    },
+    {
+      "id": "wait_build_confirm_visible_target_b",
       "action": "wait",
-      "until": { "nodeVisible": { "testId": "construction_confirm_button" } },
+      "until": {
+        "nodeVisible": {
+          "testId": "construction_confirm_button"
+        }
+      },
       "timeoutMs": 5000
     },
-    { "id": "confirm_build_room_b", "action": "click", "target": { "testId": "construction_confirm_button" } },
     {
-      "id": "wait_build_done_room_b",
+      "id": "confirm_build_target_b",
+      "action": "click",
+      "target": {
+        "testId": "construction_confirm_button"
+      }
+    },
+    {
+      "id": "wait_build_done_target_b",
       "action": "wait",
-      "until": { "stateEquals": { "key": "build_status", "value": "built", "roomId": "${ROOM_B_ID}" } },
+      "until": {
+        "stateEquals": {
+          "key": "build_status",
+          "value": "built",
+          "roomId": "${TARGET_B_ID}"
+        }
+      },
       "timeoutMs": 10000
     },
-    { "id": "set_game_speed_x1_before_save", "action": "setGameTimeSpeed", "speed": 1.0 },
-    { "id": "save_game_slot0", "action": "saveGame" }
+    {
+      "id": "set_game_speed_x1_before_save",
+      "action": "setGameTimeSpeed",
+      "speed": 1.0
+    },
+    {
+      "id": "save_game_slot0",
+      "action": "saveGame"
+    }
   ]
 }

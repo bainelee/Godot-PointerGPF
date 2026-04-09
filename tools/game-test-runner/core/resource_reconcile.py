@@ -20,7 +20,7 @@ RESOURCE_KEYS = [
     "permission",
     "info",
     "truth",
-    "researcher",
+    "staff",
     "labor",
     "eroded",
     "investigator",
@@ -101,7 +101,7 @@ def _canonical_resources(raw: dict[str, Any]) -> dict[str, Any]:
             "permission": factors.get("permission"),
             "info": currency.get("info"),
             "truth": currency.get("truth"),
-            "researcher": personnel.get("researcher"),
+            "staff": personnel.get("staff"),
             "labor": personnel.get("labor"),
             "eroded": personnel.get("eroded"),
             "investigator": personnel.get("investigator"),
@@ -113,7 +113,7 @@ def _canonical_resources(raw: dict[str, Any]) -> dict[str, Any]:
         "permission": raw.get("permission"),
         "info": raw.get("info"),
         "truth": raw.get("truth"),
-        "researcher": raw.get("researcher"),
+        "staff": raw.get("staff"),
         "labor": raw.get("labor", 0),
         "eroded": raw.get("eroded", 0),
         "investigator": raw.get("investigator", 0),
@@ -187,7 +187,7 @@ def _run_flow_stepwise_shared(
     timeout_sec: int,
     run_id: str,
 ) -> dict[str, Any]:
-    """Run flow via Cursor chat / stepwise script so Chat 三句式播报与主路径一致。"""
+    """Run flow via Cursor chat/stepwise path with the same three-phase contract."""
     script = project_root / "tools" / "game-test-runner" / "scripts" / "run_gameplay_stepwise_chat.py"
     user_data_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -264,7 +264,7 @@ def _load_saved_resources(user_data_dir: Path, slot: int = 0) -> dict[str, Any]:
     appdata_env = str(os.environ.get("APPDATA", "")).strip()
     if appdata_env:
         appdata = Path(appdata_env)
-    fallback = appdata / "Godot" / "app_userdata" / "Old Archives" / "saves" / f"slot_{slot}.json"
+    fallback = appdata / "Godot" / "app_userdata" / "GodotGame" / "saves" / f"slot_{slot}.json"
     payload_fallback = _read_json(fallback, {})
     if (
         isinstance(payload_fallback, dict)
@@ -344,26 +344,26 @@ def _gate_error_code(gate_name: str) -> str:
     return str(mapping.get(str(gate_name), "E_UNKNOWN_GATE"))
 
 
-def _load_basic_model(project_root: Path, room_id: str, start_snapshot: dict[str, Any]) -> dict[str, Any]:
-    room_info = _read_json(project_root / "datas" / "room_info.json", {})
-    room_size_cfg = _read_json(project_root / "datas" / "room_size_config.json", {})
+def _load_basic_model(project_root: Path, target_id: str, start_snapshot: dict[str, Any]) -> dict[str, Any]:
+    target_info = _read_json(project_root / "datas" / "target_info.json", {})
+    target_size_cfg = _read_json(project_root / "datas" / "target_size_config.json", {})
     cleanup_cfg = _read_json(project_root / "datas" / "cleanup_system.json", {})
     construction_cfg = _read_json(project_root / "datas" / "construction_system.json", {})
-    researcher_cfg = _read_json(project_root / "datas" / "researcher_system.json", {})
+    staff_cfg = _read_json(project_root / "datas" / "staff_system.json", {})
     game_values_cfg = _read_json(project_root / "datas" / "game_values.json", {})
 
     size_id = ""
-    if isinstance(room_info, dict):
-        rooms = room_info.get("rooms", [])
+    if isinstance(target_info, dict):
+        rooms = target_info.get("rooms", [])
         if isinstance(rooms, list):
             for room in rooms:
                 if not isinstance(room, dict):
                     continue
-                if str(room.get("id", "")) == room_id:
+                if str(room.get("id", "")) == target_id:
                     size_id = str(room.get("3d_size", "")).strip()
                     break
     units = 1
-    sizes = room_size_cfg.get("sizes", {}) if isinstance(room_size_cfg, dict) else {}
+    sizes = target_size_cfg.get("sizes", {}) if isinstance(target_size_cfg, dict) else {}
     if isinstance(sizes, dict):
         size = sizes.get(size_id, {})
         if isinstance(size, dict):
@@ -385,17 +385,17 @@ def _load_basic_model(project_root: Path, room_id: str, start_snapshot: dict[str
     build_hours = float(units * float(construction_zone1.get("hours_per_unit", 2.0) if isinstance(construction_zone1, dict) else 2.0))
 
     start_resources = start_snapshot.get("resources", {}) if isinstance(start_snapshot, dict) else {}
-    researcher_count = int(start_resources.get("researcher", 0)) if isinstance(start_resources, dict) else 0
+    staff_count = int(start_resources.get("staff", 0)) if isinstance(start_resources, dict) else 0
     eroded_count = int(start_resources.get("eroded", 0)) if isinstance(start_resources, dict) else 0
-    active_researchers = max(0, researcher_count - eroded_count)
-    cognition_per_researcher_per_hour = int(
-        (researcher_cfg.get("cognition", {}) if isinstance(researcher_cfg, dict) else {}).get(
-            "consumption_per_researcher_per_hour", 1
+    active_staffs = max(0, staff_count - eroded_count)
+    cognition_per_staff_per_hour = int(
+        (staff_cfg.get("cognition", {}) if isinstance(staff_cfg, dict) else {}).get(
+            "consumption_per_staff_per_hour", 1
         )
     )
-    cognition_rate = -float(active_researchers * cognition_per_researcher_per_hour)
+    cognition_rate = -float(active_staffs * cognition_per_staff_per_hour)
 
-    # room_01 is ARCHIVE room_type(3), research output -> permission.
+    # Compatibility path: read production rate from project data.
     permission_per_unit_per_hour = int(
         (game_values_cfg.get("research_output", {}) if isinstance(game_values_cfg, dict) else {})
         .get("3", {})
@@ -405,7 +405,7 @@ def _load_basic_model(project_root: Path, room_id: str, start_snapshot: dict[str
 
     return {
         "units": units,
-        "active_researchers": active_researchers,
+        "active_staffs": active_staffs,
         "rates_per_hour": {
             "cognition": cognition_rate,
             "permission_research_zone": permission_rate,
@@ -557,10 +557,10 @@ def run_basic_data_validation(
     phase1_root = Path(phase1["run_root"])
     phase2_root = Path(phase2["run_root"])
     r0 = _extract_snapshot(phase1_root, "snapshot_r0")
-    room_a_cleaned = _extract_snapshot(phase1_root, "snapshot_room_a_cleaned")
-    room_a_built = _extract_snapshot(phase1_root, "snapshot_room_a_built")
-    room_b_cleaned = _extract_snapshot(phase1_root, "snapshot_room_b_cleaned")
-    room_b_built = _extract_snapshot(phase1_root, "snapshot_room_b_built")
+    target_a_cleaned = _extract_snapshot(phase1_root, "snapshot_target_a_cleaned")
+    target_a_built = _extract_snapshot(phase1_root, "snapshot_target_a_built")
+    target_b_cleaned = _extract_snapshot(phase1_root, "snapshot_target_b_cleaned")
+    target_b_built = _extract_snapshot(phase1_root, "snapshot_target_b_built")
     r2 = _extract_snapshot(phase1_root, "snapshot_r2")
     r2_saved = _extract_snapshot(phase1_root, "snapshot_r2_saved")
     rs = {"step_id": "save_slot_0", "resources": _load_saved_resources(shared_user_data_dir, slot=0)}
@@ -571,10 +571,10 @@ def run_basic_data_validation(
     diff_r2_saved_r3 = _diff_values(r2_saved.get("resources", {}), r3.get("resources", {}))
     diff_r2_r2_saved = _diff_values(r2.get("resources", {}), r2_saved.get("resources", {}))
 
-    stage_cleanup_a = _time_window(r0, room_a_cleaned)
-    stage_build_a = _time_window(room_a_cleaned, room_a_built)
-    stage_cleanup_b = _time_window(room_a_built, room_b_cleaned)
-    stage_build_b = _time_window(room_b_cleaned, room_b_built)
+    stage_cleanup_a = _time_window(r0, target_a_cleaned)
+    stage_build_a = _time_window(target_a_cleaned, target_a_built)
+    stage_cleanup_b = _time_window(target_a_built, target_b_cleaned)
+    stage_build_b = _time_window(target_b_cleaned, target_b_built)
     stage_total = _time_window(r0, r2)
     stage_reopen = _time_window(r2, r3)
 
@@ -631,7 +631,7 @@ def run_basic_data_validation(
     total_delay_impact = total_actual_resources - total_expected_no_comm_delay
 
     report: dict[str, Any] = {
-        "test_name": "基础数据测试",
+        "test_name": "通用资源对账测试",
         "test_id": test_id,
         "generated_at": _utc_iso(),
         "phase_runs": {
@@ -641,20 +641,20 @@ def run_basic_data_validation(
         "shared_user_data_dir": str(shared_user_data_dir),
         "snapshots": {
             "r0": r0,
-            "room_a_cleaned": room_a_cleaned,
-            "room_a_built": room_a_built,
-            "room_b_cleaned": room_b_cleaned,
-            "room_b_built": room_b_built,
+            "target_a_cleaned": target_a_cleaned,
+            "target_a_built": target_a_built,
+            "target_b_cleaned": target_b_cleaned,
+            "target_b_built": target_b_built,
             "r2": r2,
             "r2_saved": r2_saved,
             "rs": rs,
             "r3": r3,
         },
         "time_windows": {
-            "cleanup_room_a": stage_cleanup_a,
-            "build_room_a": stage_build_a,
-            "cleanup_room_b": stage_cleanup_b,
-            "build_room_b": stage_build_b,
+            "cleanup_target_a": stage_cleanup_a,
+            "build_target_a": stage_build_a,
+            "cleanup_target_b": stage_cleanup_b,
+            "build_target_b": stage_build_b,
             "operation_total": stage_total,
             "reopen": stage_reopen,
         },
@@ -719,11 +719,11 @@ def run_basic_data_validation(
         reason = ""
         fix_hint = ""
         if gate_name == "phase1_passed":
-            reason = "phase1 执行失败，通常是某个房间清理/建设步骤超时或节点不可点击。"
+            reason = "phase1 执行失败，通常是步骤超时或目标节点不可交互。"
             fix_hint = "检查 phase1 flow_report.json 与 driver_flow.json 最后失败 step_id。"
         elif gate_name == "phase2_passed":
             reason = "phase2 执行失败，通常是 continue 后校验步骤超时或状态不达标。"
-            fix_hint = "检查 phase2 flow_report.json，确认 verify_room_* 步骤。"
+            fix_hint = "检查 phase2 flow_report.json，确认 verify_* 相关步骤。"
         elif gate_name == "save_resources_loaded":
             reason = "未成功读取 save slot 资源，无法完成存档对账。"
             fix_hint = "检查 shared_user_data_dir/saves/slot_0.json 与 APPDATA fallback 路径。"
@@ -740,7 +740,7 @@ def run_basic_data_validation(
     report["next_actions"] = [
         "先看 gate_explanations 中第一个 ok=false 的 gate，并按 next_action_if_failed 处理。",
         "若执行类 gate 均通过但资源差异异常，优先查看 observations.ab_gap_delta_* 是否跨结算边界。",
-        "复测时保持相同房间链路与 timeout，避免把流程变更误判为系统延迟。",
+        "复测时保持相同流程链路与 timeout，避免把流程变更误判为系统延迟。",
     ]
     if report["status"] != "passed":
         failed_gates = [str(item.get("gate", "")) for item in gate_explanations if not bool(item.get("ok", False))]

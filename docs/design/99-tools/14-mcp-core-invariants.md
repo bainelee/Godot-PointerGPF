@@ -1,5 +1,11 @@
 # MCP 核心不变量
 
+## 通用性约束（强制）
+
+- MCP 的能力定义必须是 **Godot 通用能力**，不得绑定任一具体游戏世界观、剧情或专有系统。
+- 任何包含具体游戏术语的 flow、步骤 ID、文案，仅可作为 **legacy fixture（兼容样例）**，不得作为默认产品语义。
+- 客户端与 CI 的验收依据应聚焦通用契约：工具调用、三阶段播报、产物结构、错误码稳定性。
+
 ## 协议
 
 - stdio：**Content-Length** 定界 JSON-RPC；`initialize` 后 `tools/list` / `tools/call`。

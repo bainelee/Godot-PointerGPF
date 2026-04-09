@@ -22,29 +22,29 @@ class ScenarioDef:
 
 _SCENARIOS: tuple[ScenarioDef, ...] = (
     ScenarioDef(
-        name="exploration_smoke",
-        system="exploration",
-        scene="res://scenes/test/exploration_smoke_test.tscn",
+        name="gameplay_smoke",
+        system="gameplay",
+        scene="res://scenes/test/generic_gameplay_smoke_test.tscn",
         profiles=("smoke",),
         supported_modes=("vm", "local", "headless"),
         default_args=("--quit-after", "400"),
     ),
     ScenarioDef(
-        name="debug_frame_print_smoke",
+        name="debug_probe_smoke",
         system="debug",
-        scene="res://scenes/test/debug_frame_print_test.tscn",
+        scene="res://scenes/test/generic_debug_probe_test.tscn",
         profiles=("smoke",),
         supported_modes=("vm", "local", "headless"),
         default_args=("--quit-after", "400"),
     ),
     ScenarioDef(
-        name="exploration_gameplay_flow_test",
-        system="exploration",
-        scene="res://scenes/test/exploration_gameplay_flow_test.tscn",
+        name="flow_runtime_sanity",
+        system="flow_runtime",
+        scene="res://scenes/test/generic_flow_runtime_sanity.tscn",
         profiles=("smoke", "flow"),
         supported_modes=("vm", "local", "headless"),
         default_args=("--quit-after", "600"),
-        screenshot_prefix="flow_exploration_",
+        screenshot_prefix="flow_runtime_",
     ),
     ScenarioDef(
         name="visual_regression_probe",

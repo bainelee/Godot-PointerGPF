@@ -12,7 +12,7 @@ from runner import GameTestRunner, RunRequest
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run minimal game test session.")
-    parser.add_argument("--system", required=True, help="System name, e.g. exploration")
+    parser.add_argument("--system", required=True, help="System name, e.g. gameplay")
     parser.add_argument("--project-root", required=True, help="Project root path")
     parser.add_argument("--scenario", default=None, help="Scenario name")
     parser.add_argument("--profile", default="smoke", help="Run profile")

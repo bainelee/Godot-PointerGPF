@@ -9,12 +9,24 @@
   "driverReadyTimeoutSec": 25,
   "driverNoActivityTimeoutSec": 8,
   "steps": [
-    { "id": "sleep_boot", "action": "sleep", "ms": 800 },
-    { "id": "click_continue", "action": "click", "target": { "testId": "btn_continue" } },
+    {
+      "id": "sleep_boot",
+      "action": "sleep",
+      "ms": 800
+    },
+    {
+      "id": "click_continue",
+      "action": "click",
+      "target": {
+        "testId": "btn_continue"
+      }
+    },
     {
       "id": "wait_ingame",
       "action": "wait",
-      "until": { "scene": "game_main" },
+      "until": {
+        "scene": "game_main"
+      },
       "minWaitMs": 200,
       "timeoutMs": 15000
     }
