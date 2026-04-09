@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-- 发布流程简化与维护者交接：`VERSION` 明确为版本单一来源；文档补充 `scripts/release.ps1`（`-DryRun` 与正常发版示例）、**`v*`** tag 驱动发布及可选 `workflow_dispatch`，以及 CI 分层说明（smoke 快反馈；integration 用于 nightly / 手动的 **quick** / **full**）。
+- 暂无更新。
+
+## v0.2.4.6 - 2026-04-09
+
+- 发布链路完成“版本单一来源 + tag 驱动 CI”改造：`VERSION` 作为 SSOT，新增 `scripts/sync-version.ps1` 与 `scripts/release.ps1`，并补齐中英文文档与维护者操作说明。
+- 强化发布安全防护：发布脚本新增预暂存检查、tag 可用性检查（本地/远端）、`git push --atomic` 推送，降低混入无关改动与半成功发布风险。
+- 修复 `release-package.yml` 的 Windows 打包稳定性：改为复制阶段排除 `.godot`，并正确处理 `robocopy` 返回码，避免 tag 触发发布任务误失败。
 
 ## v0.2.4.3 - 2026-04-09
 

@@ -6,7 +6,7 @@
                      "stable":  {
                                     "version":  "0.2.4.6",
                                     "min_compatible_version":  "0.2.4.6",
-                                    "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
+                                    "release_notes":  "Introduce VERSION-driven, tag-triggered release automation with safer preflight checks (staged/index guard, tag availability, atomic push), and harden release-package CI by fixing robocopy exit-code handling for Windows packaging.",
                                     "published_at_utc":  "2026-04-09T09:48:18Z",
                                     "artifact":  {
                                                      "format":  "zip",
