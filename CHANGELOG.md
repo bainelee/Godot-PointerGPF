@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.4.1 - 2026-04-09
+
+- 支持四段版本号发布策略（`major.minor.patch.build`），用于小更新快速迭代。
+- 新增命令式更新入口：`pointer-gpf.cmd` 与 `install/pointer-gpf.ps1`，用户可直接运行 `.\pointer-gpf.cmd update`。
+- 重构中英文首页 README，增加双语导航、封面图、清晰的 Agent/人工分工说明。
+- 发布流程新增双语 release notes 模板，统一发版说明口径。
+
 ## v0.2.4 - 2026-04-09
 
 - 修复 MCP stdio 传输兼容性：服务端可自动识别 `Content-Length` 与 JSON 行输入，并按同协议回包，避免客户端握手后超时/Aborted。
