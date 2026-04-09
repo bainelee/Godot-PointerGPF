@@ -22,7 +22,7 @@
 
 这样可以把自动化流程沉淀为可复用、可追溯、可验证的工程能力。
 
-## 当前能力（v0.2.4.4）
+## 当前能力（v0.2.4.5）
 
 - 插件生命周期工具：`install_godot_plugin`、`enable_godot_plugin`、`update_godot_plugin`、`check_plugin_status`
 - 项目上下文流水线：`init_project_context`、`refresh_project_context`、`generate_flow_seed`

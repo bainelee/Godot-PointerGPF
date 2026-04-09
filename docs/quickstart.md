@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -PackageDir "D
 powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -ForceRemote
 ```
 
-更新行为说明（v0.2.4.4+）：
+更新行为说明（v0.2.4.5+）：
 
 - `-ForceRemote` 优先级最高：即使本地 `mcp/version_manifest.json` 存在 `artifact.url`，也会优先解析 GitHub release 资产。
 - 默认执行“仓库级关键同步”：`mcp/` + `gtr.config.json` + `godot_plugin_template/`。

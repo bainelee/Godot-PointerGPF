@@ -22,7 +22,7 @@ Most automation setups for Godot are fragmented across scripts, ad-hoc notes, an
 
 The result is a repeatable agent workflow that stays grounded in project files and explicit runtime artifacts.
 
-## What's Included (v0.2.4.4)
+## What's Included (v0.2.4.5)
 
 - Plugin lifecycle tools: `install_godot_plugin`, `enable_godot_plugin`, `update_godot_plugin`, `check_plugin_status`
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
