@@ -1429,6 +1429,192 @@ def _attach_chat_contract(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def _load_or_build_context_index(ctx: ServerCtx, arguments: dict[str, Any], project_root: Path, cfg: RuntimeConfig) -> dict[str, Any]:
+    index_path = project_root / cfg.index_rel
+    if not index_path.exists():
+        _run_project_context_generation(
+            ctx,
+            {
+                **arguments,
+                "project_root": str(project_root),
+            },
+            mode="initialized",
+        )
+    return _load_context_index_or_fail(project_root, cfg.index_rel)
+
+
+def _save_load_capability_signals(context_index: dict[str, Any]) -> dict[str, bool]:
+    corpus_parts: list[str] = []
+    script_signals = context_index.get("script_signals", {})
+    if isinstance(script_signals, dict):
+        for method in script_signals.get("method_samples", []):
+            if isinstance(method, str):
+                corpus_parts.append(method)
+    data_signals = context_index.get("data_signals", {})
+    if isinstance(data_signals, dict):
+        for item in data_signals.get("top_keys", []):
+            if isinstance(item, dict):
+                key = item.get("key")
+                if isinstance(key, str):
+                    corpus_parts.append(key)
+    flow_candidates = context_index.get("flow_candidates", {})
+    if isinstance(flow_candidates, dict):
+        for group in ("action_candidates", "assertion_candidates"):
+            for item in flow_candidates.get(group, []):
+                if not isinstance(item, dict):
+                    continue
+                for field in ("id", "hint"):
+                    val = item.get(field)
+                    if isinstance(val, str):
+                        corpus_parts.append(val)
+    corpus = " ".join(corpus_parts).lower()
+    has_save = bool(re.search(r"(save|存档|保存)", corpus))
+    has_load = bool(re.search(r"(load|读档|读取存档)", corpus))
+    return {"has_save": has_save, "has_load": has_load}
+
+
+def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    context_index = _load_or_build_context_index(ctx, arguments, project_root, cfg)
+    flow_id_raw = str(arguments.get("flow_id", "")).strip() or "basic_game_test_flow"
+    flow_id = _slugify(flow_id_raw)
+    flow_name = str(arguments.get("flow_name", "")).strip() or "基础游戏测试流程"
+    max_feature_checks = int(arguments.get("max_feature_checks", 3))
+    max_feature_checks = max(1, min(max_feature_checks, 8))
+
+    flow_candidates = context_index.get("flow_candidates", {}) if isinstance(context_index.get("flow_candidates"), dict) else {}
+    action_candidates = [
+        x for x in flow_candidates.get("action_candidates", []) if isinstance(x, dict) and str(x.get("id", "")).strip()
+    ]
+    assertion_candidates = [
+        x for x in flow_candidates.get("assertion_candidates", []) if isinstance(x, dict) and str(x.get("id", "")).strip()
+    ]
+    save_load = _save_load_capability_signals(context_index)
+
+    steps: list[dict[str, Any]] = [
+        {"id": "launch_game", "action": "launchGame"},
+        {"id": "wait_bootstrap", "action": "wait", "until": {"hint": "main_scene_ready"}, "timeoutMs": 15000},
+        {"id": "enter_game", "action": "click", "target": {"hint": "start_or_continue_button"}},
+        {"id": "wait_enter_game", "action": "wait", "until": {"hint": "in_game_hud_ready"}, "timeoutMs": 15000},
+    ]
+    if save_load["has_save"]:
+        steps.append({"id": "save_game_smoke", "action": "click", "target": {"hint": "save_game_entry"}})
+        steps.append({"id": "assert_save_success", "action": "check", "kind": "logic_state", "hint": "save completed"})
+    if save_load["has_load"]:
+        steps.append({"id": "load_game_smoke", "action": "click", "target": {"hint": "load_game_entry"}})
+        steps.append({"id": "assert_load_success", "action": "check", "kind": "logic_state", "hint": "load completed"})
+
+    selected_actions = action_candidates[:max_feature_checks]
+    for idx, candidate in enumerate(selected_actions, start=1):
+        steps.append(_candidate_action_step(f"feature_action_{idx}", candidate, "click"))
+        if idx <= len(assertion_candidates):
+            steps.append(_candidate_assert_step(f"feature_assert_{idx}", assertion_candidates[idx - 1]))
+        else:
+            steps.append(
+                {
+                    "id": f"feature_assert_{idx}",
+                    "action": "check",
+                    "kind": "logic_state",
+                    "hint": f"verify feature state after feature_action_{idx}",
+                }
+            )
+    steps.append({"id": "snapshot_end", "action": "snapshot", "name": "basic_test_end"})
+    seeded_steps = _attach_chat_contract(steps)
+
+    payload = {
+        "flowId": flow_id,
+        "name": flow_name,
+        "flow_kind": "basic_game_test",
+        "generated_by": cfg.server_name,
+        "generated_at": _utc_iso(),
+        "source_context_index": cfg.index_rel,
+        "trigger_phrases": [
+            "设计游戏基础测试流程",
+            "根据游戏当前状态,更新设计游戏基础设计流程",
+        ],
+        "steps": seeded_steps,
+        "notes": [
+            "Focus: open/enter game, save-load capability smoke check, and implemented feature smoke checks.",
+            "Save/Load steps are included only when related signals are discovered from project context.",
+            f"selected_feature_checks={len(selected_actions)}",
+        ],
+    }
+
+    output_raw = str(arguments.get("output_file", "")).strip()
+    if output_raw:
+        output_path = Path(output_raw).resolve()
+    else:
+        output_path = (project_root / cfg.seed_flow_dir_rel / f"{flow_id}.json").resolve()
+    _write_text(output_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    exp_artifact = _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name="basic_game_test_flow_last",
+        payload={
+            "tool": "design_game_basic_test_flow",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "flow_id": flow_id,
+            "flow_file": str(output_path),
+            "selected_feature_checks": len(selected_actions),
+            "save_load_signals": save_load,
+        },
+    )
+    return {
+        "status": "generated",
+        "project_root": str(project_root),
+        "flow_id": flow_id,
+        "flow_file": str(output_path),
+        "step_count": len(seeded_steps),
+        "selected_feature_checks": len(selected_actions),
+        "save_load_signals": save_load,
+        "exp_runtime": exp_artifact,
+    }
+
+
+def _tool_update_game_basic_design_flow_by_current_state(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    refresh_result = _run_project_context_generation(
+        ctx,
+        {
+            **arguments,
+            "project_root": str(project_root),
+        },
+        mode="refreshed",
+    )
+    designed = _tool_design_game_basic_test_flow(
+        ctx,
+        {
+            **arguments,
+            "project_root": str(project_root),
+        },
+    )
+    _write_exp_runtime_artifact(
+        project_root=project_root,
+        cfg=cfg,
+        artifact_name="basic_game_test_flow_update_last",
+        payload={
+            "tool": "update_game_basic_design_flow_by_current_state",
+            "generated_at": _utc_iso(),
+            "project_root": str(project_root),
+            "context_refresh_status": refresh_result.get("status"),
+            "flow_file": designed.get("flow_file"),
+        },
+    )
+    return {
+        "status": "updated",
+        "project_root": str(project_root),
+        "context_refresh": {
+            "status": refresh_result.get("status"),
+            "delta": refresh_result.get("delta"),
+            "confidence": refresh_result.get("confidence"),
+        },
+        "flow_result": designed,
+    }
+
+
 def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
     cfg = _resolve_runtime_config(_ctx, arguments, project_root=project_root)
@@ -1589,6 +1775,26 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         "execution_report": report,
         "exp_runtime": exp_artifact,
         "legacy_layout_hints": legacy_hints,
+    }
+
+
+def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    refreshed = _tool_update_game_basic_design_flow_by_current_state(ctx, {**arguments, "project_root": str(project_root)})
+    flow_result = refreshed.get("flow_result", {})
+    if not isinstance(flow_result, dict):
+        flow_result = {}
+    run_args = {
+        **arguments,
+        "project_root": str(project_root),
+        "flow_file": str(flow_result.get("flow_file", "")).strip(),
+    }
+    executed = _tool_run_game_basic_test_flow(ctx, run_args)
+    return {
+        "status": executed.get("status", "failed"),
+        "context_refresh": refreshed.get("context_refresh", {}),
+        "flow_result": flow_result,
+        "execution_result": executed,
     }
 
 
@@ -2008,12 +2214,15 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "init_project_context",
             "refresh_project_context",
             "generate_flow_seed",
+            "design_game_basic_test_flow",
+            "update_game_basic_design_flow_by_current_state",
             "figma_design_to_baseline",
             "compare_figma_game_ui",
             "annotate_ui_mismatch",
             "approve_ui_fix_plan",
             "suggest_ui_fix_patch",
             "run_game_basic_test_flow",
+            "run_game_basic_test_flow_by_current_state",
         ],
     }
 
@@ -2029,12 +2238,15 @@ def _build_tool_map() -> dict[str, Any]:
         "init_project_context": _tool_init_project_context,
         "refresh_project_context": _tool_refresh_project_context,
         "generate_flow_seed": _tool_generate_flow_seed,
+        "design_game_basic_test_flow": _tool_design_game_basic_test_flow,
+        "update_game_basic_design_flow_by_current_state": _tool_update_game_basic_design_flow_by_current_state,
         "figma_design_to_baseline": _tool_figma_design_to_baseline,
         "compare_figma_game_ui": _tool_compare_figma_game_ui,
         "annotate_ui_mismatch": _tool_annotate_ui_mismatch,
         "approve_ui_fix_plan": _tool_approve_ui_fix_plan,
         "suggest_ui_fix_patch": _tool_suggest_ui_fix_patch,
         "run_game_basic_test_flow": _tool_run_game_basic_test_flow,
+        "run_game_basic_test_flow_by_current_state": _tool_run_game_basic_test_flow_by_current_state,
     }
 
 
@@ -2123,6 +2335,41 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                 },
             },
         },
+        "design_game_basic_test_flow": {
+            "description": (
+                "Natural-language trigger command: '设计游戏基础测试流程'. "
+                "Generate a basic game smoke test flow that covers open/enter game, save-load if available, and simple implemented feature checks."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "flow_id": {"type": "string"},
+                    "flow_name": {"type": "string"},
+                    "output_file": {"type": "string"},
+                    "max_feature_checks": {"type": "integer"},
+                },
+            },
+        },
+        "update_game_basic_design_flow_by_current_state": {
+            "description": (
+                "Natural-language trigger command: '根据游戏当前状态,更新设计游戏基础设计流程'. "
+                "Refresh project context first, then regenerate the basic game smoke test flow using latest game state."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "flow_id": {"type": "string"},
+                    "flow_name": {"type": "string"},
+                    "output_file": {"type": "string"},
+                    "max_files": {"type": "integer", "description": "Maximum files to scan during refresh."},
+                    "max_feature_checks": {"type": "integer"},
+                },
+            },
+        },
         "run_game_basic_test_flow": {
             "description": "Run a basic gameplay flow test via file bridge (command.json/response.json) with three-phase event reporting.",
             "inputSchema": {
@@ -2132,6 +2379,24 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     **base_props,
                     "flow_id": {"type": "string", "description": "Logical flow identifier when not using flow_file."},
                     "flow_file": {"type": "string", "description": "Path to flow JSON file."},
+                    "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
+                    "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
+                    "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
+                },
+            },
+        },
+        "run_game_basic_test_flow_by_current_state": {
+            "description": (
+                "Refresh project context, regenerate the basic game test flow from current state, then run it via the file bridge. "
+                "Combines update_game_basic_design_flow_by_current_state and run_game_basic_test_flow using the generated flow_file."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "flow_id": {"type": "string", "description": "Logical flow identifier when not using flow_file."},
+                    "flow_file": {"type": "string", "description": "Path to flow JSON file; normally taken from regenerated flow_result."},
                     "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
                     "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
                     "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
