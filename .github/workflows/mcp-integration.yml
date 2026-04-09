@@ -53,6 +53,83 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "." -FlowId "ci_integration_seed"
 
+      - name: Basic test flow execution (mock bridge)
+        shell: pwsh
+        run: |
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          @'
+          import json
+          import subprocess
+          import threading
+          import time
+          from pathlib import Path
+
+          repo_root = Path(".").resolve()
+          project = repo_root
+          flow_id = "ci_integration_exec"
+
+          def run_tool(name, args):
+              cmd = ["python", str(repo_root / "mcp" / "server.py"), "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
+              p = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
+              if p.returncode != 0:
+                  raise RuntimeError(f"{name} failed: {p.stdout}\n{p.stderr}")
+              payload = json.loads(p.stdout)
+              if not payload.get("ok"):
+                  raise RuntimeError(f"{name} returned error: {p.stdout}")
+              return payload["result"]
+
+          bridge = project / "pointer_gpf" / "tmp"
+          bridge.mkdir(parents=True, exist_ok=True)
+          last_seq = [None]
+
+          def respond():
+              cmd_path = bridge / "command.json"
+              rsp_path = bridge / "response.json"
+              for _ in range(2000):
+                  if cmd_path.is_file():
+                      try:
+                          data = json.loads(cmd_path.read_text(encoding="utf-8"))
+                      except (json.JSONDecodeError, OSError):
+                          time.sleep(0.02)
+                          continue
+                      seq = data.get("seq")
+                      if seq is None:
+                          time.sleep(0.02)
+                          continue
+                      if seq == last_seq[0]:
+                          time.sleep(0.02)
+                          continue
+                      last_seq[0] = int(seq)
+                      rsp_path.write_text(
+                          json.dumps(
+                              {"ok": True, "seq": seq, "run_id": data.get("run_id"), "message": "ok"},
+                              ensure_ascii=False,
+                          ),
+                          encoding="utf-8",
+                      )
+                  time.sleep(0.02)
+
+          threading.Thread(target=respond, daemon=True).start()
+          run_tool(
+              "design_game_basic_test_flow",
+              {"project_root": str(project), "flow_id": flow_id, "max_feature_checks": 1},
+          )
+          run_tool(
+              "run_game_basic_test_flow",
+              {"project_root": str(project), "flow_id": flow_id, "step_timeout_ms": 8000},
+          )
+          '@ | Set-Content -LiteralPath "__mcp_exec_integration.py" -Encoding UTF8
+          python "__mcp_exec_integration.py"
+          Remove-Item -LiteralPath "__mcp_exec_integration.py" -Force
+          powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "." -FlowId "ci_integration_exec" -ValidateExecutionPipeline
+          $sw.Stop()
+          $metric = @{
+            stage = "run_game_basic_test_flow"
+            status = "ok"
+            elapsed_sec = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath "mcp_integration_execution_metrics.json" -Value $metric -Encoding UTF8
+
       - name: Figma collaboration pipeline (repo scale sample)
         shell: pwsh
         run: |
@@ -121,11 +198,12 @@ jobs:
         run: |
           $init = Get-Content -LiteralPath "mcp_integration_init_metrics.json" -Raw | ConvertFrom-Json
           $seed = Get-Content -LiteralPath "mcp_integration_seed_metrics.json" -Raw | ConvertFrom-Json
+          $exec = Get-Content -LiteralPath "mcp_integration_execution_metrics.json" -Raw | ConvertFrom-Json
           $figma = Get-Content -LiteralPath "mcp_integration_figma_metrics.json" -Raw | ConvertFrom-Json
           $report = @{
             workflow = "mcp-integration"
             generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
-            metrics = @($init, $seed, $figma)
+            metrics = @($init, $seed, $exec, $figma)
           } | ConvertTo-Json -Depth 5
           Set-Content -LiteralPath "mcp_integration_trend_report.json" -Value $report -Encoding UTF8
 

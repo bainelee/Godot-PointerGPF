@@ -3,7 +3,8 @@ param(
     [string]$RepoRoot = "",
     [Parameter(Mandatory = $true)][string]$ProjectRoot,
     [Parameter(Mandatory = $true)][string]$FlowId,
-    [switch]$ValidateFigmaPipeline
+    [switch]$ValidateFigmaPipeline,
+    [switch]$ValidateExecutionPipeline
 )
 
 Set-StrictMode -Version Latest
@@ -70,11 +71,14 @@ foreach ($field in $requiredIndexFields) {
 }
 
 $seedJson = Get-Content -LiteralPath $seedPath -Raw | ConvertFrom-Json
-if ($seedJson.chat_protocol_mode -ne "three_phase") {
-    throw "Seed flow chat_protocol_mode must be three_phase"
-}
-if ($seedJson.chat_contract_version -ne "v1") {
-    throw "Seed flow chat_contract_version must be v1"
+$isBasicGameTestDesigned = ($seedJson.PSObject.Properties.Name -contains "flow_kind") -and ($seedJson.flow_kind -eq "basic_game_test")
+if (-not $isBasicGameTestDesigned) {
+    if ($seedJson.chat_protocol_mode -ne "three_phase") {
+        throw "Seed flow chat_protocol_mode must be three_phase"
+    }
+    if ($seedJson.chat_contract_version -ne "v1") {
+        throw "Seed flow chat_contract_version must be v1"
+    }
 }
 
 $steps = @($seedJson.steps)
@@ -131,10 +135,51 @@ if ($ValidateFigmaPipeline) {
     }
 }
 
+if ($ValidateExecutionPipeline) {
+    $execLastPath = Join-Path $runtimeDir "basic_game_test_execution_last.json"
+    if (-not (Test-Path -LiteralPath $execLastPath)) {
+        throw "Missing basic_game_test_execution_last.json under runtime dir"
+    }
+    $execLastJson = Get-Content -LiteralPath $execLastPath -Raw | ConvertFrom-Json
+    $executionReport = $execLastJson.execution_report
+    if (-not $executionReport) {
+        throw "basic_game_test_execution_last.json missing execution_report"
+    }
+    $phaseCoverage = $executionReport.phase_coverage
+    if (-not $phaseCoverage) {
+        throw "execution_report missing phase_coverage"
+    }
+    foreach ($phase in @("started", "result", "verify")) {
+        if (-not ($phaseCoverage.PSObject.Properties.Name -contains $phase)) {
+            throw "phase_coverage missing phase key: $phase"
+        }
+        try {
+            $count = [int]$phaseCoverage.$phase
+        }
+        catch {
+            throw "phase_coverage.$phase is not an integer"
+        }
+        if ($count -lt 1) {
+            throw "phase_coverage.$phase must be >= 1 for execution pipeline validation, got $count"
+        }
+    }
+    $flowRunReports = @(Get-ChildItem -LiteralPath $runtimeDir -File -Filter "flow_run_report_*.json" -ErrorAction Stop)
+    $flowRunEvents = @(Get-ChildItem -LiteralPath $runtimeDir -File -Filter "flow_run_events_*.ndjson" -ErrorAction Stop)
+    if ($flowRunReports.Count -lt 1) {
+        throw "Missing flow_run_report_*.json under runtime dir"
+    }
+    if ($flowRunEvents.Count -lt 1) {
+        throw "Missing flow_run_events_*.ndjson under runtime dir"
+    }
+}
+
 Write-Output "[ASSERT] MCP artifacts validated."
 Write-Output ("[ASSERT] index=" + $indexPath)
 Write-Output ("[ASSERT] seed=" + $seedPath)
 Write-Output ("[ASSERT] runtime_dir=" + $runtimeDir)
 if ($ValidateFigmaPipeline) {
     Write-Output "[ASSERT] figma collaboration artifacts validated."
+}
+if ($ValidateExecutionPipeline) {
+    Write-Output "[ASSERT] runtime execution pipeline artifacts validated."
 }
