@@ -1,5 +1,7 @@
 # Release Process Streamline Implementation Plan
 
+> 状态：草案（计划文档，未声明已全部落地）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将当前多步骤、重复且易错的发版流程收敛为可重复的一键流程，并通过单一版本源、分层验证、自动化发布把发版时长和认知负担显著降低。

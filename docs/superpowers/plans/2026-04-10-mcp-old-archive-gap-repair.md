@@ -1,5 +1,7 @@
 # MCP Old-Archive Gap Repair Implementation Plan
 
+> 状态：草案（计划文档，未声明已全部落地）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 基于旧仓库 `old-archives-sp` 在 `522744d`（2026-04-02）前的已实现 MCP 能力，补齐当前 `pointer_gpf` 缺失的工具面、执行链、flow 资产、插件与文档，恢复到“可运行 + 可验证 + 可维护”的完整状态。

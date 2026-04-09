@@ -1,5 +1,7 @@
 # MCP 基础测试流程全链路执行 Implementation Plan
 
+> 状态：草案（计划文档，未声明已全部落地）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 PointerGPF 从“仅生成/校验 flow”升级为“可运行游戏、按步骤执行并在 shell 输出 started/result/verify 三阶段播报”的完整基础测试闭环。

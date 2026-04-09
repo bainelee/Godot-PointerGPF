@@ -1,5 +1,16 @@
 # PointerGPF Quickstart
 
+## 0) 路径语义说明（先看）
+
+文档中的 `pointer_gpf` 可能表示不同对象，请按语境区分：
+
+- `仓库根目录`：本仓库 `D:/AI/pointer_gpf`
+- `目标项目工作区目录`：目标 Godot 项目中的 `pointer_gpf/`
+- `release 包根目录`：发布压缩包内的 `pointer_gpf/`
+
+目录边界与职责见：`docs/project-structure-baseline.md`。
+MCP 文档导航见：`docs/mcp-docs-index.md`。
+
 ## 1) 启动 MCP
 
 release 包默认采用单目录载荷：`pointer_gpf/`。  

@@ -1,5 +1,7 @@
 # PointerGPF 单目录发布整合 Implementation Plan
 
+> 状态：草案（计划文档，未声明已全部落地）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将所有 PointerGPF 相关实现与资产统一收纳到 `pointer_gpf/` 目录下，仅保留根目录最小入口文件，保证 release 安装后用户工作区整洁且功能不回退。

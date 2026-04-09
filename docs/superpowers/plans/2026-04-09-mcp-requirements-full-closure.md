@@ -1,5 +1,7 @@
 # MCP 核心需求全量达成 Implementation Plan
 
+> 状态：草案（计划文档，未声明已全部落地）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 完整满足权威需求中的 R-001/R-002 与 UX-001/UX-002，让用户在“基础测试流程”与“遇到 bug 自动修复”两个入口都得到可验收结果。

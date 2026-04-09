@@ -18,6 +18,7 @@ gameplayflow/generated_flows/
 examples/godot_minimal/addons/pointer_gpf/
 examples/godot_minimal/pointer_gpf/
 examples/godot_minimal/gameplayflow/
+examples/godot_minimal/artifacts/
 examples/**/.godot/
 
 # Local release/update artifacts
