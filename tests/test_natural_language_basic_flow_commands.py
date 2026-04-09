@@ -8,13 +8,16 @@ from pathlib import Path
 
 
 def _run_tool(repo_root: Path, tool: str, args: dict) -> dict:
+    payload_args = dict(args)
+    if "project_root" in payload_args and "allow_temp_project" not in payload_args:
+        payload_args["allow_temp_project"] = True
     cmd = [
         "python",
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
         "--args",
-        json.dumps(args, ensure_ascii=False),
+        json.dumps(payload_args, ensure_ascii=False),
     ]
     proc = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
     if proc.returncode != 0:
@@ -105,11 +108,24 @@ class NaturalLanguageBasicFlowCommandTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+        (bridge / "runtime_gate.json").write_text(
+            json.dumps(
+                {
+                    "runtime_mode": "play_mode",
+                    "runtime_entry": "already_running_play_session",
+                    "runtime_gate_passed": True,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def test_design_game_basic_test_flow_covers_entry_and_save_load(self) -> None:
+    def test_design_game_basic_test_flow_uses_evidence_driven_steps(self) -> None:
         result = _run_tool(
             self.repo_root,
             "design_game_basic_test_flow",
@@ -126,9 +142,56 @@ class NaturalLanguageBasicFlowCommandTests(unittest.TestCase):
         step_ids = [step["id"] for step in payload["steps"]]
         self.assertIn("launch_game", step_ids)
         self.assertIn("enter_game", step_ids)
-        self.assertIn("save_game_smoke", step_ids)
-        self.assertIn("load_game_smoke", step_ids)
+        self.assertIn("feature_assert_1", step_ids)
         self.assertIn("snapshot_end", step_ids)
+        # save/load 不再由方法名关键词直接触发，必须具备 UI 入口证据。
+        self.assertNotIn("save_game_smoke", step_ids)
+        self.assertNotIn("load_game_smoke", step_ids)
+        generation_evidence = payload.get("generation_evidence") or {}
+        counts = generation_evidence.get("candidate_counts") or {}
+        self.assertGreaterEqual(int(counts.get("action_filtered", 0)), 1)
+
+    def test_design_game_basic_test_flow_returns_blocked_without_executable_evidence(self) -> None:
+        # 删除关键可交互方法，构造“无可执行动作证据”的项目。
+        scripts_dir = self.project_root / "scripts"
+        (scripts_dir / "player.gd").write_text(
+            "\n".join(
+                [
+                    "extends Node",
+                    "",
+                    "func save_game():",
+                    "    pass",
+                    "",
+                    "func load_game():",
+                    "    pass",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        scenes_dir = self.project_root / "scenes"
+        (scenes_dir / "main.tscn").write_text(
+            "\n".join(
+                [
+                    "[gd_scene format=3]",
+                    '[node name="Main" type="Node"]',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        result = _run_tool(
+            self.repo_root,
+            "design_game_basic_test_flow",
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "nl_blocked_flow",
+                "max_feature_checks": 2,
+            },
+        )
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(str(result.get("flow_file", "")), "")
+        reasons = result.get("reasons") or []
+        self.assertIn("no_executable_action_candidates", reasons)
 
     def test_update_game_basic_design_flow_by_current_state_refreshes_first(self) -> None:
         result = _run_tool(
@@ -221,6 +284,13 @@ class NaturalLanguageBasicFlowCommandTests(unittest.TestCase):
         self.assertIn("step_broadcast_summary", execution)
         summary = execution.get("step_broadcast_summary", {})
         self.assertIsInstance(summary, dict)
+        gameplay = execution.get("gameplay_runnability") or {}
+        self.assertTrue(gameplay.get("passed"))
+        evidence = gameplay.get("evidence") or {}
+        self.assertEqual(evidence.get("runtime_mode"), "play_mode")
+        self.assertTrue(evidence.get("runtime_gate_passed"))
+        self.assertEqual(evidence.get("input_mode"), "in_engine_virtual_input")
+        self.assertFalse(evidence.get("os_input_interference", True))
 
 
 if __name__ == "__main__":

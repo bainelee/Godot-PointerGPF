@@ -32,11 +32,29 @@ def _tool_usability_from_execution_report(execution_report: dict[str, Any]) -> d
 def _gameplay_runnability_from_execution_report(execution_report: dict[str, Any]) -> dict[str, Any]:
     st = str(execution_report.get("status", ""))
     step_count = int(execution_report.get("step_count") or 0)
+    runtime_mode = str(execution_report.get("runtime_mode", ""))
+    runtime_entry = str(execution_report.get("runtime_entry", ""))
+    runtime_gate_passed = bool(execution_report.get("runtime_gate_passed", False))
+    input_mode = str(execution_report.get("input_mode", ""))
+    os_input_interference = bool(execution_report.get("os_input_interference", True))
+    passed = (
+        st == "passed"
+        and step_count >= 1
+        and runtime_mode == "play_mode"
+        and runtime_gate_passed
+        and input_mode == "in_engine_virtual_input"
+        and not os_input_interference
+    )
     return {
-        "passed": st == "passed",
+        "passed": passed,
         "evidence": {
             "status": st,
             "step_count": step_count,
+            "runtime_mode": runtime_mode,
+            "runtime_entry": runtime_entry,
+            "runtime_gate_passed": runtime_gate_passed,
+            "input_mode": input_mode,
+            "os_input_interference": os_input_interference,
         },
     }
 

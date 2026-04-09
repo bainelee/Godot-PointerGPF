@@ -80,6 +80,9 @@ flowchart TD
 
 - `project_context/index.json` 存在并包含关键字段
 - `generated_flows/<flow_id>.json` 存在并符合 chat contract 最小契约
+- `design_game_basic_test_flow` 生成结果必须包含 `generation_evidence`，并满足：
+  - `candidate_counts.action_filtered >= 1` 时允许 `status=generated`
+  - `candidate_counts.action_filtered = 0` 时必须 `status=blocked` 且 `flow_file=""`
 - `gpf-exp/runtime/` 目录存在且包含运行时产物
 - 若启用 Figma 协同链路：`compare/annotate/approval/suggestion` 报告存在且 `run_id` 一致
 - **执行层验证（非仅 seed/smoke）**：在具备文件桥与运行中游戏的前提下，应对 `run_game_basic_test_flow` 的落地结果做校验；推荐在 CI 或本地通过 `scripts/assert-mcp-artifacts.ps1` 的 **`-ValidateExecutionPipeline`** 断言执行报告、事件流与三阶段（`started` / `result` / `verify`）覆盖，而不是只确认 `generate_flow_seed` 或“命令曾成功退出”。
@@ -90,6 +93,27 @@ flowchart TD
   - `runtime_gate_passed=true`
   - `step_broadcast_summary.protocol_mode=three_phase`
   - `step_broadcast_summary.fail_fast_on_verify=true`
+  - `project_close.requested=true`
+  - `project_close.acknowledged=true`（成功路径）
+- 对“流程结束后运行态”的断言要求：
+  - 允许编辑器进程保留；
+  - 必须确认 Play 运行态已停止（例如 `runtime_gate.json.runtime_mode=editor_bridge`）。
+- 门禁失败路径必须断言以下字段：
+  - `error.code=RUNTIME_GATE_FAILED`
+  - `details.blocking_point` 存在
+  - `details.next_actions` 为非空数组
+  - `details.engine_bootstrap.target_project_root` 与请求 `project_root` 一致
+  - `details.engine_bootstrap.selected_executable` 字段存在
+  - `details.engine_bootstrap.launch_process_id` 字段存在
+- shell 播报必须断言以下格式：
+  - 每个阶段第一行为 `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）
+  - 每个阶段第二行为中文语义行（`开始执行` / `执行结果` / `验证结论`）
+  - 不得出现 `run=`、`phase=`、`id=`、`action=`、`bridge_ok=`、`verified=` 技术字段行
+- 双结论必须断言以下一致性：
+  - `tool_usability.passed=true` 仅表示协议层可用
+  - `gameplay_runnability.passed=true` 必须同时满足 `runtime_mode=play_mode`、`runtime_gate_passed=true`、`input_mode=in_engine_virtual_input`、`os_input_interference=false`
+- 动作后状态断言策略：
+  - 对由交互动作触发的 UI 状态变化，优先使用 `wait + until.hint`（短超时轮询）而非同帧 `check`，避免时序误报。
 
 ### L3 Capacity And Trend (Nightly/Manual)
 

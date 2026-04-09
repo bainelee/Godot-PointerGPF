@@ -1,35 +1,35 @@
-[gd_scene load_steps=5 format=3 uid="uid://bt36ffouad4nf"]
+[gd_scene format=3 uid="uid://bt36ffouad4nf"]
 
-[ext_resource type="Texture2D" path="res://assets/figma_image_3.png" id="1_pv73u"]
-[ext_resource type="Texture2D" path="res://assets/figma_image_1.png" id="2_n5h7b"]
-[ext_resource type="Texture2D" path="res://assets/figma_image_2.png" id="3_2elgf"]
-[ext_resource type="Script" path="res://scripts/main_ui_flow.gd" id="4_1tk2w"]
+[ext_resource type="Texture2D" uid="uid://4jyw8g0i3a8t" path="res://assets/figma_image_3.png" id="1_pv73u"]
+[ext_resource type="Texture2D" uid="uid://d0623qie5verj" path="res://assets/figma_image_1.png" id="2_n5h7b"]
+[ext_resource type="Texture2D" uid="uid://bm1auqisi14kr" path="res://assets/figma_image_2.png" id="3_2elgf"]
+[ext_resource type="Script" uid="uid://c61m27dclwn8k" path="res://scripts/main_ui_flow.gd" id="4_1tk2w"]
 
 [node name="MainSceneExample" type="Node3D" unique_id=677591457]
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=265001226]
 script = ExtResource("4_1tk2w")
 
-[node name="Background" type="ColorRect" parent="UI"]
+[node name="Background" type="ColorRect" parent="UI" unique_id=1262107188]
 offset_right = 1920.0
 offset_bottom = 1080.0
 color = Color(0.584314, 0.584314, 0.584314, 1)
 
-[node name="TitleBar" type="ColorRect" parent="UI"]
+[node name="TitleBar" type="ColorRect" parent="UI" unique_id=1372410633]
 offset_left = 36.0
 offset_top = 38.0
 offset_right = 516.0
 offset_bottom = 158.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="TitleIcon" type="ColorRect" parent="UI"]
+[node name="TitleIcon" type="ColorRect" parent="UI" unique_id=1659992400]
 offset_left = 49.0
 offset_top = 48.0
 offset_right = 149.0
 offset_bottom = 148.0
 color = Color(0.643137, 0.643137, 0.643137, 1)
 
-[node name="TitleLabel" type="Label" parent="UI"]
+[node name="TitleLabel" type="Label" parent="UI" unique_id=1290730275]
 offset_left = 172.0
 offset_top = 56.0
 offset_right = 480.0
@@ -38,16 +38,15 @@ theme_override_font_sizes/font_size = 48
 text = "TestTitle"
 vertical_alignment = 1
 
-[node name="PreviewImage3" type="TextureRect" parent="UI"]
+[node name="PreviewImage3" type="TextureRect" parent="UI" unique_id=1697787330]
 offset_left = 36.0
 offset_top = 192.0
 offset_right = 195.822
 offset_bottom = 312.0
 texture = ExtResource("1_pv73u")
 expand_mode = 1
-stretch_mode = 0
 
-[node name="PreviewImage1" type="TextureRect" parent="UI"]
+[node name="PreviewImage1" type="TextureRect" parent="UI" unique_id=2106575668]
 offset_left = 211.82
 offset_top = 192.0
 offset_right = 403.82
@@ -56,7 +55,7 @@ texture = ExtResource("2_n5h7b")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="PreviewImage2" type="TextureRect" parent="UI"]
+[node name="PreviewImage2" type="TextureRect" parent="UI" unique_id=1306447186]
 offset_left = 419.82
 offset_top = 192.0
 offset_right = 526.82
@@ -65,56 +64,56 @@ texture = ExtResource("3_2elgf")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="BottomBar" type="ColorRect" parent="UI"]
+[node name="BottomBar" type="ColorRect" parent="UI" unique_id=1350599248]
 offset_left = 360.0
 offset_top = 920.0
 offset_right = 1560.0
 offset_bottom = 1080.0
 color = Color(0.333333, 0.333333, 0.333333, 1)
 
-[node name="Slot0" type="ColorRect" parent="UI"]
+[node name="Slot0" type="ColorRect" parent="UI" unique_id=1033547306]
 offset_left = 387.0
 offset_top = 938.0
 offset_right = 487.0
 offset_bottom = 1038.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="Slot1" type="ColorRect" parent="UI"]
+[node name="Slot1" type="ColorRect" parent="UI" unique_id=1111243465]
 offset_left = 511.0
 offset_top = 938.0
 offset_right = 611.0
 offset_bottom = 1038.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="Slot2" type="ColorRect" parent="UI"]
+[node name="Slot2" type="ColorRect" parent="UI" unique_id=754625909]
 offset_left = 635.0
 offset_top = 938.0
 offset_right = 735.0
 offset_bottom = 1038.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="Slot3" type="ColorRect" parent="UI"]
+[node name="Slot3" type="ColorRect" parent="UI" unique_id=217949044]
 offset_left = 759.0
 offset_top = 938.0
 offset_right = 859.0
 offset_bottom = 1038.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="Slot4" type="ColorRect" parent="UI"]
+[node name="Slot4" type="ColorRect" parent="UI" unique_id=1173743667]
 offset_left = 883.0
 offset_top = 938.0
 offset_right = 983.0
 offset_bottom = 1038.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="Slot5Large" type="ColorRect" parent="UI"]
+[node name="Slot5Large" type="ColorRect" parent="UI" unique_id=791258810]
 offset_left = 1147.0
 offset_top = 938.0
 offset_right = 1545.0
 offset_bottom = 1038.0
 color = Color(0.85098, 0.85098, 0.85098, 1)
 
-[node name="Text0" type="Label" parent="UI"]
+[node name="Text0" type="Label" parent="UI" unique_id=248514501]
 offset_left = 387.0
 offset_top = 1038.0
 offset_right = 487.0
@@ -125,7 +124,7 @@ text = "TEXT0"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Text1" type="Label" parent="UI"]
+[node name="Text1" type="Label" parent="UI" unique_id=1853303998]
 offset_left = 511.0
 offset_top = 1038.0
 offset_right = 611.0
@@ -136,7 +135,7 @@ text = "TEXT1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Text2" type="Label" parent="UI"]
+[node name="Text2" type="Label" parent="UI" unique_id=1028301332]
 offset_left = 635.0
 offset_top = 1038.0
 offset_right = 735.0
@@ -147,7 +146,7 @@ text = "TEXT2"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Text3" type="Label" parent="UI"]
+[node name="Text3" type="Label" parent="UI" unique_id=430877681]
 offset_left = 759.0
 offset_top = 1038.0
 offset_right = 859.0
@@ -158,7 +157,7 @@ text = "TEXT3"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Text4" type="Label" parent="UI"]
+[node name="Text4" type="Label" parent="UI" unique_id=1833109830]
 offset_left = 883.0
 offset_top = 1038.0
 offset_right = 983.0
@@ -169,7 +168,7 @@ text = "TEXT4"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Text5" type="Label" parent="UI"]
+[node name="Text5" type="Label" parent="UI" unique_id=1278140494]
 offset_left = 1445.0
 offset_top = 1038.0
 offset_right = 1545.0
@@ -180,7 +179,7 @@ text = "TEXT5"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="StartScreen" type="ColorRect" parent="UI"]
+[node name="StartScreen" type="ColorRect" parent="UI" unique_id=428152605]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -188,7 +187,8 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.121569, 0.121569, 0.121569, 0.96)
 
-[node name="StartTitle" type="Label" parent="UI/StartScreen"]
+[node name="StartTitle" type="Label" parent="UI/StartScreen" unique_id=3341796]
+layout_mode = 0
 offset_left = 692.0
 offset_top = 320.0
 offset_right = 1228.0
@@ -199,7 +199,8 @@ text = "Game Start"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="StartButton" type="Button" parent="UI/StartScreen"]
+[node name="StartButton" type="Button" parent="UI/StartScreen" unique_id=469231716]
+layout_mode = 0
 offset_left = 810.0
 offset_top = 520.0
 offset_right = 1110.0
@@ -207,14 +208,15 @@ offset_bottom = 620.0
 theme_override_font_sizes/font_size = 40
 text = "Start Game"
 
-[node name="UI1" type="Panel" parent="UI"]
+[node name="UI1" type="Panel" parent="UI" unique_id=1925521464]
 visible = false
 offset_left = 620.0
 offset_top = 250.0
 offset_right = 1300.0
 offset_bottom = 700.0
 
-[node name="Title" type="Label" parent="UI/UI1"]
+[node name="Title" type="Label" parent="UI/UI1" unique_id=1809844038]
+layout_mode = 0
 offset_left = 80.0
 offset_top = 50.0
 offset_right = 600.0
@@ -224,7 +226,8 @@ text = "UI1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="OpenUI2Button" type="Button" parent="UI/UI1"]
+[node name="OpenUI2Button" type="Button" parent="UI/UI1" unique_id=1173438556]
+layout_mode = 0
 offset_left = 190.0
 offset_top = 220.0
 offset_right = 490.0
@@ -232,14 +235,15 @@ offset_bottom = 320.0
 theme_override_font_sizes/font_size = 32
 text = "Open UI2"
 
-[node name="UI2Popup" type="Panel" parent="UI"]
+[node name="UI2Popup" type="Panel" parent="UI" unique_id=1472179297]
 visible = false
 offset_left = 700.0
 offset_top = 340.0
 offset_right = 1220.0
 offset_bottom = 640.0
 
-[node name="Title" type="Label" parent="UI/UI2Popup"]
+[node name="Title" type="Label" parent="UI/UI2Popup" unique_id=427087009]
+layout_mode = 0
 offset_left = 100.0
 offset_top = 40.0
 offset_right = 420.0
@@ -249,7 +253,8 @@ text = "UI2 Popup"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="NextButton" type="Button" parent="UI/UI2Popup"]
+[node name="NextButton" type="Button" parent="UI/UI2Popup" unique_id=1058861972]
+layout_mode = 0
 offset_left = 110.0
 offset_top = 170.0
 offset_right = 410.0
@@ -257,14 +262,15 @@ offset_bottom = 250.0
 theme_override_font_sizes/font_size = 28
 text = "Close UI2, Open UI3"
 
-[node name="UI3" type="Panel" parent="UI"]
+[node name="UI3" type="Panel" parent="UI" unique_id=2075171657]
 visible = false
 offset_left = 660.0
 offset_top = 300.0
 offset_right = 1260.0
 offset_bottom = 700.0
 
-[node name="Title" type="Label" parent="UI/UI3"]
+[node name="Title" type="Label" parent="UI/UI3" unique_id=10741707]
+layout_mode = 0
 offset_left = 140.0
 offset_top = 50.0
 offset_right = 460.0
@@ -274,7 +280,8 @@ text = "UI3"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CloseButton" type="Button" parent="UI/UI3"]
+[node name="CloseButton" type="Button" parent="UI/UI3" unique_id=523231305]
+layout_mode = 0
 offset_left = 150.0
 offset_top = 200.0
 offset_right = 450.0

@@ -1,9 +1,0 @@
-{
-  "flow_id": "contract_force_fail_invalid_scene",
-  "flow_file": "D:\\AI\\pointer_gpf\\flows\\internal\\contract_force_fail_invalid_scene.json",
-  "status": "passed",
-  "started_at": "2026-04-09T16:50:32.107816+00:00",
-  "finished_at": "2026-04-09T16:50:32.114726+00:00",
-  "run_id": "20260409T165032108820Z_contract_smoke",
-  "driver_steps": []
-}

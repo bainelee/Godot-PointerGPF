@@ -131,7 +131,18 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 本链路面向 **通用 Godot 项目**。MCP 只定义执行契约与证据结构，不预设任何特定游戏剧情、系统或世界观。
 
-与仅生成 seed 或跑通 `generate_flow_seed` 不同，下面链路会在 **Godot 运行时** 通过文件桥执行 flow，并用 `-ValidateExecutionPipeline` 校验 **执行层** 产物（执行报告、事件 NDJSON、三阶段覆盖等）。前提：已 `install_godot_plugin` 并启用插件，且**运行游戏**时 `runtime_bridge` 会处理 `pointer_gpf/tmp/command.json` → `response.json`（契约见 `docs/godot-adapter-contract-v1.md` 与 `mcp/adapter_contract_v1.json` 的 `runtime_bridge`）。
+与仅生成 seed 或跑通 `generate_flow_seed` 不同，下面链路会在 **Godot 运行时** 通过文件桥执行 flow，并用 `-ValidateExecutionPipeline` 校验 **执行层** 产物（执行报告、事件 NDJSON、三阶段覆盖等）。前提：已 `install_godot_plugin` 并启用插件，`runtime_bridge` 会处理 `pointer_gpf/tmp/command.json` → `response.json`（契约见 `docs/godot-adapter-contract-v1.md` 与 `mcp/adapter_contract_v1.json` 的 `runtime_bridge`）。
+
+强制执行原则（不可绕过）：
+- 任何“跑流程/跑测试流程”都必须在 `play_mode` 真实运行态执行。
+- 运行过程中必须输出每个步骤的 `started/result/verify` 到 shell。
+- 不满足 `play_mode` 门禁时，流程直接失败，不继续执行步骤。
+- 如果引擎未打开，系统会先自动拉起目标项目并尝试进入 `play_mode`；失败时返回结构化阻塞信息（`blocking_point` / `next_actions` / `engine_bootstrap`）。
+- 每个阶段播报固定两行：
+  - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）
+  - 中文语义行（`开始执行` / `执行结果` / `验证结论`）
+- shell 播报不显示技术字段（如 `run=`、`phase=`、`id=`、`action=`、`bridge_ok=`、`verified=`）。
+- 一次测试结束后（通过/失败/超时/门禁失败）必须执行关闭动作；关闭语义固定为“停止 `play_mode` 并回到编辑器空闲态”，默认保留编辑器进程。
 
 **1) 设计（生成基础测试 flow）**
 
@@ -139,11 +150,13 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""strategy"":""auto""}"
 ```
 
-**2) 运行（MCP 执行；需游戏进程已启动）**
+**2) 运行（MCP 执行；未启动时会自动拉起）**
 
 ```powershell
-python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true}"
+python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true,""require_play_mode"":true}"
 ```
+
+若本机存在多个 Godot 安装，建议显式配置可执行路径（优先级：项目配置 `tools/game-test-runner/config/godot_executable.json` > 工具参数 > 环境变量 `GODOT_EXE`/`GODOT_EDITOR_PATH`/`GODOT_PATH`）。
 
 **3) 断言（产物契约 + 执行层）**
 

@@ -32,7 +32,12 @@
   - `update_game_basic_design_flow_by_current_state`（触发词：`根据游戏当前状态,更新设计游戏基础设计流程`）
 - Figma 验证闭环：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`
 - 契约与运行时诊断：`get_adapter_contract`、`get_mcp_runtime_info`
-- 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow`（包含 `--project-root` + `--flow-id` + `--args` 的 `step_timeout_ms`/`fail_fast`/`shell_report`；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow`（强制真实 `play_mode` + 逐步骤 shell 输出；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`；引擎未开时自动拉起）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+  - 每个阶段的 shell 播报固定为：
+    - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）
+    - 面向用户的中文语义行（`开始执行` / `执行结果` / `验证结论`）
+  - 面向用户的播报中不显示技术字段（`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`）。
+  - 每次测试结束（通过/失败/超时/门禁失败）都必须执行关闭动作并输出 `project_close` 证据。`closeProject` 固定语义为“停止 `play_mode` 并回到编辑器空闲态”，默认保留编辑器进程。
 - 自然语言路由与自动修复：`route_nl_intent`、`auto_fix_game_bug`
 - 基础流程执行结论字段：`tool_usability`、`gameplay_runnability`、`step_broadcast_summary`
 - Legacy gameplayflow（经根 MCP 桥接到 `tools/game-test-runner/mcp`）：`run_game_flow`、`start_stepwise_flow`、`pull_cursor_chat_plugin` 等；该部分用于历史兼容与回放，不代表单一游戏默认能力模型；CI 覆盖见 `.github/workflows/mcp-smoke.yml` / `mcp-integration.yml`；脚本入口见 `tools/game-test-runner/scripts/`
@@ -185,13 +190,13 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 ```powershell
 python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""strategy"":""auto""}"
-python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true}"
+python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true,""require_play_mode"":true}"
 powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "D:/path/to/your/godot/project" -FlowId "basic_exec" -ValidateExecutionPipeline
 ```
 
 **你需要亲自动手（不可替代的人类操作）：**
 
-- 在 Godot 中**运行游戏**并启用 PointerGPF 插件，使 `runtime_bridge` 能处理 `command.json` / `response.json`（见 [`docs/godot-adapter-contract-v1.md`](./docs/godot-adapter-contract-v1.md)）。
+- 确保目标项目可解析 Godot 可执行路径（`tools/game-test-runner/config/godot_executable.json`、工具参数或环境变量 `GODOT_EXE`/`GODOT_EDITOR_PATH`/`GODOT_PATH`）。
 
 ## 文档导航
 

@@ -1,25 +1,46 @@
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
 def _run_tool_cli_raw(repo_root: Path, tool: str, args: dict) -> tuple[int, dict]:
+    payload_args = dict(args)
+    if "project_root" in payload_args and "allow_temp_project" not in payload_args:
+        payload_args["allow_temp_project"] = True
     cmd = [
         "python",
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
         "--args",
-        json.dumps(args, ensure_ascii=False),
+        json.dumps(payload_args, ensure_ascii=False),
     ]
     proc = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
     return proc.returncode, json.loads(proc.stdout)
+
+
+def _run_tool_cli_raw_with_stderr(repo_root: Path, tool: str, args: dict) -> tuple[int, dict, str]:
+    payload_args = dict(args)
+    if "project_root" in payload_args and "allow_temp_project" not in payload_args:
+        payload_args["allow_temp_project"] = True
+    cmd = [
+        "python",
+        str(repo_root / "mcp" / "server.py"),
+        "--tool",
+        tool,
+        "--args",
+        json.dumps(payload_args, ensure_ascii=False),
+    ]
+    proc = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
+    return proc.returncode, json.loads(proc.stdout), proc.stderr
 
 
 class FlowExecutionToolRegistrationTests(unittest.TestCase):
@@ -89,6 +110,22 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(err.get("code"), "INVALID_ARGUMENT")
         self.assertIn("flow file not found", str(err.get("message", "")))
 
+    def test_temp_project_root_is_forbidden_without_explicit_allow_flag(self) -> None:
+        cmd = [
+            "python",
+            str(self.repo_root / "mcp" / "server.py"),
+            "--tool",
+            "run_game_basic_test_flow",
+            "--args",
+            json.dumps({"project_root": str(self.project_root), "flow_id": "missing_flow"}, ensure_ascii=False),
+        ]
+        proc = subprocess.run(cmd, cwd=str(self.repo_root), capture_output=True, text=True, check=False)
+        self.assertEqual(proc.returncode, 1, msg=proc.stdout)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "TEMP_PROJECT_FORBIDDEN")
+
     def test_cli_run_game_basic_test_flow_with_flow_id_succeeds(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
         flow_dir.mkdir(parents=True, exist_ok=True)
@@ -153,6 +190,73 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertIn("execution_report", result)
         self.assertIn("exp_runtime", result)
         self.assertTrue((result.get("execution_report") or {}).get("shell_report"))
+        close_meta = result.get("project_close") or {}
+        self.assertTrue(close_meta.get("requested", False))
+        self.assertTrue(close_meta.get("acknowledged", False))
+
+    def test_cli_shell_report_emits_timestamp_and_chinese_semantic_lines(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "shell_format_flow.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "shell_format_flow",
+                    "steps": [
+                        {
+                            "id": "load_game_smoke",
+                            "action": "click",
+                            "target": {"hint": "load_game_entry"},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+        last_seq: list[int | None] = [None]
+
+        def respond() -> None:
+            cmd_path = bridge / "command.json"
+            rsp_path = bridge / "response.json"
+            for _ in range(500):
+                if cmd_path.is_file():
+                    try:
+                        data = json.loads(cmd_path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        time.sleep(0.02)
+                        continue
+                    seq = data.get("seq")
+                    if seq is None or seq == last_seq[0]:
+                        time.sleep(0.02)
+                        continue
+                    last_seq[0] = int(seq)
+                    rsp_path.write_text(
+                        json.dumps({"ok": True, "seq": seq, "run_id": data.get("run_id"), "message": "ok"}, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                time.sleep(0.02)
+
+        th = threading.Thread(target=respond, daemon=True)
+        th.start()
+        code, payload, stderr_text = _run_tool_cli_raw_with_stderr(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {"project_root": str(self.project_root), "flow_id": "shell_format_flow", "shell_report": True},
+        )
+        self.assertEqual(code, 0, msg=f"expected success, got: {payload}")
+        self.assertTrue(payload.get("ok"), msg=payload)
+        self.assertRegex(stderr_text, r"\[GPF-FLOW-TS\] \d{4}-\d{2}-\d{2} T \d{2}:\d{2}:\d{2}")
+        self.assertIn("开始执行:正在从存档0直接加载游戏主场景", stderr_text)
+        self.assertIn("执行结果:正在从存档0直接加载游戏主场景(通过)", stderr_text)
+        self.assertIn("验证结论:通过-目标:复现用户当前存档状态,不覆盖现有进度.", stderr_text)
+        self.assertNotRegex(stderr_text, r"\brun=")
+        self.assertNotRegex(stderr_text, r"\bphase=")
+        self.assertNotRegex(stderr_text, r"\bid=")
+        self.assertNotRegex(stderr_text, r"\baction=")
+        self.assertNotRegex(stderr_text, r"\bbridge_ok=")
+        self.assertNotRegex(stderr_text, r"\bverified=")
 
     def test_cli_run_game_basic_test_flow_with_flow_file_succeeds(self) -> None:
         flow_file = self.work / "seed_flow.json"
@@ -305,7 +409,7 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         report = (payload.get("result") or {}).get("execution_report") or {}
         self.assertEqual(report.get("status"), "passed")
         self.assertEqual(report.get("step_count"), 2)
-        self.assertFalse(report.get("shell_report"))
+        self.assertTrue(report.get("shell_report"))
         self.assertEqual(report.get("runtime_mode"), "play_mode")
         self.assertEqual(report.get("runtime_entry"), "already_running_play_session")
         self.assertEqual(report.get("input_mode"), "in_engine_virtual_input")
@@ -331,6 +435,71 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         report_path = Path(str(report.get("report_file", "")))
         self.assertTrue(report_path.is_file())
         self.assertEqual(report_path.parent.resolve(), runtime_dir)
+
+    def test_run_flow_requests_project_close_after_success(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "close_after_success.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "close_after_success",
+                    "steps": [{"id": "s1", "action": "wait", "timeoutMs": 50}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+        actions_seen: list[str] = []
+        last_seq: list[int | None] = [None]
+
+        def respond_with_action_log() -> None:
+            cmd_path = bridge / "command.json"
+            rsp_path = bridge / "response.json"
+            for _ in range(3000):
+                if cmd_path.is_file():
+                    try:
+                        data = json.loads(cmd_path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        time.sleep(0.02)
+                        continue
+                    seq = data.get("seq")
+                    if seq is None or seq == last_seq[0]:
+                        time.sleep(0.02)
+                        continue
+                    step = data.get("step") if isinstance(data.get("step"), dict) else {}
+                    action = str(data.get("action", "")).strip() or str(step.get("action", "")).strip()
+                    if action:
+                        actions_seen.append(action)
+                    last_seq[0] = int(seq)
+                    rsp_path.write_text(
+                        json.dumps(
+                            {"ok": True, "seq": seq, "run_id": data.get("run_id"), "message": "simulated"},
+                            ensure_ascii=False,
+                        ),
+                        encoding="utf-8",
+                    )
+                time.sleep(0.02)
+
+        th = threading.Thread(target=respond_with_action_log, daemon=True)
+        th.start()
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "close_after_success",
+                "step_timeout_ms": 5000,
+                "close_project_on_finish": True,
+            },
+        )
+        self.assertEqual(code, 0, msg=str(payload))
+        self.assertTrue(payload.get("ok"), msg=payload)
+        result = payload.get("result") or {}
+        close_meta = result.get("project_close") or {}
+        self.assertTrue(close_meta.get("requested"), msg=close_meta)
+        self.assertIn("closeProject", actions_seen, msg=f"actions_seen={actions_seen}")
 
     def test_run_flow_require_play_mode_blocks_without_gate_marker(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
@@ -358,6 +527,7 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
                 "flow_id": "gate_flow",
                 "step_timeout_ms": 1000,
                 "require_play_mode": True,
+                "close_project_on_finish": True,
             },
         )
         self.assertEqual(code, 1, msg=f"expected gate failure, got: {payload}")
@@ -367,6 +537,86 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         details = err.get("details") or {}
         self.assertEqual(details.get("runtime_mode"), "editor_bridge")
         self.assertFalse(details.get("runtime_gate_passed"))
+        self.assertEqual(details.get("blocking_point"), "runtime_gate_not_passed_after_bootstrap_attempt")
+        self.assertIsInstance(details.get("next_actions"), list)
+        self.assertGreaterEqual(len(details.get("next_actions") or []), 1)
+        close_meta = details.get("project_close") or {}
+        self.assertTrue(close_meta.get("requested"), msg=close_meta)
+
+    def test_run_flow_gate_failure_includes_engine_bootstrap_evidence(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "gate_bootstrap_flow.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "gate_bootstrap_flow",
+                    "steps": [{"id": "g1", "action": "wait", "timeoutMs": 50}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        marker = bridge / "runtime_gate.json"
+        if marker.exists():
+            marker.unlink()
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "gate_bootstrap_flow",
+                "step_timeout_ms": 1000,
+                "disable_engine_autostart": True,
+                "godot_executable": str(self.project_root / "missing" / "Godot.exe"),
+            },
+        )
+        self.assertEqual(code, 1, msg=f"expected gate failure, got: {payload}")
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "RUNTIME_GATE_FAILED")
+        details = err.get("details") or {}
+        self.assertIn("engine_bootstrap", details)
+        engine_bootstrap = details.get("engine_bootstrap") or {}
+        self.assertIn("launch_attempted", engine_bootstrap)
+        self.assertEqual(str(engine_bootstrap.get("target_project_root", "")), str(self.project_root))
+        self.assertIn("selected_executable", engine_bootstrap)
+        self.assertIn("launch_process_id", engine_bootstrap)
+
+    def test_temp_project_autostart_is_blocked_by_default(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "temp_autostart_guard.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "temp_autostart_guard",
+                    "steps": [{"id": "g1", "action": "wait", "timeoutMs": 50}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        marker = bridge / "runtime_gate.json"
+        if marker.exists():
+            marker.unlink()
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "temp_autostart_guard",
+                "step_timeout_ms": 1000,
+            },
+        )
+        self.assertEqual(code, 1, msg=f"expected gate failure, got: {payload}")
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "RUNTIME_GATE_FAILED")
+        details = err.get("details") or {}
+        engine_bootstrap = details.get("engine_bootstrap") or {}
+        self.assertFalse(engine_bootstrap.get("launch_attempted", True))
+        self.assertEqual(engine_bootstrap.get("launch_block_reason"), "temp_project_autostart_blocked")
 
     def test_run_flow_times_out_when_bridge_no_response(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
@@ -566,10 +816,15 @@ class PluginBridgePackagingTests(unittest.TestCase):
         self.assertIn("return _error_payload(\"ACTION_NOT_SUPPORTED\", \"unsupported action: %s\" % action, seq, run_id)", src)
         # Action-specific response fields expected by plan examples.
         self.assertIn("\"target\": _extract_target(command, step)", src)
-        self.assertIn("\"elapsedMs\": max(0, _coerce_int(step.get(\"timeoutMs\", command.get(\"timeoutMs\", 0))))", src)
-        self.assertIn("\"conditionMet\": true", src)
-        self.assertIn("\"details\": {\"status\": \"ok\", \"kind\": str(step.get(\"kind\", command.get(\"kind\", \"\")))}", src)
+        self.assertIn("\"elapsedMs\": int(wait_result.get(\"elapsedMs\", timeout_ms))", src)
+        self.assertIn("\"conditionMet\": bool(wait_result.get(\"conditionMet\", false))", src)
+        self.assertIn("var check_result := _evaluate_check(command, step)", src)
+        self.assertIn("\"details\": check_result", src)
         self.assertIn("\"artifactPath\": str(step.get(\"artifactPath\", command.get(\"artifactPath\", \"user://pointer_gpf_snapshot.png\")))", src)
+        self.assertIn("\"TARGET_NOT_FOUND\"", src)
+        self.assertIn("func _resolve_node_by_hint", src)
+        self.assertIn("func _evaluate_until_hint", src)
+        self.assertIn("func _evaluate_hint_once", src)
         # Dedup uses (run_id, seq) so a new run can reuse seq without being skipped.
         self.assertIn("var _last_run_id: String = \"\"", src)
         self.assertIn("run_id == _last_run_id and seq == _last_seq", src)
@@ -583,6 +838,9 @@ class PluginBridgePackagingTests(unittest.TestCase):
         self.assertIn("func _show_virtual_cursor", src)
         self.assertIn("func _hide_virtual_cursor", src)
         self.assertIn("\"INPUT_PATH_BLOCKED\"", src)
+        self.assertIn("\"closeproject\":", src)
+        self.assertIn("_request_stop_play_mode()", src)
+        self.assertIn("const _AUTO_STOP_PLAY_MODE_FLAG_REL", src)
         # Duplicate delivery: respond then remove command.json to avoid a stuck poll loop.
         self.assertIn("\"duplicate\": true", src)
         self.assertRegex(
@@ -605,7 +863,8 @@ class PluginBridgePackagingTests(unittest.TestCase):
         plugin_gd = self.project_root / "addons" / "pointer_gpf" / "plugin.gd"
         self.assertTrue(plugin_gd.is_file(), msg=f"missing plugin script: {plugin_gd}")
         src = plugin_gd.read_text(encoding="utf-8")
-        self.assertIn("get_tree().root.add_child(_runtime_bridge)", src)
+        self.assertIn("add_autoload_singleton(_RUNTIME_AUTOLOAD_NAME, _RUNTIME_AUTOLOAD_PATH)", src)
+        self.assertIn("remove_autoload_singleton(_RUNTIME_AUTOLOAD_NAME)", src)
 
 
 def _load_mcp_server_module(repo_root: Path):
@@ -648,6 +907,32 @@ class McpToolSchemaTests(unittest.TestCase):
             self.assertIsNotNone(strat, msg=f"missing strategy on {name}")
             self.assertEqual(strat.get("type"), "string")
             self.assertEqual(strat.get("enum"), seed_enum)
+
+    def test_discover_godot_executable_candidates_has_no_hardcoded_defaults(self) -> None:
+        mod = _load_mcp_server_module(self.repo_root)
+        with tempfile.TemporaryDirectory() as td:
+            project_root = Path(td)
+            (project_root / "project.godot").write_text('[application]\nconfig/name="tmp"\n', encoding="utf-8")
+            with mock.patch.dict("os.environ", {"GODOT_EXE": "", "GODOT_EDITOR_PATH": "", "GODOT_PATH": ""}, clear=False):
+                candidates = mod._discover_godot_executable_candidates({}, project_root)
+        self.assertEqual(candidates, [])
+
+    def test_discover_godot_executable_candidates_prefers_project_config(self) -> None:
+        mod = _load_mcp_server_module(self.repo_root)
+        with tempfile.TemporaryDirectory() as td:
+            project_root = Path(td)
+            (project_root / "project.godot").write_text('[application]\nconfig/name="tmp"\n', encoding="utf-8")
+            cfg = project_root / "tools" / "game-test-runner" / "config"
+            cfg.mkdir(parents=True, exist_ok=True)
+            expected = "D:/Godot/FromProjectConfig/Godot.exe"
+            (cfg / "godot_executable.json").write_text(
+                json.dumps({"godot_executable": expected}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with mock.patch.dict("os.environ", {"GODOT_EXE": "D:/Godot/FromEnv/Godot.exe"}, clear=False):
+                candidates = mod._discover_godot_executable_candidates({}, project_root)
+        self.assertGreaterEqual(len(candidates), 1)
+        self.assertEqual(candidates[0], expected)
 
 
 class DocumentContractTests(unittest.TestCase):

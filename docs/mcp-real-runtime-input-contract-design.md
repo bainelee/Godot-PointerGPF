@@ -30,6 +30,8 @@
 3. 执行报告必须记录运行态来源：
    - `runtime_mode`: `play_mode` | `editor_bridge`
    - `runtime_entry`: `f5_equivalent` | `already_running_play_session` | `unknown`
+4. 若检测到引擎未打开，系统必须自动执行“打开引擎 + 进入 Play 态”尝试；不得把该前置操作转嫁给用户。
+5. 仅当系统自动启动与自动进入 Play 态均失败时，才允许失败返回；失败详情必须包含：已执行动作、当前阻塞点、下一步可直接执行动作。
 
 ### 3.2 输入隔离规则
 
@@ -43,10 +45,17 @@
 
 1. 每步对外可见事件必须是 `started -> result -> verify`。
 2. 任一步 `verify` 失败立即停止。
-3. shell 播报保留两行结构：
-   - 时间戳行
-   - 中文语义行
+3. shell 播报保留两行结构（按阶段输出）：
+   - 时间戳行：`[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）。
+   - 中文语义行：只保留用户可读语义，不展示技术字段。
 4. 播报模板只定义句式，步骤文案必须来自 flow 功能语义。
+5. 中文语义句式固定为：
+   - `开始执行:...`
+   - `执行结果:...(通过/失败)`
+   - `验证结论:通过/失败-目标:...`
+6. 播报中禁止输出技术字段行（如 `run=`、`phase=`、`id=`、`action=`、`bridge_ok=`、`verified=`）。
+7. 一次测试流程结束后（通过/失败/超时/门禁失败），必须发起关闭动作；关闭语义为“停止 Play 运行态并回到编辑器空闲态”。
+8. 默认行为下应保留编辑器进程，不得把“停止 Play”错误实现为“退出整个编辑器”。
 
 ### 3.4 虚拟鼠标可视化规则
 
@@ -61,14 +70,20 @@
 
 - 新增运行前检查：
   - 目标 Godot 项目是否已进入 Play 态。
-  - 若未进入，自动触发“F5 等价启动”流程。
+  - 若未进入，先自动拉起引擎（若未打开），再自动触发“F5 等价启动”流程。
 - 启动失败直接返回结构化错误，不进入 step 执行。
+- Godot 可执行路径来源优先级固定为：
+  1. 项目内配置 `tools/game-test-runner/config/godot_executable.json`
+  2. 调用参数（`godot_executable` / `godot_editor_executable` / `godot_path`）
+  3. 环境变量（`GODOT_EXE` / `GODOT_EDITOR_PATH` / `GODOT_PATH`）
+- 禁止使用硬编码本地路径作为自动发现兜底，避免误开错误项目。
 
 ### 4.2 输入执行层（Input Virtual Layer）
 
 - 输入动作统一映射到“游戏内注入接口”（点击、移动、滚轮、拖拽、按键）。
 - 在适配器契约里声明输入来源与隔离能力。
 - 对无法确认隔离性的输入路径直接阻断。
+- 对“点击后立即断言”的状态判断，必须支持短窗口轮询（`wait + until.hint`）以覆盖单帧时序差异，避免同帧检查误判。
 - 增加“虚拟鼠标可视化层”：
   - 每次输入步骤在画面上刷新红色方形到当前注入坐标；
   - 支持最小显示时长（便于观察）；
@@ -85,6 +100,17 @@
 - `step_broadcast_summary` 保持现有结构，同时增加：
   - `protocol_mode`: `three_phase`
   - `fail_fast_on_verify`: `true`
+- `RUNTIME_GATE_FAILED.details` 必须包含：
+  - `engine_bootstrap.target_project_root`
+  - `engine_bootstrap.selected_executable`
+  - `engine_bootstrap.launch_process_id`
+  - `blocking_point`
+  - `next_actions[]`
+- 执行结束返回中的 `project_close` 必须包含：
+  - `requested`（是否发起关闭）
+  - `acknowledged`（桥接是否确认）
+  - `timeout_ms`
+  - `reason` 或 `message`
 
 ## 5. 与现有文档的关系
 
@@ -103,9 +129,14 @@
 1. 执行基础测试流程时，报告明确显示 `runtime_mode=play_mode`。
 2. 报告明确显示 `input_mode=in_engine_virtual_input` 且 `os_input_interference=false`。
 3. shell 中每一步均有 `started/result/verify` 三阶段播报。
-4. 人工在本机移动鼠标/键盘时，不出现被测试脚本抢占或控制的现象。
-5. 任一步校验失败后流程立即停止，且报告给出失败步骤与原因。
-6. 执行 `click/drag/moveMouse` 时，游戏画面可见红色方形实时跟随到注入位置，且落点与动作一致。
+4. 每个阶段播报符合两行结构：本地时间戳行 + 中文语义行。
+5. shell 输出中不包含 `run=`、`phase=`、`id=`、`action=`、`bridge_ok=`、`verified=` 技术字段。
+6. 中文语义播报包含三类句式：`开始执行`、`执行结果`、`验证结论`。
+7. 人工在本机移动鼠标/键盘时，不出现被测试脚本抢占或控制的现象。
+8. 任一步校验失败后流程立即停止，且报告给出失败步骤与原因。
+9. 执行 `click/drag/moveMouse` 时，游戏画面可见红色方形实时跟随到注入位置，且落点与动作一致。
+10. 流程结束结果中包含项目关闭证据（例如 `project_close.requested=true`）。
+11. 流程结束后 `runtime_gate.json` 应回到 `runtime_mode=editor_bridge`（表示 Play 运行态已停止）。
 
 ## 7. 分阶段落地计划
 
@@ -141,3 +172,59 @@
   - `godot_plugin_template/addons/pointer_gpf/runtime_bridge.gd` 已实现引擎内虚拟输入分发（`click`/`moveMouse`/`drag`）与红色方形虚拟鼠标覆盖层。
 - CI 断言：
   - `scripts/assert-mcp-artifacts.ps1` 与 `mcp-smoke/mcp-integration` 已加入执行层 runtime/input 字段断言。
+- 收尾语义：
+  - `closeProject` 已固定为“停止 Play 运行态，不退出编辑器”。
+- 运行桥接挂载：
+  - `godot_plugin_template/addons/pointer_gpf/plugin.gd` 使用 autoload 方式挂载 `runtime_bridge.gd`，避免编辑器树挂载导致的运行态失真。
+
+## 9. 新项目基础流程自动生成契约（真实化版本）
+
+### 9.1 目标
+
+当用户在一个新 Godot 项目上调用 `design_game_basic_test_flow` 时，系统必须生成“可执行 + 可验证”的最小基础流程；若证据不足，必须返回结构化阻塞信息，不得生成模板占位流程。
+
+### 9.2 输入契约（生成前证据）
+
+- 上下文来源：`pointer_gpf/project_context/index.json`
+- 最小证据字段：
+  - `flow_candidates.action_candidates`（候选动作）
+  - `flow_candidates.assertion_candidates`（候选断言）
+  - `scene_signals.button_nodes`（可交互节点来源）
+  - `scene_signals.control_nodes`（可验证 UI 状态来源）
+- 候选动作过滤规则：
+  - 仅允许 `click` / `wait`
+  - `click` 必须携带可解析目标提示（如 `target_hint`）
+  - `wait` 必须携带可解析条件提示（如 `until_hint`）
+- 存读档步骤启用规则：
+  - 仅当“脚本能力证据 + UI 入口证据”同时成立时才允许注入 `save_game_smoke/load_game_smoke`
+  - 仅关键词命中不构成启用条件
+
+### 9.3 输出契约（生成结果）
+
+- 成功生成（`status=generated`）时，返回必须包含：
+  - `flow_file`
+  - `step_count`
+  - `generation_evidence`
+- `generation_evidence` 最小字段：
+  - `candidate_counts`（原始/过滤后数量）
+  - `save_load`（启用判定与证据摘要）
+  - `selected_steps`（每个关键步骤对应的候选 id 与证据）
+  - `blocked_reasons`（若无阻塞可为空数组）
+- 阻塞返回（`status=blocked`）时，返回必须包含：
+  - `reasons`（例如 `no_executable_action_candidates`）
+  - `generation_evidence`
+  - `flow_file` 为空字符串
+
+### 9.4 最小真实流程约束
+
+- 生成流程必须至少包含：
+  1. `launch_game`
+  2. 至少 1 个有证据的交互步骤（通常映射为 `enter_game`）
+  3. 至少 1 个验证步骤（`check`）
+  4. `snapshot_end`
+- 若无法满足第 2 或第 3 项，必须返回 `blocked`，禁止写入“看起来完整但不可执行”的流程。
+
+### 9.5 执行前后联动约束
+
+- `run_game_basic_test_flow_by_current_state` 在收到 `status=blocked` 的生成结果时，必须立即返回结构化错误（`FLOW_GENERATION_BLOCKED`），不得继续执行。
+- 执行结果中的 `gameplay_runnability` 必须绑定真实性字段（`runtime_mode`、`runtime_gate_passed`、`input_mode`、`os_input_interference`），避免“协议通过但非真实运行”被误判为通过。

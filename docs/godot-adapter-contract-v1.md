@@ -27,12 +27,15 @@ If the MCP runner does not observe a **valid** response (matching `seq` and `run
 - `wait`
 - `check`
 - `snapshot`
+- `closeProject` (must close the project session used for current test run)
 
 Each required action must return a structured response with:
 
 - `ok` (bool)
 - action-specific fields
 - `message` or `details` for diagnostics
+
+`closeProject` should return `ok=true` and then terminate the project session (for example `get_tree().quit()` in plugin bridge), so MCP can guarantee teardown after every test run.
 
 ## Optional Actions
 

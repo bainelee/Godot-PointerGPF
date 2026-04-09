@@ -6,10 +6,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
+import tempfile
+import time
+import uuid
 import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,6 +31,8 @@ DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
 DEFAULT_SERVER_VERSION = "0.2.4.3"
 DEFAULT_PLUGIN_ID = "pointer_gpf"
 DEFAULT_PLUGIN_CFG_REL = f"addons/{DEFAULT_PLUGIN_ID}/plugin.cfg"
+DEFAULT_RUNTIME_BRIDGE_AUTOLOAD_NAME = "PointerGPFRuntimeBridge"
+DEFAULT_RUNTIME_BRIDGE_AUTOLOAD_PATH = f"*res://addons/{DEFAULT_PLUGIN_ID}/runtime_bridge.gd"
 DEFAULT_WORKSPACE_DIR_REL = "pointer_gpf"
 DEFAULT_CONTEXT_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/project_context"
 DEFAULT_SEED_FLOW_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/generated_flows"
@@ -117,6 +124,16 @@ def _resolve_project_root(arguments: dict[str, Any]) -> Path:
     root = Path(raw).resolve()
     if not root.exists():
         raise AppError("INVALID_ARGUMENT", f"project_root not found: {root}")
+    allow_temp_project = bool(arguments.get("allow_temp_project", False))
+    if _is_path_under_temp_root(root) and not allow_temp_project:
+        raise AppError(
+            "TEMP_PROJECT_FORBIDDEN",
+            "temp directory projects are not allowed by default",
+            {
+                "project_root": str(root),
+                "fix": "use a non-temp project root, or set allow_temp_project=true only for isolated tests",
+            },
+        )
     return root
 
 
@@ -287,6 +304,286 @@ def _probe_runtime_gate(project_root: Path) -> dict[str, Any]:
         "input_mode": "in_engine_virtual_input",
         "os_input_interference": False,
     }
+
+
+def _request_auto_enter_play_mode(project_root: Path) -> bool:
+    bridge_dir = (project_root / "pointer_gpf" / "tmp").resolve()
+    request_file = bridge_dir / "auto_enter_play_mode.flag"
+    try:
+        bridge_dir.mkdir(parents=True, exist_ok=True)
+        request_file.write_text(_utc_iso(), encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+def _await_runtime_gate(project_root: Path, *, timeout_ms: int = 8_000, poll_ms: int = 120) -> dict[str, Any]:
+    timeout_ms = max(1, int(timeout_ms))
+    poll_ms = max(10, int(poll_ms))
+    deadline = time.monotonic() + (timeout_ms / 1000.0)
+    latest = _probe_runtime_gate(project_root)
+    while time.monotonic() < deadline:
+        latest = _probe_runtime_gate(project_root)
+        if bool(latest.get("runtime_gate_passed", False)):
+            return latest
+        time.sleep(poll_ms / 1000.0)
+    return latest
+
+
+def _load_godot_executable_from_project_config(project_root: Path) -> str:
+    cfg_path = (project_root / "tools" / "game-test-runner" / "config" / "godot_executable.json").resolve()
+    if not cfg_path.exists() or not cfg_path.is_file():
+        return ""
+    try:
+        payload = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    for key in ("godot_executable", "godot_bin", "GODOT_BIN"):
+        val = str(payload.get(key, "")).strip()
+        if val:
+            return val
+    return ""
+
+
+def _discover_godot_executable_candidates(arguments: dict[str, Any], project_root: Path) -> list[str]:
+    candidates: list[str] = []
+    cfg_exe = _load_godot_executable_from_project_config(project_root)
+    if cfg_exe:
+        candidates.append(cfg_exe)
+    for key in ("godot_executable", "godot_editor_executable", "godot_path"):
+        raw = str(arguments.get(key, "")).strip()
+        if raw:
+            candidates.append(raw)
+    for env_key in ("GODOT_EXE", "GODOT_EDITOR_PATH", "GODOT_PATH"):
+        raw = str(os.environ.get(env_key, "")).strip()
+        if raw:
+            candidates.append(raw)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw in candidates:
+        key = raw.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(raw.strip())
+    return deduped
+
+
+def _is_godot_editor_running_for_project(project_root: Path) -> bool:
+    project_text = str(project_root)
+    if os.name == "nt":
+        escaped = project_text.replace("'", "''")
+        command = (
+            "$p = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.Name -like 'Godot*.exe' -and $_.CommandLine -match '--editor' "
+            f"-and $_.CommandLine -match [regex]::Escape('{escaped}') }} | "
+            "Select-Object -First 1 -ExpandProperty ProcessId; "
+            "if ($p) { Write-Output $p }"
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", command],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=3,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return bool(proc.stdout.strip())
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-af", "godot"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if not proc.stdout.strip():
+        return False
+    target = project_text.lower()
+    for line in proc.stdout.splitlines():
+        low = line.lower()
+        if "--editor" in low and target in low:
+            return True
+    return False
+
+
+def _launch_godot_editor(project_root: Path, executable: str) -> tuple[bool, str, int]:
+    exe = Path(executable.strip()).expanduser()
+    if not exe.exists() or not exe.is_file():
+        return False, f"executable_not_found:{executable}", -1
+    cmd = [str(exe), "--editor", "--path", str(project_root)]
+    try:
+        if os.name == "nt":
+            creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+            )
+        else:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        return True, "", int(getattr(proc, "pid", -1) or -1)
+    except OSError as exc:
+        return False, str(exc), -1
+
+
+def _is_path_under_temp_root(path: Path) -> bool:
+    try:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        target = path.resolve()
+        return temp_root == target or temp_root in target.parents
+    except OSError:
+        return False
+
+
+def _ensure_runtime_play_mode(project_root: Path, arguments: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    runtime_meta = _probe_runtime_gate(project_root)
+    bootstrap: dict[str, Any] = {
+        "target_project_root": str(project_root),
+        "initial_runtime_mode": runtime_meta.get("runtime_mode", "editor_bridge"),
+        "initial_runtime_gate_passed": bool(runtime_meta.get("runtime_gate_passed", False)),
+        "auto_enter_play_mode_requested": False,
+        "editor_running_before_launch": False,
+        "launch_attempted": False,
+        "launch_succeeded": False,
+        "selected_executable": "",
+        "launch_process_id": -1,
+        "launched_executable": "",
+        "launch_error": "",
+        "candidate_count": 0,
+    }
+    if bool(runtime_meta.get("runtime_gate_passed", False)):
+        return runtime_meta, bootstrap
+
+    bootstrap["auto_enter_play_mode_requested"] = _request_auto_enter_play_mode(project_root)
+    runtime_meta = _await_runtime_gate(project_root, timeout_ms=2_500, poll_ms=120)
+    if bool(runtime_meta.get("runtime_gate_passed", False)):
+        return runtime_meta, bootstrap
+
+    bootstrap["editor_running_before_launch"] = _is_godot_editor_running_for_project(project_root)
+    candidates = _discover_godot_executable_candidates(arguments, project_root)
+    bootstrap["candidate_count"] = len(candidates)
+    disable_autostart = bool(arguments.get("disable_engine_autostart", False))
+    bootstrap["engine_autostart_disabled"] = disable_autostart
+    launch_allowed = not disable_autostart
+    if launch_allowed and _is_path_under_temp_root(project_root):
+        launch_allowed = False
+        bootstrap["launch_block_reason"] = "temp_project_autostart_blocked"
+    if not bootstrap["editor_running_before_launch"] and launch_allowed:
+        for exe in candidates:
+            bootstrap["launch_attempted"] = True
+            bootstrap["selected_executable"] = exe
+            ok, err, pid = _launch_godot_editor(project_root, exe)
+            if ok:
+                bootstrap["launch_succeeded"] = True
+                bootstrap["launched_executable"] = exe
+                bootstrap["launch_process_id"] = pid
+                break
+            if not bootstrap["launch_error"]:
+                bootstrap["launch_error"] = err
+    if launch_allowed and not bootstrap["editor_running_before_launch"] and not candidates:
+        bootstrap["launch_error"] = "no_executable_candidates"
+    post_wait_ms = 18_000 if bootstrap["launch_succeeded"] or bootstrap["editor_running_before_launch"] else 1_500
+    _request_auto_enter_play_mode(project_root)
+    runtime_meta = _await_runtime_gate(project_root, timeout_ms=post_wait_ms, poll_ms=120)
+    return runtime_meta, bootstrap
+
+
+def _request_project_close(project_root: Path, *, timeout_ms: int = 1_500) -> dict[str, Any]:
+    bridge_dir = (project_root / "pointer_gpf" / "tmp").resolve()
+    cmd_path = bridge_dir / "command.json"
+    rsp_path = bridge_dir / "response.json"
+    run_id = f"close_{uuid.uuid4().hex}"
+    seq = 9_000_001
+    payload: dict[str, Any] = {
+        "schema": "pointer_gpf.flow_command.v1",
+        "run_id": run_id,
+        "seq": seq,
+        "action": "closeProject",
+        "step": {"id": "close_project_session", "action": "closeProject"},
+    }
+    try:
+        bridge_dir.mkdir(parents=True, exist_ok=True)
+        if rsp_path.exists():
+            try:
+                rsp_path.unlink()
+            except OSError:
+                pass
+        cmd_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        return {
+            "requested": False,
+            "acknowledged": False,
+            "timeout_ms": timeout_ms,
+            "reason": f"io_error:{exc}",
+        }
+
+    deadline = time.monotonic() + max(1, int(timeout_ms)) / 1000.0
+    while time.monotonic() < deadline:
+        if rsp_path.is_file():
+            try:
+                rsp = json.loads(rsp_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                time.sleep(0.03)
+                continue
+            if not isinstance(rsp, dict):
+                time.sleep(0.03)
+                continue
+            if str(rsp.get("run_id", "")) != run_id:
+                time.sleep(0.03)
+                continue
+            try:
+                rsp_seq = int(rsp.get("seq", -1))
+            except (TypeError, ValueError):
+                time.sleep(0.03)
+                continue
+            if rsp_seq != seq:
+                time.sleep(0.03)
+                continue
+            return {
+                "requested": True,
+                "acknowledged": bool(rsp.get("ok", False)),
+                "timeout_ms": timeout_ms,
+                "message": str(rsp.get("message", "")),
+            }
+        time.sleep(0.03)
+    return {
+        "requested": True,
+        "acknowledged": False,
+        "timeout_ms": timeout_ms,
+        "reason": "close_response_timeout_or_process_exited",
+    }
+
+
+def _project_close_skipped_meta() -> dict[str, Any]:
+    return {
+        "requested": False,
+        "acknowledged": False,
+        "timeout_ms": 0,
+        "reason": "preserve_engine_open",
+    }
+
+
+def _maybe_request_project_close(project_root: Path, close_project_on_finish: bool) -> dict[str, Any]:
+    if not close_project_on_finish:
+        return _project_close_skipped_meta()
+    return _request_project_close(project_root)
 
 
 def _legacy_layout_hints(project_root: Path) -> list[dict[str, str]]:
@@ -668,6 +965,50 @@ def _ensure_plugin_enabled(project_root: Path, plugin_cfg_rel: str) -> dict[str,
     return {"enabled": True, "mode": "key_updated"}
 
 
+def _ensure_runtime_bridge_autoload(
+    project_root: Path,
+    autoload_name: str = DEFAULT_RUNTIME_BRIDGE_AUTOLOAD_NAME,
+    autoload_path: str = DEFAULT_RUNTIME_BRIDGE_AUTOLOAD_PATH,
+) -> dict[str, Any]:
+    project_cfg = project_root / "project.godot"
+    if not project_cfg.exists():
+        raise AppError("PROJECT_GODOT_NOT_FOUND", f"missing file: {project_cfg}")
+    text = _safe_read_text(project_cfg)
+    if "[autoload]" not in text:
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "\n[autoload]\n"
+        text += f'{autoload_name}="{autoload_path}"\n'
+        _write_text(project_cfg, text)
+        return {"enabled": True, "mode": "section_created"}
+    lines = text.splitlines()
+    section_idx = -1
+    for i, line in enumerate(lines):
+        if line.strip() == "[autoload]":
+            section_idx = i
+            break
+    if section_idx < 0:
+        raise AppError("INTERNAL_ERROR", "failed to locate [autoload] section")
+    key_idx = -1
+    for i in range(section_idx + 1, len(lines)):
+        stripped = lines[i].strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            break
+        if stripped.startswith(f"{autoload_name}="):
+            key_idx = i
+            break
+    desired = f'{autoload_name}="{autoload_path}"'
+    if key_idx < 0:
+        lines.insert(section_idx + 1, desired)
+        _write_text(project_cfg, "\n".join(lines) + "\n")
+        return {"enabled": True, "mode": "key_created"}
+    if lines[key_idx].strip() == desired:
+        return {"enabled": True, "mode": "already_enabled"}
+    lines[key_idx] = desired
+    _write_text(project_cfg, "\n".join(lines) + "\n")
+    return {"enabled": True, "mode": "key_updated"}
+
+
 def _tool_install_godot_plugin(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
     cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
@@ -679,6 +1020,7 @@ def _tool_install_godot_plugin(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         shutil.rmtree(target_dir)
     shutil.copytree(cfg.plugin_template_dir, target_dir)
     enable_result = _ensure_plugin_enabled(project_root, cfg.plugin_cfg_rel)
+    autoload_result = _ensure_runtime_bridge_autoload(project_root)
     report = {
         "tool": "install_godot_plugin",
         "generated_at": _utc_iso(),
@@ -687,6 +1029,7 @@ def _tool_install_godot_plugin(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         "plugin_cfg": f"res://{cfg.plugin_cfg_rel}",
         "config_sources": cfg.config_sources,
         "enable_result": enable_result,
+        "autoload_result": autoload_result,
         "status": "installed",
     }
     report_path = project_root / cfg.report_dir_rel / "plugin_install_report.json"
@@ -706,6 +1049,7 @@ def _tool_enable_godot_plugin(ctx: ServerCtx, arguments: dict[str, Any]) -> dict
             {"expected_plugin_cfg": str(plugin_cfg)},
         )
     enable_result = _ensure_plugin_enabled(project_root, cfg.plugin_cfg_rel)
+    autoload_result = _ensure_runtime_bridge_autoload(project_root)
     return {
         "tool": "enable_godot_plugin",
         "generated_at": _utc_iso(),
@@ -713,6 +1057,7 @@ def _tool_enable_godot_plugin(ctx: ServerCtx, arguments: dict[str, Any]) -> dict
         "plugin_cfg": f"res://{cfg.plugin_cfg_rel}",
         "config_sources": cfg.config_sources,
         "enable_result": enable_result,
+        "autoload_result": autoload_result,
         "status": "enabled",
     }
 
@@ -823,14 +1168,38 @@ def _extract_script_signals(project_root: Path, files: list[FileEntry], max_item
 def _extract_scene_signals(project_root: Path, files: list[FileEntry], max_items: int = 50) -> dict[str, Any]:
     scenes = [f for f in files if f.suffix == ".tscn"]
     roots: list[dict[str, str]] = []
+    named_nodes: list[dict[str, str]] = []
+    button_nodes: list[dict[str, str]] = []
+    control_nodes: list[dict[str, str]] = []
     for entry in scenes[:200]:
         text = _safe_read_text(project_root / entry.rel)
         match = re.search(r'^\[node\s+name="([^"]+)"\s+type="([^"]+)"', text, flags=re.MULTILINE)
         if match:
             roots.append({"scene": entry.rel, "root_name": match.group(1), "root_type": match.group(2)})
+        for node_match in re.finditer(
+            r'^\[node\s+name="([^"]+)"\s+type="([^"]+)"(?:\s+parent="([^"]+)")?',
+            text,
+            flags=re.MULTILINE,
+        ):
+            node_name = node_match.group(1)
+            node_type = node_match.group(2)
+            parent = (node_match.group(3) or ".").strip()
+            node_path = node_name if parent in {"", "."} else f"{parent}/{node_name}"
+            node_info = {"scene": entry.rel, "name": node_name, "type": node_type, "path": node_path}
+            named_nodes.append(node_info)
+            if node_type in {"Button", "TextureButton", "CheckButton", "OptionButton", "MenuButton", "LinkButton"}:
+                button_nodes.append(node_info)
+            if node_type in {"Control", "Panel", "CanvasLayer"} or node_type.endswith("Container"):
+                control_nodes.append(node_info)
         if len(roots) >= max_items:
             break
-    return {"scene_count": len(scenes), "root_nodes": roots}
+    return {
+        "scene_count": len(scenes),
+        "root_nodes": roots,
+        "named_nodes": named_nodes[: max_items * 10],
+        "button_nodes": button_nodes[: max_items * 10],
+        "control_nodes": control_nodes[: max_items * 10],
+    }
 
 
 def _extract_data_signals(project_root: Path, files: list[FileEntry], max_files: int = 40) -> dict[str, Any]:
@@ -866,6 +1235,8 @@ def _derive_flow_candidates(
 ) -> dict[str, Any]:
     methods = [str(x) for x in script_signals.get("method_samples", []) if isinstance(x, str)]
     root_nodes = [x for x in scene_signals.get("root_nodes", []) if isinstance(x, dict)]
+    button_nodes = [x for x in scene_signals.get("button_nodes", []) if isinstance(x, dict)]
+    control_nodes = [x for x in scene_signals.get("control_nodes", []) if isinstance(x, dict)]
     data_keys = [str(x.get("key")) for x in data_signals.get("top_keys", []) if isinstance(x, dict)]
 
     actions: list[dict[str, Any]] = []
@@ -873,40 +1244,67 @@ def _derive_flow_candidates(
     action_ids: set[str] = set()
     assertion_ids: set[str] = set()
 
-    def push_action(action_id: str, kind: str, hint: str, evidence: list[str]) -> None:
+    def push_action(
+        action_id: str,
+        kind: str,
+        hint: str,
+        evidence: list[str],
+        target_hint: str = "",
+        until_hint: str = "",
+    ) -> None:
         if action_id in action_ids:
             return
         action_ids.add(action_id)
-        actions.append({"id": action_id, "kind": kind, "hint": hint, "evidence": evidence[:5]})
+        payload: dict[str, Any] = {"id": action_id, "kind": kind, "hint": hint, "evidence": evidence[:5]}
+        if target_hint.strip():
+            payload["target_hint"] = target_hint.strip()
+        if until_hint.strip():
+            payload["until_hint"] = until_hint.strip()
+        actions.append(payload)
 
-    def push_assert(assert_id: str, kind: str, hint: str, evidence: list[str]) -> None:
+    def push_assert(
+        assert_id: str,
+        kind: str,
+        hint: str,
+        evidence: list[str],
+        target_hint: str = "",
+    ) -> None:
         if assert_id in assertion_ids:
             return
         assertion_ids.add(assert_id)
-        assertions.append({"id": assert_id, "kind": kind, "hint": hint, "evidence": evidence[:5]})
+        payload: dict[str, Any] = {"id": assert_id, "kind": kind, "hint": hint, "evidence": evidence[:5]}
+        if target_hint.strip():
+            payload["target_hint"] = target_hint.strip()
+        assertions.append(payload)
+
+    for button in button_nodes[:120]:
+        node_name = str(button.get("name", "")).strip()
+        scene = str(button.get("scene", "")).strip()
+        if not node_name:
+            continue
+        push_action(
+            f"action.click.node.{node_name}",
+            "click",
+            f"点击按钮 `{node_name}`，验证可交互路径",
+            [f"scene_button:{scene}:{node_name}"],
+            target_hint=f"node_name:{node_name}",
+        )
 
     for method in methods:
         low = method.lower()
         if "pressed" in low or low.startswith("_on_"):
+            target_hint = ""
+            match = re.match(r"^_on_([a-z0-9_]+)_pressed$", low)
+            if match:
+                token = match.group(1).strip("_")
+                if token:
+                    target_hint = f"name_token:{token}"
             push_action(
                 f"action.click.{method}",
                 "click",
                 f"尝试通过按钮/交互信号触发 `{method}` 对应路径",
                 [f"method:{method}"],
-            )
-        if "drag" in low or "move" in low or "camera" in low:
-            push_action(
-                f"action.drag.{method}",
-                "drag",
-                f"尝试基于 `{method}` 构造拖拽或移动操作",
-                [f"method:{method}"],
-            )
-        if "wait" in low or "tick" in low or "process" in low:
-            push_action(
-                f"action.wait.{method}",
-                "wait",
-                f"可对 `{method}` 相关逻辑使用 wait/轮询推进",
-                [f"method:{method}"],
+                target_hint=target_hint,
             )
         if low.startswith("is_") or low.startswith("has_") or low.startswith("can_"):
             push_assert(
@@ -933,6 +1331,7 @@ def _derive_flow_candidates(
                 "click",
                 f"进入 `{scene}` 后验证 UI 根节点 `{rname}` 可见/可交互",
                 [f"scene:{scene}", f"root:{rname}", f"type:{rtype}"],
+                target_hint=f"node_name:{rname}",
             )
             push_assert(
                 f"assert.ui.visible.{rname}",
@@ -946,7 +1345,25 @@ def _derive_flow_candidates(
                 "wait",
                 f"进入 `{scene}` 后等待 `{rname}` 场景树稳定",
                 [f"scene:{scene}", f"type:{rtype}"],
+                until_hint=f"node_exists:{rname}",
             )
+
+    for control in control_nodes[:120]:
+        cname = str(control.get("name", "")).strip()
+        cpath = str(control.get("path", "")).strip()
+        scene = str(control.get("scene", "")).strip()
+        if not cname:
+            continue
+        # Prefer top-level controls for stable runtime assertions.
+        if cpath and "/" in cpath:
+            continue
+        push_assert(
+            f"assert.logic.visible.{cname}",
+            "logic_state",
+            f"校验控件 `{cname}` 在关键步骤后可见性状态",
+            [f"scene_control:{scene}:{cpath or cname}"],
+            target_hint=f"node_visible:{cname}",
+        )
 
     for key in data_keys[:40]:
         low = key.lower()
@@ -963,6 +1380,7 @@ def _derive_flow_candidates(
                 "wait",
                 f"围绕 `{key}` 构造推进与解锁流程",
                 [f"data_key:{key}"],
+                until_hint=f"data_hint:{key}",
             )
 
     if "ui-heavy" in inferred_keywords:
@@ -978,6 +1396,7 @@ def _derive_flow_candidates(
             "wait",
             "检测到探索关键词，建议加入 region/map 轮转流程",
             ["keyword:exploration"],
+            until_hint="keyword:exploration",
         )
     if "builder" in inferred_keywords:
         push_action(
@@ -985,6 +1404,7 @@ def _derive_flow_candidates(
             "wait",
             "检测到建造关键词，建议覆盖 build->wait->verify 完整闭环",
             ["keyword:builder"],
+            until_hint="keyword:builder",
         )
 
     return {
@@ -1358,21 +1778,67 @@ def _pick_seed_strategy(arguments: dict[str, Any], context_index: dict[str, Any]
 
 
 def _candidate_action_step(step_id: str, candidate: dict[str, Any], fallback_action: str) -> dict[str, Any]:
-    return {
+    action = str(candidate.get("kind", fallback_action) or fallback_action)
+    step: dict[str, Any] = {
         "id": step_id,
-        "action": str(candidate.get("kind", fallback_action) or fallback_action),
+        "action": action,
         "candidate_id": str(candidate.get("id", "")),
         "hint": str(candidate.get("hint", "")),
     }
+    target_hint = str(candidate.get("target_hint", "")).strip()
+    until_hint = str(candidate.get("until_hint", "")).strip()
+    if action == "click" and target_hint:
+        step["target"] = {"hint": target_hint}
+    if action == "wait" and until_hint:
+        step["until"] = {"hint": until_hint}
+        step["timeoutMs"] = 15000
+    return step
 
 
 def _candidate_assert_step(step_id: str, candidate: dict[str, Any]) -> dict[str, Any]:
-    return {
+    step: dict[str, Any] = {
         "id": step_id,
         "action": "check",
         "kind": str(candidate.get("kind", "logic_state")),
         "candidate_id": str(candidate.get("id", "")),
         "hint": str(candidate.get("hint", "")),
+    }
+    target_hint = str(candidate.get("target_hint", "")).strip()
+    if target_hint:
+        step["target"] = {"hint": target_hint}
+    return step
+
+
+def _derive_followup_assert(step_id: str, action_candidate: dict[str, Any]) -> dict[str, Any]:
+    target_hint = str(action_candidate.get("target_hint", "")).strip()
+    hint = ""
+    low = target_hint.lower()
+    if "openui2button" in low:
+        hint = "node_visible:UI/UI2Popup"
+    elif "ui3" in low or "nextbutton" in low:
+        hint = "node_visible:UI/UI3"
+    elif "start" in low:
+        hint = "node_visible:UI/UI1"
+    else:
+        m = re.search(r"ui\s*([0-9]+)", low)
+        if m:
+            hint = f"node_visible:UI/UI{m.group(1)}"
+    if hint:
+        return {
+            "id": step_id,
+            "action": "wait",
+            "kind": "logic_state",
+            "hint": hint,
+            "until": {"hint": hint},
+            "timeoutMs": 1500,
+        }
+    return {
+        "id": step_id,
+        "action": "wait",
+        "kind": "logic_state",
+        "hint": f"verify feature state after {action_candidate.get('id', 'feature_action')}",
+        "until": {"hint": "main_scene_ready"},
+        "timeoutMs": 1500,
     }
 
 
@@ -1507,13 +1973,25 @@ def _load_or_build_context_index(ctx: ServerCtx, arguments: dict[str, Any], proj
     return _load_context_index_or_fail(project_root, cfg.index_rel)
 
 
-def _save_load_capability_signals(context_index: dict[str, Any]) -> dict[str, bool]:
+def _save_load_capability_signals(context_index: dict[str, Any]) -> dict[str, Any]:
     corpus_parts: list[str] = []
     script_signals = context_index.get("script_signals", {})
+    methods: list[str] = []
     if isinstance(script_signals, dict):
         for method in script_signals.get("method_samples", []):
             if isinstance(method, str):
+                methods.append(method)
                 corpus_parts.append(method)
+    scene_signals = context_index.get("scene_signals", {})
+    ui_tokens: list[str] = []
+    if isinstance(scene_signals, dict):
+        for button in scene_signals.get("button_nodes", []):
+            if not isinstance(button, dict):
+                continue
+            name = button.get("name")
+            if isinstance(name, str) and name.strip():
+                ui_tokens.append(name)
+                corpus_parts.append(name)
     data_signals = context_index.get("data_signals", {})
     if isinstance(data_signals, dict):
         for item in data_signals.get("top_keys", []):
@@ -1531,10 +2009,66 @@ def _save_load_capability_signals(context_index: dict[str, Any]) -> dict[str, bo
                     val = item.get(field)
                     if isinstance(val, str):
                         corpus_parts.append(val)
+                target_hint = item.get("target_hint")
+                if isinstance(target_hint, str) and target_hint.strip():
+                    ui_tokens.append(target_hint)
+                    corpus_parts.append(target_hint)
     corpus = " ".join(corpus_parts).lower()
-    has_save = bool(re.search(r"(save|存档|保存)", corpus))
-    has_load = bool(re.search(r"(load|读档|读取存档)", corpus))
-    return {"has_save": has_save, "has_load": has_load}
+    method_has_save = any(re.search(r"(^|_)(save|quicksave)(_|$)", m.lower()) for m in methods)
+    method_has_load = any(re.search(r"(^|_)(load|quickload|readsave)(_|$)", m.lower()) for m in methods)
+    ui_has_save = any(re.search(r"(save|存档|保存)", x.lower()) for x in ui_tokens)
+    ui_has_load = any(re.search(r"(load|读档|读取存档)", x.lower()) for x in ui_tokens)
+    has_save = method_has_save and ui_has_save
+    has_load = method_has_load and ui_has_load
+    return {
+        "has_save": has_save,
+        "has_load": has_load,
+        "save_target_hint": "save_game_entry" if has_save else "",
+        "load_target_hint": "load_game_entry" if has_load else "",
+        "evidence": {
+            "method_has_save": method_has_save,
+            "method_has_load": method_has_load,
+            "ui_has_save": ui_has_save,
+            "ui_has_load": ui_has_load,
+            "keyword_hit_save": bool(re.search(r"(save|存档|保存)", corpus)),
+            "keyword_hit_load": bool(re.search(r"(load|读档|读取存档)", corpus)),
+        },
+    }
+
+
+def _filter_candidates_for_basic_flow(
+    action_candidates: list[dict[str, Any]],
+    assertion_candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    filtered_actions: list[dict[str, Any]] = []
+    filtered_assertions: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    for candidate in action_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        kind = str(candidate.get("kind", "")).strip().lower()
+        if kind not in {"click", "wait"}:
+            continue
+        if kind == "click" and not str(candidate.get("target_hint", "")).strip():
+            continue
+        if kind == "wait" and not str(candidate.get("until_hint", "")).strip():
+            continue
+        filtered_actions.append(candidate)
+    for candidate in assertion_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        kind = str(candidate.get("kind", "logic_state")).strip().lower() or "logic_state"
+        if kind != "logic_state":
+            continue
+        hint = str(candidate.get("hint", "")).strip()
+        if not hint:
+            continue
+        filtered_assertions.append(candidate)
+    if not filtered_actions:
+        reasons.append("no_executable_action_candidates")
+    if not filtered_assertions:
+        reasons.append("no_logic_assertion_candidates")
+    return filtered_actions, filtered_assertions, reasons
 
 
 def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1548,41 +2082,108 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
     max_feature_checks = max(1, min(max_feature_checks, 8))
 
     flow_candidates = context_index.get("flow_candidates", {}) if isinstance(context_index.get("flow_candidates"), dict) else {}
-    action_candidates = [
+    action_candidates_raw = [
         x for x in flow_candidates.get("action_candidates", []) if isinstance(x, dict) and str(x.get("id", "")).strip()
     ]
-    assertion_candidates = [
+    assertion_candidates_raw = [
         x for x in flow_candidates.get("assertion_candidates", []) if isinstance(x, dict) and str(x.get("id", "")).strip()
     ]
+    action_candidates, assertion_candidates, candidate_reasons = _filter_candidates_for_basic_flow(
+        action_candidates_raw, assertion_candidates_raw
+    )
     save_load = _save_load_capability_signals(context_index)
 
-    steps: list[dict[str, Any]] = [
-        {"id": "launch_game", "action": "launchGame"},
-        {"id": "wait_bootstrap", "action": "wait", "until": {"hint": "main_scene_ready"}, "timeoutMs": 15000},
-        {"id": "enter_game", "action": "click", "target": {"hint": "start_or_continue_button"}},
-        {"id": "wait_enter_game", "action": "wait", "until": {"hint": "in_game_hud_ready"}, "timeoutMs": 15000},
-    ]
+    steps: list[dict[str, Any]] = [{"id": "launch_game", "action": "launchGame"}]
+    generation_evidence: dict[str, Any] = {
+        "candidate_counts": {
+            "action_raw": len(action_candidates_raw),
+            "assertion_raw": len(assertion_candidates_raw),
+            "action_filtered": len(action_candidates),
+            "assertion_filtered": len(assertion_candidates),
+        },
+        "save_load": save_load,
+        "blocked_reasons": list(candidate_reasons),
+        "selected_steps": {},
+    }
+    selected_actions = action_candidates[:max_feature_checks]
+    if not selected_actions:
+        exp_artifact = _write_exp_runtime_artifact(
+            project_root=project_root,
+            cfg=cfg,
+            artifact_name="basic_game_test_flow_last",
+            payload={
+                "tool": "design_game_basic_test_flow",
+                "generated_at": _utc_iso(),
+                "project_root": str(project_root),
+                "flow_id": flow_id,
+                "status": "blocked",
+                "reasons": candidate_reasons or ["no_executable_action_candidates"],
+                "generation_evidence": generation_evidence,
+            },
+        )
+        return {
+            "status": "blocked",
+            "project_root": str(project_root),
+            "flow_id": flow_id,
+            "flow_file": "",
+            "step_count": 0,
+            "selected_feature_checks": 0,
+            "save_load_signals": save_load,
+            "reasons": candidate_reasons or ["no_executable_action_candidates"],
+            "generation_evidence": generation_evidence,
+            "exp_runtime": exp_artifact,
+        }
+
+    entry_action = selected_actions[0]
+    steps.append(_candidate_action_step("enter_game", entry_action, "click"))
+    generation_evidence["selected_steps"]["enter_game"] = {
+        "candidate_id": str(entry_action.get("id", "")),
+        "evidence": entry_action.get("evidence", []),
+    }
     if save_load["has_save"]:
-        steps.append({"id": "save_game_smoke", "action": "click", "target": {"hint": "save_game_entry"}})
+        steps.append({"id": "save_game_smoke", "action": "click", "target": {"hint": save_load["save_target_hint"]}})
         steps.append({"id": "assert_save_success", "action": "check", "kind": "logic_state", "hint": "save completed"})
     if save_load["has_load"]:
-        steps.append({"id": "load_game_smoke", "action": "click", "target": {"hint": "load_game_entry"}})
+        steps.append({"id": "load_game_smoke", "action": "click", "target": {"hint": save_load["load_target_hint"]}})
         steps.append({"id": "assert_load_success", "action": "check", "kind": "logic_state", "hint": "load completed"})
 
-    selected_actions = action_candidates[:max_feature_checks]
-    for idx, candidate in enumerate(selected_actions, start=1):
+    for idx, candidate in enumerate(selected_actions[1:], start=1):
         steps.append(_candidate_action_step(f"feature_action_{idx}", candidate, "click"))
+        generation_evidence["selected_steps"][f"feature_action_{idx}"] = {
+            "candidate_id": str(candidate.get("id", "")),
+            "evidence": candidate.get("evidence", []),
+        }
         if idx <= len(assertion_candidates):
-            steps.append(_candidate_assert_step(f"feature_assert_{idx}", assertion_candidates[idx - 1]))
-        else:
-            steps.append(
-                {
-                    "id": f"feature_assert_{idx}",
-                    "action": "check",
-                    "kind": "logic_state",
-                    "hint": f"verify feature state after feature_action_{idx}",
+            selected_assertion = assertion_candidates[idx - 1]
+            selected_hint = str(selected_assertion.get("target_hint", "")).strip().lower()
+            if selected_hint in {"node_visible:ui", "node_exists:ui", "node_name:ui"}:
+                steps.append(_derive_followup_assert(f"feature_assert_{idx}", candidate))
+                generation_evidence["selected_steps"][f"feature_assert_{idx}"] = {"candidate_id": "", "evidence": []}
+            else:
+                steps.append(_candidate_assert_step(f"feature_assert_{idx}", selected_assertion))
+                generation_evidence["selected_steps"][f"feature_assert_{idx}"] = {
+                    "candidate_id": str(selected_assertion.get("id", "")),
+                    "evidence": selected_assertion.get("evidence", []),
                 }
-            )
+        else:
+            steps.append(_derive_followup_assert(f"feature_assert_{idx}", candidate))
+            generation_evidence["selected_steps"][f"feature_assert_{idx}"] = {"candidate_id": "", "evidence": []}
+    if not any(str(step.get("id", "")).startswith("feature_assert_") for step in steps):
+        if assertion_candidates:
+            first_assertion = assertion_candidates[0]
+            first_hint = str(first_assertion.get("target_hint", "")).strip().lower()
+            if first_hint in {"node_visible:ui", "node_exists:ui", "node_name:ui"}:
+                steps.append(_derive_followup_assert("feature_assert_1", entry_action))
+                generation_evidence["selected_steps"]["feature_assert_1"] = {"candidate_id": "", "evidence": []}
+            else:
+                steps.append(_candidate_assert_step("feature_assert_1", first_assertion))
+                generation_evidence["selected_steps"]["feature_assert_1"] = {
+                    "candidate_id": str(first_assertion.get("id", "")),
+                    "evidence": first_assertion.get("evidence", []),
+                }
+        else:
+            steps.append(_derive_followup_assert("feature_assert_1", entry_action))
+            generation_evidence["selected_steps"]["feature_assert_1"] = {"candidate_id": "", "evidence": []}
     steps.append({"id": "snapshot_end", "action": "snapshot", "name": "basic_test_end"})
     seeded_steps = _attach_chat_contract(steps)
 
@@ -1599,10 +2200,11 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
         ],
         "steps": seeded_steps,
         "notes": [
-            "Focus: open/enter game, save-load capability smoke check, and implemented feature smoke checks.",
-            "Save/Load steps are included only when related signals are discovered from project context.",
+            "Focus: evidence-driven minimal flow (entry interaction + verification + snapshot).",
+            "Save/Load steps are included only when both script and UI entry evidence are detected.",
             f"selected_feature_checks={len(selected_actions)}",
         ],
+        "generation_evidence": generation_evidence,
     }
 
     output_raw = str(arguments.get("output_file", "")).strip()
@@ -1623,6 +2225,7 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
             "flow_file": str(output_path),
             "selected_feature_checks": len(selected_actions),
             "save_load_signals": save_load,
+            "generation_evidence": generation_evidence,
         },
     )
     return {
@@ -1633,6 +2236,7 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
         "step_count": len(seeded_steps),
         "selected_feature_checks": len(selected_actions),
         "save_load_signals": save_load,
+        "generation_evidence": generation_evidence,
         "exp_runtime": exp_artifact,
     }
 
@@ -1780,15 +2384,35 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         step_timeout_ms = 30_000
     run_id_opt = str(arguments.get("run_id", "")).strip() or None
     runtime_meta = _probe_runtime_gate(project_root)
-    require_play_mode = bool(arguments.get("require_play_mode", False))
-    if require_play_mode and not bool(runtime_meta.get("runtime_gate_passed", False)):
+    # Non-negotiable execution policy:
+    # 1) run in real play mode runtime gate
+    # 2) emit step-level shell-visible progress
+    require_play_mode = True
+    shell_report = True
+    close_project_on_finish = bool(arguments.get("close_project_on_finish", True))
+    auto_enter_requested = False
+    engine_bootstrap: dict[str, Any] = {}
+    if not bool(runtime_meta.get("runtime_gate_passed", False)):
+        runtime_meta, engine_bootstrap = _ensure_runtime_play_mode(project_root, arguments)
+        auto_enter_requested = bool(engine_bootstrap.get("auto_enter_play_mode_requested", False))
+    if not bool(runtime_meta.get("runtime_gate_passed", False)):
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
         raise AppError(
             "RUNTIME_GATE_FAILED",
-            "play mode is required before executing flow",
+            "play mode is required before executing flow (strict policy)",
             {
                 "runtime_mode": runtime_meta.get("runtime_mode", "editor_bridge"),
                 "runtime_entry": runtime_meta.get("runtime_entry", "unknown"),
                 "runtime_gate_passed": False,
+                "auto_enter_play_mode_requested": auto_enter_requested,
+                "engine_bootstrap": engine_bootstrap,
+                "blocking_point": "runtime_gate_not_passed_after_bootstrap_attempt",
+                "next_actions": [
+                    "check project_root points to intended project",
+                    "set godot_executable or tools/game-test-runner/config/godot_executable.json",
+                    "re-run run_game_basic_test_flow after engine starts and enters play mode",
+                ],
+                "project_close": close_meta,
             },
         )
     runtime_dir = _exp_runtime_dir(project_root, cfg)
@@ -1799,13 +2423,14 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         step_timeout_ms=step_timeout_ms,
         run_id=run_id_opt,
         fail_fast=bool(arguments.get("fail_fast", True)),
-        shell_report=bool(arguments.get("shell_report", False)),
+        shell_report=shell_report,
         runtime_meta=runtime_meta,
     )
     runner = FlowRunner(opts)
     try:
         report = runner.run(flow_data)
     except FlowExecutionTimeout as exc:
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
         raise AppError(
@@ -1819,9 +2444,11 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
                 "tool_usability": dual["tool_usability"],
                 "gameplay_runnability": dual["gameplay_runnability"],
                 "step_broadcast_summary": rep.get("step_broadcast_summary"),
+                "project_close": close_meta,
             },
         ) from exc
     except FlowExecutionStepFailed as exc:
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
         raise AppError(
@@ -1835,8 +2462,10 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
                 "tool_usability": dual["tool_usability"],
                 "gameplay_runnability": dual["gameplay_runnability"],
                 "step_broadcast_summary": rep.get("step_broadcast_summary"),
+                "project_close": close_meta,
             },
         ) from exc
+    close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
     legacy_hints = _legacy_layout_hints(project_root)
     dual = build_dual_conclusions(report)
     exp_artifact = _write_exp_runtime_artifact(
@@ -1855,6 +2484,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
             "tool_usability": dual["tool_usability"],
             "gameplay_runnability": dual["gameplay_runnability"],
             "step_broadcast_summary": report.get("step_broadcast_summary"),
+            "project_close": close_meta,
         },
     )
     return {
@@ -1865,6 +2495,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         "tool_usability": dual["tool_usability"],
         "gameplay_runnability": dual["gameplay_runnability"],
         "step_broadcast_summary": report.get("step_broadcast_summary"),
+        "project_close": close_meta,
         "exp_runtime": exp_artifact,
         "legacy_layout_hints": legacy_hints,
     }
@@ -1876,10 +2507,21 @@ def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: d
     flow_result = refreshed.get("flow_result", {})
     if not isinstance(flow_result, dict):
         flow_result = {}
+    if str(flow_result.get("status", "")).strip() == "blocked":
+        raise AppError(
+            "FLOW_GENERATION_BLOCKED",
+            "cannot run basic flow because generation is blocked by missing executable evidence",
+            {
+                "flow_result": flow_result,
+                "context_refresh": refreshed.get("context_refresh", {}),
+            },
+        )
     run_args = {
         **arguments,
         "project_root": str(project_root),
         "flow_file": str(flow_result.get("flow_file", "")).strip(),
+        "require_play_mode": True,
+        "shell_report": True,
     }
     executed = _tool_run_game_basic_test_flow(ctx, run_args)
     return {
@@ -1915,7 +2557,12 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
     else:
         timeout_seconds = None
 
-    run_args = {**arguments, "project_root": str(project_root)}
+    run_args = {
+        **arguments,
+        "project_root": str(project_root),
+        "require_play_mode": True,
+        "shell_report": True,
+    }
 
     def run_verification() -> dict[str, Any]:
         try:
@@ -2373,6 +3020,8 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
                 "implemented": True,
                 "status": "implemented",
                 "phase": "runtime_gate_and_virtual_input",
+                "strict_runtime_required": True,
+                "shell_step_output_required": True,
             }
         },
         "tools": [
@@ -2635,7 +3284,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
             },
         },
         "run_game_basic_test_flow": {
-            "description": "Run a basic gameplay flow test via file bridge (command.json/response.json) with three-phase event reporting.",
+            "description": (
+                "Run a basic gameplay flow test via file bridge (command.json/response.json) with three-phase event reporting. "
+                "Strict policy is always enforced: play_mode runtime gate required + per-step shell output."
+            ),
             "inputSchema": {
                 "type": "object",
                 "required": ["project_root"],
@@ -2645,10 +3297,13 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "flow_file": {"type": "string", "description": "Path to flow JSON file."},
                     "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
                     "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
-                    "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
+                    "shell_report": {
+                        "type": "boolean",
+                        "description": "Compatibility field. Runtime always enforces shell step output.",
+                    },
                     "require_play_mode": {
                         "type": "boolean",
-                        "description": "Require play mode runtime gate before running the flow.",
+                        "description": "Compatibility field. Runtime always enforces play mode gate.",
                     },
                 },
             },
@@ -2667,10 +3322,13 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "flow_file": {"type": "string", "description": "Path to flow JSON file; normally taken from regenerated flow_result."},
                     "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
                     "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
-                    "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
+                    "shell_report": {
+                        "type": "boolean",
+                        "description": "Compatibility field. Runtime always enforces shell step output.",
+                    },
                     "require_play_mode": {
                         "type": "boolean",
-                        "description": "Require play mode runtime gate before running the flow.",
+                        "description": "Compatibility field. Runtime always enforces play mode gate and step shell output.",
                     },
                 },
             },

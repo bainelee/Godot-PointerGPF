@@ -21,6 +21,14 @@ This matrix records current implementation status based on repository evidence.
 - Artifact contract assertions are automated via `scripts/assert-mcp-artifacts.ps1` and wired in smoke/integration workflows.
 - Integration workflow produces trend report artifact (`mcp_integration_trend_report.json`).
 - Runtime gate contract path is available in `run_game_basic_test_flow` (`require_play_mode`) with structured `RUNTIME_GATE_FAILED`.
+- Runtime bootstrap responsibility is enforced in runtime path:
+  - If engine is not open, MCP attempts target-project bootstrap and play-mode entry before step execution.
+  - Failure payload includes `blocking_point`, `next_actions`, and `engine_bootstrap` evidence.
+- Godot executable resolution priority is enforced:
+  - project config `tools/game-test-runner/config/godot_executable.json`
+  - tool arguments (`godot_executable` / `godot_editor_executable` / `godot_path`)
+  - environment (`GODOT_EXE` / `GODOT_EDITOR_PATH` / `GODOT_PATH`)
+  - no hardcoded local fallback path.
 - Execution report includes runtime/input evidence fields:
   - `runtime_mode`
   - `runtime_entry`
@@ -29,6 +37,22 @@ This matrix records current implementation status based on repository evidence.
   - `runtime_gate_passed`
   - `step_broadcast_summary.protocol_mode=three_phase`
   - `step_broadcast_summary.fail_fast_on_verify`
+- Shell broadcast format is normalized for user-facing output:
+  - Per-phase timestamp line: `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS` (local system time)
+  - Per-phase semantic line: Chinese `开始执行` / `执行结果` / `验证结论`
+  - User-facing output excludes technical field lines (`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`).
+- Test teardown rule is enforced in runtime path:
+  - Every test run requests close action on success/failure/timeout/runtime gate failure.
+  - `closeProject` semantics are fixed to stop `play_mode` and return editor idle state (editor process kept by default).
+  - Close evidence is returned as `project_close` (`requested` / `acknowledged` / timeout/message).
+- Runtime bridge mounting/runtime target resolution are hardened:
+  - runtime bridge is mounted via autoload in target project plugin path.
+  - node resolution is constrained to `current_scene` to avoid editor-tree false hits.
+- Action-followed state verification is hardened:
+  - generated follow-up verification uses short-window `wait + until.hint` polling to reduce same-frame false negatives.
+- Temp-project safety gate is enforced:
+  - temp directory project roots are rejected by default in runtime path.
+  - temp-project engine autostart is blocked unless explicitly allowed for tests.
 - Natural-language intent routing is available via `route_nl_intent` (basic flow aliases).
 - Auto bug-fix loop is available via `auto_fix_game_bug` with `verification -> diagnosis -> patch -> retest` evidence.
 - Basic flow dual conclusions are available in tool response and runtime artifact:
@@ -42,7 +66,7 @@ This matrix records current implementation status based on repository evidence.
 
 - `exp_dir_rel` is configured and exposed in runtime info, but business-runtime read/write behavior requires dedicated artifact output and validation.
 - Trend analysis currently outputs per-run JSON artifact; long-term historical aggregation is not yet automated inside repository CI.
-- Runtime gate currently relies on runtime marker evidence (`pointer_gpf/tmp/runtime_gate.json`) for deterministic automation; automatic F5-equivalent launch is not fully implemented.
+- Runtime gate still depends on plugin-side marker evidence (`pointer_gpf/tmp/runtime_gate.json`) and bridge responsiveness; for unsupported adapters, close-request acknowledgment may timeout while request evidence remains available.
 
 ## Legacy restoration (tracked)
 

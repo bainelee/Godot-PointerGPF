@@ -28,7 +28,12 @@ The result is a repeatable agent workflow that stays grounded in project files a
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
 - Figma validation loop: `figma_design_to_baseline`, `compare_figma_game_ui`, `annotate_ui_mismatch`, `approve_ui_fix_plan`, `suggest_ui_fix_patch`
 - Contract + runtime diagnostics: `get_adapter_contract`, `get_mcp_runtime_info`
-- Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` (with `--project-root` + `--flow-id` + `--args` including `step_timeout_ms`/`fail_fast`/`shell_report`; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` (strict policy: real `play_mode` runtime + step-by-step shell output; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`; auto bootstrap when engine is not open) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+  - Per-phase shell broadcast format:
+    - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS` (local system time)
+    - User-facing Chinese semantic line (`开始执行` / `执行结果` / `验证结论`)
+  - No technical field lines in user-facing broadcast (`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`).
+  - Each test run must issue close action (`closeProject`) and expose `project_close` evidence. `closeProject` means stop `play_mode` and return to editor idle state; editor process is kept by default.
 - Natural-language routing and auto-fix loop: `route_nl_intent`, `auto_fix_game_bug`
 - Basic flow result fields: `tool_usability`, `gameplay_runnability`, `step_broadcast_summary`
 - Runtime outputs under `pointer_gpf/gpf-exp/runtime/` for traceability
@@ -172,13 +177,13 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 ```powershell
 python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""strategy"":""auto""}"
-python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true}"
+python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true,""require_play_mode"":true}"
 powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "D:/path/to/your/godot/project" -FlowId "basic_exec" -ValidateExecutionPipeline
 ```
 
 **You must do this manually (human-only):**
 
-- Run the game in Godot with the PointerGPF plugin enabled so `runtime_bridge` can service `command.json` / `response.json` (see [`docs/godot-adapter-contract-v1.md`](./docs/godot-adapter-contract-v1.md)).
+- Ensure your target project has a valid Godot executable path configured (`tools/game-test-runner/config/godot_executable.json`, tool args, or `GODOT_EXE`/`GODOT_EDITOR_PATH`/`GODOT_PATH`).
 
 ## Documentation
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 import uuid
 from dataclasses import dataclass
@@ -74,6 +75,47 @@ class FlowRunner:
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
+    def _local_shell_ts(self) -> str:
+        return datetime.now().strftime("%Y-%m-%d T %H:%M:%S")
+
+    def _build_step_semantics(self, step_id: str, step_action: str, step: dict[str, Any]) -> tuple[str, str]:
+        canonical: dict[str, tuple[str, str]] = {
+            "launch_game": ("正在启动游戏运行会话", "进入可执行基础测试的游戏运行态."),
+            "wait_bootstrap": ("正在等待游戏主场景初始化完成", "主场景初始化完成并可交互."),
+            "enter_game": ("正在进入游戏主流程", "进入可操作的游戏主流程."),
+            "wait_enter_game": ("正在等待游戏内HUD稳定显示", "游戏内HUD已显示并可继续执行."),
+            "load_game_smoke": ("正在从存档0直接加载游戏主场景", "复现用户当前存档状态,不覆盖现有进度."),
+            "assert_load_success": ("正在验证存档加载结果", "确认存档加载成功且当前状态可继续测试."),
+            "snapshot_end": ("正在记录流程结束快照", "保留流程结束证据以便复核."),
+        }
+        if step_id in canonical:
+            return canonical[step_id]
+
+        hint = str(step.get("hint", "")).strip()
+        target_hint = ""
+        target = step.get("target")
+        if isinstance(target, dict):
+            target_hint = str(target.get("hint", "")).strip()
+        until = step.get("until")
+        until_hint = ""
+        if isinstance(until, dict):
+            until_hint = str(until.get("hint", "")).strip()
+
+        action = step_action.lower()
+        action_text = {
+            "launchgame": "启动游戏",
+            "click": "点击交互",
+            "wait": "等待状态推进",
+            "check": "执行状态检查",
+            "snapshot": "记录快照",
+            "movemouse": "移动虚拟鼠标",
+            "drag": "执行拖拽操作",
+        }.get(action, "执行测试动作")
+        focus = target_hint or until_hint or hint or step_id
+        task_text = f"正在{action_text}: {focus}"
+        target_text = (until_hint or target_hint or hint or "完成当前步骤目标并保持流程可继续执行").rstrip(".")
+        return task_text, f"{target_text}."
+
     def _emit_event(self, events_path: Path, phase: str, step_index: int, step_id: str, extra: dict[str, Any] | None = None) -> None:
         row: dict[str, Any] = {
             "phase": phase,
@@ -86,6 +128,17 @@ class FlowRunner:
         if extra:
             row.update(extra)
         self._append_ndjson(events_path, row)
+        if bool(self.options.shell_report):
+            print(f"[GPF-FLOW-TS] {self._local_shell_ts()}", file=sys.stderr, flush=True)
+            task_text = str(row.get("task_text", "")).strip() or "正在执行测试步骤"
+            target_text = str(row.get("target_text", "")).strip() or "完成当前步骤目标并保持流程可继续执行."
+            if phase == "started":
+                semantic = f"开始执行:{task_text}"
+            elif phase == "result":
+                semantic = f"执行结果:{task_text}({'通过' if bool(row.get('bridge_ok', False)) else '失败'})"
+            else:
+                semantic = f"验证结论:{'通过' if bool(row.get('verified', False)) else '失败'}-目标:{target_text}"
+            print(semantic, file=sys.stderr, flush=True)
 
     def _step_for_bridge(self, step: dict[str, Any]) -> dict[str, Any]:
         out = dict(step)
@@ -127,7 +180,10 @@ class FlowRunner:
         events_path: Path,
     ) -> bool:
         step_id = str(step.get("id", f"step_{step_index}")).strip() or f"step_{step_index}"
-        self._emit_event(events_path, "started", step_index, step_id, {})
+        step_action = str(step.get("action", "")).strip()
+        task_text, target_text = self._build_step_semantics(step_id, step_action, step)
+        semantic_base = {"task_text": task_text, "target_text": target_text}
+        self._emit_event(events_path, "started", step_index, step_id, semantic_base)
 
         seq = step_index + 1
         cmd = {
@@ -163,7 +219,7 @@ class FlowRunner:
             "result",
             step_index,
             step_id,
-            {"bridge_ok": ok, "bridge_message": str(response.get("message", ""))},
+            {**semantic_base, "bridge_ok": ok, "bridge_message": str(response.get("message", ""))},
         )
         verified = ok
         self._emit_event(
@@ -171,7 +227,7 @@ class FlowRunner:
             "verify",
             step_index,
             step_id,
-            {"verified": verified},
+            {**semantic_base, "verified": verified},
         )
         if self.options.fail_fast and not ok:
             raise FlowExecutionStepFailed(

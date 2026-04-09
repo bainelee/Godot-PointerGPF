@@ -14,6 +14,10 @@ config/name="PointerGPF Minimal"
 run/main_scene="uid://bt36ffouad4nf"
 config/features=PackedStringArray("4.6")
 
+[autoload]
+
+PointerGPFRuntimeBridge="*res://addons/pointer_gpf/runtime_bridge.gd"
+
 [display]
 
 window/size/viewport_width=1920
@@ -22,4 +26,4 @@ window/stretch/mode="canvas_items"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/pointer_gpf/plugin.cfg", "res://addons/test_orchestrator/plugin.cfg")
+enabled=PackedStringArray("res://addons/pointer_gpf/plugin.cfg")
