@@ -1,6 +1,6 @@
 # MCP 核心需求全量达成 Implementation Plan
 
-> 状态：可验收（功能与测试已落地；仅保留 Step 5 提交步骤未执行）
+> 状态：已完成（功能、测试、提交与远端推送均已完成）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -20,7 +20,7 @@
   - `python -m unittest tests.test_flow_execution_runtime -v` -> `OK`
   - `python -m unittest tests.test_bug_auto_fix_loop -v` -> `OK`
 - 补充完成：Task 4/5/6 的 Step 1-4 已回填并完成验证（含 CI requirement step 与文档契约测试）。
-- 当前仍未回填：各 Task 的 Step 5（提交）未执行。
+- 提交记录：已由整体验收提交统一覆盖 Step 5，提交 `6dc7387` 并已推送 `origin/main`。
 
 ---
 
@@ -160,7 +160,7 @@ def _tool_route_nl_intent(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict[st
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands.NaturalLanguageBasicFlowCommandTests.test_nl_aliases_map_to_basic_flow_tools -v`  
 Expected: `OK`
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mcp/nl_intent_router.py mcp/server.py tests/test_natural_language_basic_flow_commands.py
@@ -256,7 +256,7 @@ return {
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime -v`  
 Expected: `OK`，且输出包含 `[FLOW][started]` 可读播报行
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mcp/basic_flow_contracts.py mcp/flow_execution.py mcp/server.py tests/test_natural_language_basic_flow_commands.py tests/test_flow_execution_runtime.py
@@ -394,7 +394,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
 Run: `python -m unittest tests.test_bug_auto_fix_loop -v`  
 Expected: `OK`，并且返回 `final_status` 为 `fixed` 或 `timeout`
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mcp/bug_fix_loop.py mcp/bug_fix_strategies.py mcp/server.py tests/test_bug_auto_fix_loop.py
@@ -463,7 +463,7 @@ Expected: `OK`
 Run: `powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "<测试项目路径>" -FlowId "smoke_flow" -ValidateExecutionPipeline`  
 Expected: 输出 `[ASSERT] runtime execution pipeline artifacts validated.`
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mcp/server.py scripts/assert-mcp-artifacts.ps1 tests/test_flow_execution_runtime.py tests/test_bug_auto_fix_loop.py
@@ -519,7 +519,7 @@ python "mcp/server.py" --tool auto_fix_game_bug --args "{""project_root"":""D:/p
 Run: `python -m unittest tests.test_flow_execution_runtime.DocumentContractTests -v`  
 Expected: `OK`
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add README.zh-CN.md docs/quickstart.md docs/mcp-implementation-status.md tests/test_flow_execution_runtime.py
@@ -572,7 +572,7 @@ Expected: 至少 1 条失败（未完整覆盖验收字段）
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop tests.test_mcp_transport_protocol -v`  
 Expected: `OK`
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add tests/test_natural_language_basic_flow_commands.py tests/test_bug_auto_fix_loop.py .github/workflows/mcp-integration.yml

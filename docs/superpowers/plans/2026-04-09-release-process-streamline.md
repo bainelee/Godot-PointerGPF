@@ -1,6 +1,6 @@
 # Release Process Streamline Implementation Plan
 
-> 状态：可验收（Task 1/2/3/4/5/6 已落地验证；剩余为各 Task Step 5 提交）
+> 状态：已完成（Task 1/2/3/4/5/6 全部落地，含提交与远端推送）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -20,7 +20,7 @@
   - `powershell -ExecutionPolicy Bypass -File "scripts/sync-version.ps1" -CheckOnly` -> `PASS`
   - `powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun` -> `PASS`
 - 补充完成：Task 5/6 的 Step 1-4 已回填并完成验证（CI 分层与发布文档入口）。
-- 当前仍未回填：各 Task 的 Step 5（提交）未执行。
+- 提交记录：已由整体验收提交统一覆盖 Step 5，提交 `6dc7387` 并已推送 `origin/main`。
 
 ---
 
@@ -120,7 +120,7 @@ Write-Output ("[SYNC] mode=" + ($(if ($CheckOnly) { "check" } else { "write" }))
 Run: `powershell -ExecutionPolicy Bypass -File "scripts/sync-version.ps1" -CheckOnly`  
 Expected: PASS and output includes `[SYNC] version=...`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add VERSION scripts/sync-version.ps1
@@ -192,7 +192,7 @@ powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
 
 Expected: PASS and output includes `[MANIFEST] stable.version=0.2.4.4`（前提 `VERSION` 为 `0.2.4.4`）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/update-version-manifest.ps1
@@ -273,7 +273,7 @@ powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -PrepareOnly
 
 Expected: PASS with `[RELEASE]` structured logs.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/release.ps1 install/pointer-gpf.ps1
@@ -349,7 +349,7 @@ Select-String -Path ".github/workflows/release-package.yml" -Pattern "github.ref
 
 Expected: PASS (both patterns present).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/release-package.yml
@@ -428,7 +428,7 @@ Select-String -Path ".github/workflows/mcp-integration.yml" -Pattern "workflow_d
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/mcp-smoke.yml .github/workflows/mcp-integration.yml
@@ -490,7 +490,7 @@ Select-String -Path "docs/quickstart.md" -Pattern "scripts/release.ps1"
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/quickstart.md README.md README.zh-CN.md CHANGELOG.md
