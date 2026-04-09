@@ -1502,6 +1502,16 @@ def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict
     }
 
 
+def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    _ = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    flow_id = str(arguments.get("flow_id", "")).strip()
+    flow_file = str(arguments.get("flow_file", "")).strip()
+    if not flow_id and not flow_file:
+        raise AppError("INVALID_ARGUMENT", "flow_id or flow_file is required")
+    raise AppError("NOT_IMPLEMENTED", "run_game_basic_test_flow execution is not implemented yet")
+
+
 def _tool_figma_design_to_baseline(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
     cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
@@ -1916,6 +1926,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "annotate_ui_mismatch",
             "approve_ui_fix_plan",
             "suggest_ui_fix_patch",
+            "run_game_basic_test_flow",
         ],
     }
 
@@ -1936,6 +1947,7 @@ def _build_tool_map() -> dict[str, Any]:
         "annotate_ui_mismatch": _tool_annotate_ui_mismatch,
         "approve_ui_fix_plan": _tool_approve_ui_fix_plan,
         "suggest_ui_fix_patch": _tool_suggest_ui_fix_patch,
+        "run_game_basic_test_flow": _tool_run_game_basic_test_flow,
     }
 
 
@@ -2021,6 +2033,21 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "flow_name": {"type": "string"},
                     "output_file": {"type": "string"},
                     "strategy": {"type": "string", "enum": ["auto", "ui", "exploration", "builder", "generic"]},
+                },
+            },
+        },
+        "run_game_basic_test_flow": {
+            "description": "Run a basic gameplay flow test in the Godot project (execution not yet implemented).",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root"],
+                "properties": {
+                    **base_props,
+                    "flow_id": {"type": "string", "description": "Logical flow identifier when not using flow_file."},
+                    "flow_file": {"type": "string", "description": "Path to flow JSON file."},
+                    "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
+                    "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
+                    "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
                 },
             },
         },
