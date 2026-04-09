@@ -1582,7 +1582,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         },
     )
     return {
-        "status": report.get("status", "completed"),
+        "status": report.get("status", "passed"),
         "project_root": str(project_root),
         "flow_file": str(flow_file),
         "execution_report": report,

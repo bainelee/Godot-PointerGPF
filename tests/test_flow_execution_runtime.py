@@ -55,7 +55,7 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(err.get("code"), "INVALID_ARGUMENT")
         self.assertIn("flow file not found", str(err.get("message", "")))
 
-    def test_cli_run_game_basic_test_flow_with_flow_id_returns_not_implemented(self) -> None:
+    def test_cli_run_game_basic_test_flow_with_flow_id_succeeds(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
         flow_dir.mkdir(parents=True, exist_ok=True)
         (flow_dir / "smoke_flow.json").write_text(
@@ -110,11 +110,11 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=f"expected success, got: {payload}")
         self.assertTrue(payload.get("ok"), msg=payload)
         result = payload.get("result") or {}
-        self.assertEqual(result.get("status"), "completed")
+        self.assertEqual(result.get("status"), "passed")
         self.assertIn("execution_report", result)
         self.assertIn("exp_runtime", result)
 
-    def test_cli_run_game_basic_test_flow_with_flow_file_returns_not_implemented(self) -> None:
+    def test_cli_run_game_basic_test_flow_with_flow_file_succeeds(self) -> None:
         flow_file = self.work / "seed_flow.json"
         flow_file.write_text(
             json.dumps(
@@ -164,7 +164,7 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=f"expected success, got: {payload}")
         self.assertTrue(payload.get("ok"), msg=payload)
         result = payload.get("result") or {}
-        self.assertEqual(result.get("status"), "completed")
+        self.assertEqual(result.get("status"), "passed")
 
 
 class FlowExecutionRuntimeTests(unittest.TestCase):
@@ -242,7 +242,7 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=str(payload))
         self.assertTrue(payload.get("ok"), msg=payload)
         report = (payload.get("result") or {}).get("execution_report") or {}
-        self.assertEqual(report.get("status"), "completed")
+        self.assertEqual(report.get("status"), "passed")
         self.assertEqual(report.get("step_count"), 2)
         cov = report.get("phase_coverage") or {}
         self.assertEqual(cov.get("started"), 2)
@@ -288,6 +288,128 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(rep.get("status"), "timeout")
         self.assertEqual(rep.get("phase_coverage", {}).get("started"), 1)
         self.assertEqual(rep.get("phase_coverage", {}).get("result"), 0)
+
+    def test_run_flow_ignores_malformed_seq_and_waits_for_valid_response(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "seq_guard_flow.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "seq_guard_flow",
+                    "steps": [{"id": "sg1", "action": "wait", "timeoutMs": 100}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+
+        def respond_with_bad_then_good_seq() -> None:
+            cmd_path = bridge / "command.json"
+            rsp_path = bridge / "response.json"
+            seen = False
+            for _ in range(1000):
+                if cmd_path.is_file():
+                    try:
+                        data = json.loads(cmd_path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        time.sleep(0.01)
+                        continue
+                    if seen:
+                        time.sleep(0.01)
+                        continue
+                    seen = True
+                    # First write malformed seq; runner should ignore this instead of crashing.
+                    rsp_path.write_text(
+                        json.dumps({"ok": True, "seq": "abc", "run_id": data.get("run_id"), "message": "bad seq"}),
+                        encoding="utf-8",
+                    )
+                    time.sleep(0.05)
+                    rsp_path.write_text(
+                        json.dumps(
+                            {"ok": True, "seq": data.get("seq"), "run_id": data.get("run_id"), "message": "good seq"},
+                            ensure_ascii=False,
+                        ),
+                        encoding="utf-8",
+                    )
+                    return
+                time.sleep(0.01)
+
+        th = threading.Thread(target=respond_with_bad_then_good_seq, daemon=True)
+        th.start()
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {"project_root": str(self.project_root), "flow_id": "seq_guard_flow", "step_timeout_ms": 5000},
+        )
+        self.assertEqual(code, 0, msg=str(payload))
+        self.assertTrue(payload.get("ok"), msg=payload)
+        report = (payload.get("result") or {}).get("execution_report") or {}
+        self.assertEqual(report.get("status"), "passed")
+
+    def test_run_flow_marks_failed_when_fail_fast_false_and_step_returns_false(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "failed_flow.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "failed_flow",
+                    "steps": [{"id": "f1", "action": "check", "kind": "logic_state"}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+        last_seq: list[int | None] = [None]
+
+        def respond_with_failure() -> None:
+            cmd_path = bridge / "command.json"
+            rsp_path = bridge / "response.json"
+            for _ in range(500):
+                if cmd_path.is_file():
+                    try:
+                        data = json.loads(cmd_path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        time.sleep(0.02)
+                        continue
+                    seq = data.get("seq")
+                    if seq is None or seq == last_seq[0]:
+                        time.sleep(0.02)
+                        continue
+                    last_seq[0] = int(seq)
+                    rsp_path.write_text(
+                        json.dumps(
+                            {"ok": False, "seq": seq, "run_id": data.get("run_id"), "message": "assert failed"},
+                            ensure_ascii=False,
+                        ),
+                        encoding="utf-8",
+                    )
+                time.sleep(0.02)
+
+        th = threading.Thread(target=respond_with_failure, daemon=True)
+        th.start()
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "failed_flow",
+                "step_timeout_ms": 8000,
+                "fail_fast": False,
+            },
+        )
+        self.assertEqual(code, 0, msg=f"expected non-fast-fail response, got: {payload}")
+        self.assertTrue(payload.get("ok"), msg=payload)
+        report = (payload.get("result") or {}).get("execution_report") or {}
+        self.assertEqual(report.get("status"), "failed")
+        self.assertEqual(report.get("step_count"), 1)
+        cov = report.get("phase_coverage", {})
+        self.assertEqual(cov.get("started"), 1)
+        self.assertEqual(cov.get("result"), 1)
+        self.assertEqual(cov.get("verify"), 1)
 
 
 if __name__ == "__main__":

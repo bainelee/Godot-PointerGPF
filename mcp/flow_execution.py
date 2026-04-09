@@ -98,7 +98,16 @@ class FlowRunner:
                 except (json.JSONDecodeError, OSError):
                     time.sleep(0.02)
                     continue
-                if isinstance(payload, dict) and int(payload.get("seq", -1)) == seq and str(payload.get("run_id", "")) == self._run_id:
+                if not isinstance(payload, dict):
+                    time.sleep(0.02)
+                    continue
+                try:
+                    response_seq = int(payload.get("seq", -1))
+                except (TypeError, ValueError):
+                    # Ignore malformed bridge responses and keep waiting for a valid one.
+                    time.sleep(0.02)
+                    continue
+                if response_seq == seq and str(payload.get("run_id", "")) == self._run_id:
                     return payload
             time.sleep(0.02)
         raise FlowExecutionTimeout(
@@ -113,7 +122,7 @@ class FlowRunner:
         step_index: int,
         step: dict[str, Any],
         events_path: Path,
-    ) -> None:
+    ) -> bool:
         step_id = str(step.get("id", f"step_{step_index}")).strip() or f"step_{step_index}"
         self._emit_event(events_path, "started", step_index, step_id, {})
 
@@ -168,6 +177,7 @@ class FlowRunner:
                 step_id=step_id,
                 run_id=self._run_id,
             )
+        return ok
 
     def run(self, flow_payload: dict[str, Any]) -> dict[str, Any]:
         steps = flow_payload.get("steps")
@@ -184,20 +194,26 @@ class FlowRunner:
             events_path.unlink()
 
         phase_coverage: dict[str, int] = {"started": 0, "result": 0, "verify": 0}
-        status = "completed"
+        status = "passed"
         reraise: BaseException | None = None
+        has_step_failure = False
 
         try:
             for idx, raw in enumerate(steps):
                 if not isinstance(raw, dict):
                     continue
-                self._run_step(idx, raw, events_path)
+                ok = self._run_step(idx, raw, events_path)
+                if not ok:
+                    has_step_failure = True
         except FlowExecutionTimeout as exc:
             status = "timeout"
             reraise = exc
         except FlowExecutionStepFailed as exc:
             status = "failed"
             reraise = exc
+        else:
+            if has_step_failure:
+                status = "failed"
 
         if events_path.is_file():
             for line in events_path.read_text(encoding="utf-8").splitlines():
