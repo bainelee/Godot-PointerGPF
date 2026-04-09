@@ -670,6 +670,12 @@ class DocumentContractTests(unittest.TestCase):
             self.assertIn("run_game_basic_test_flow", text)
             self.assertIn("ValidateExecutionPipeline", text)
 
+    def test_readme_mentions_auto_fix_game_bug_and_dual_conclusions(self) -> None:
+        text = (self.repo_root / "README.zh-CN.md").read_text(encoding="utf-8")
+        self.assertIn("auto_fix_game_bug", text)
+        self.assertIn("tool_usability", text)
+        self.assertIn("gameplay_runnability", text)
+
 
 if __name__ == "__main__":
     unittest.main()

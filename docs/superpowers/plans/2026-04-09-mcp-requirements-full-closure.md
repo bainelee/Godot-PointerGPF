@@ -1,6 +1,6 @@
 # MCP 核心需求全量达成 Implementation Plan
 
-> 状态：草案（计划文档，未声明已全部落地）
+> 状态：可验收（功能与测试已落地；仅保留 Step 5 提交步骤未执行）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,18 @@
 **Architecture:** 在现有 `mcp/server.py` 基础上新增“自然语言意图归一化层 + 统一结果契约层 + 自动修复循环执行器”。基础流程链路输出必须拆分为“工具可用性结论”和“游戏流程可运行性结论”，并增加可读步骤播报。Bug 修复链路通过“验证 -> 定位 -> 修复 -> 复测”的循环执行，达到成功或超时后统一返回结构化证据。
 
 **Tech Stack:** Python 3.11、unittest、PowerShell 校验脚本、Godot runtime bridge（`command.json/response.json`）
+
+## 2026-04-10 回填记录（本次）
+
+- 已补文件：`mcp/nl_intent_router.py`、`mcp/basic_flow_contracts.py`、`mcp/bug_fix_loop.py`、`mcp/bug_fix_strategies.py`、`tests/test_bug_auto_fix_loop.py`。
+- 已补工具入口：`mcp/server.py` 新增 `route_nl_intent` 与 `auto_fix_game_bug`，并注册到 tool map / tool specs / runtime info。
+- 已补契约字段：`run_game_basic_test_flow*` 返回与运行时产物中增加 `tool_usability`、`gameplay_runnability`、`step_broadcast_summary`。
+- 验证命令：
+  - `python -m unittest tests.test_natural_language_basic_flow_commands -v` -> `OK`
+  - `python -m unittest tests.test_flow_execution_runtime -v` -> `OK`
+  - `python -m unittest tests.test_bug_auto_fix_loop -v` -> `OK`
+- 补充完成：Task 4/5/6 的 Step 1-4 已回填并完成验证（含 CI requirement step 与文档契约测试）。
+- 当前仍未回填：各 Task 的 Step 5（提交）未执行。
 
 ---
 
@@ -74,7 +86,7 @@
 - Modify: `mcp/server.py`
 - Test: `tests/test_natural_language_basic_flow_commands.py`
 
-- [ ] **Step 1: 写失败测试（触发词映射）**
+- [x] **Step 1: 写失败测试（触发词映射）**
 
 ```python
 def test_nl_aliases_map_to_basic_flow_tools(self) -> None:
@@ -96,12 +108,12 @@ def test_nl_aliases_map_to_basic_flow_tools(self) -> None:
         })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands.NaturalLanguageBasicFlowCommandTests.test_nl_aliases_map_to_basic_flow_tools -v`  
 Expected: `ERROR`（`Unknown tool route_nl_intent`）
 
-- [ ] **Step 3: 最小实现（新增意图路由 + 注册工具）**
+- [x] **Step 3: 最小实现（新增意图路由 + 注册工具）**
 
 ```python
 # mcp/nl_intent_router.py
@@ -143,7 +155,7 @@ def _tool_route_nl_intent(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict[st
     return {"text": text, "target_tool": routed.target_tool, "reason": routed.reason}
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands.NaturalLanguageBasicFlowCommandTests.test_nl_aliases_map_to_basic_flow_tools -v`  
 Expected: `OK`
@@ -166,7 +178,7 @@ git commit -m "feat: add natural language aliases for basic flow intents"
 - Test: `tests/test_flow_execution_runtime.py`
 - Test: `tests/test_natural_language_basic_flow_commands.py`
 
-- [ ] **Step 1: 写失败测试（双结论字段 + 播报文本）**
+- [x] **Step 1: 写失败测试（双结论字段 + 播报文本）**
 
 ```python
 def test_run_basic_flow_returns_dual_conclusions_and_readable_broadcast(self) -> None:
@@ -183,12 +195,12 @@ def test_run_basic_flow_returns_dual_conclusions_and_readable_broadcast(self) ->
     self.assertGreaterEqual(summary.get("readable_lines", 0), 1)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands.NaturalLanguageBasicFlowCommandTests.test_run_basic_flow_returns_dual_conclusions_and_readable_broadcast -v`  
 Expected: `FAIL`（缺少 `tool_usability` 字段）
 
-- [ ] **Step 3: 最小实现（结果契约 + 播报）**
+- [x] **Step 3: 最小实现（结果契约 + 播报）**
 
 ```python
 # mcp/basic_flow_contracts.py
@@ -239,7 +251,7 @@ return {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime -v`  
 Expected: `OK`，且输出包含 `[FLOW][started]` 可读播报行
@@ -261,7 +273,7 @@ git commit -m "feat: add dual conclusions and readable step broadcast for basic 
 - Modify: `mcp/server.py`
 - Test: `tests/test_bug_auto_fix_loop.py`
 
-- [ ] **Step 1: 写失败测试（闭环 + 超时 + 最少打扰）**
+- [x] **Step 1: 写失败测试（闭环 + 超时 + 最少打扰）**
 
 ```python
 def test_auto_fix_bug_runs_full_loop_until_success(self) -> None:
@@ -283,12 +295,12 @@ def test_auto_fix_bug_runs_full_loop_until_success(self) -> None:
     self.assertIn("retest", result["loop_evidence"][0])
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m unittest tests.test_bug_auto_fix_loop.BugAutoFixLoopTests.test_auto_fix_bug_runs_full_loop_until_success -v`  
 Expected: `ERROR`（`Unknown tool auto_fix_game_bug`）
 
-- [ ] **Step 3: 最小实现（循环执行器 + 策略接口 + MCP 工具）**
+- [x] **Step 3: 最小实现（循环执行器 + 策略接口 + MCP 工具）**
 
 ```python
 # mcp/bug_fix_strategies.py
@@ -377,7 +389,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
     return result
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m unittest tests.test_bug_auto_fix_loop -v`  
 Expected: `OK`，并且返回 `final_status` 为 `fixed` 或 `timeout`
@@ -399,7 +411,7 @@ git commit -m "feat: add automatic bug fix loop with verification-diagnosis-fix-
 - Test: `tests/test_flow_execution_runtime.py`
 - Test: `tests/test_bug_auto_fix_loop.py`
 
-- [ ] **Step 1: 写失败测试（产物字段断言）**
+- [x] **Step 1: 写失败测试（产物字段断言）**
 
 ```python
 def test_execution_artifact_contains_dual_conclusions(self) -> None:
@@ -414,12 +426,12 @@ def test_execution_artifact_contains_dual_conclusions(self) -> None:
     self.assertIn("gameplay_runnability", result)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m unittest tests.test_flow_execution_runtime.FlowExecutionToolRegistrationTests.test_execution_artifact_contains_dual_conclusions -v`  
 Expected: `FAIL`（产物缺字段）
 
-- [ ] **Step 3: 最小实现（写入运行时 artifact + 脚本校验）**
+- [x] **Step 3: 最小实现（写入运行时 artifact + 脚本校验）**
 
 ```python
 # mcp/server.py inside _write_exp_runtime_artifact payload
@@ -443,7 +455,7 @@ if ($ValidateExecutionPipeline) {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m unittest tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop -v`  
 Expected: `OK`
@@ -468,7 +480,7 @@ git commit -m "test: enforce runtime artifact contract for dual conclusions and 
 - Modify: `docs/mcp-implementation-status.md`
 - Test: `tests/test_flow_execution_runtime.py`（文档契约测试可扩展）
 
-- [ ] **Step 1: 写失败测试（文档必须出现新命令与字段）**
+- [x] **Step 1: 写失败测试（文档必须出现新命令与字段）**
 
 ```python
 def test_readme_mentions_auto_fix_game_bug_and_dual_conclusions(self) -> None:
@@ -478,12 +490,12 @@ def test_readme_mentions_auto_fix_game_bug_and_dual_conclusions(self) -> None:
     self.assertIn("gameplay_runnability", text)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m unittest tests.test_flow_execution_runtime.DocumentContractTests.test_readme_mentions_auto_fix_game_bug_and_dual_conclusions -v`  
 Expected: `FAIL`
 
-- [ ] **Step 3: 最小实现（补文档样例）**
+- [x] **Step 3: 最小实现（补文档样例）**
 
 ```markdown
 # README.zh-CN.md 增加示例
@@ -502,7 +514,7 @@ python "mcp/server.py" --tool auto_fix_game_bug --args "{""project_root"":""D:/p
 最终输出：tool_usability + gameplay_runnability + step_broadcast_summary
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m unittest tests.test_flow_execution_runtime.DocumentContractTests -v`  
 Expected: `OK`
@@ -523,7 +535,7 @@ git commit -m "docs: document full basic-flow and auto-bug-fix expected outputs"
 - Modify: `tests/test_natural_language_basic_flow_commands.py`
 - Modify: `.github/workflows/mcp-integration.yml`
 
-- [ ] **Step 1: 写失败测试（按需求编号验收）**
+- [x] **Step 1: 写失败测试（按需求编号验收）**
 
 ```python
 def test_requirements_r002_dual_goal_fields_exist(self) -> None:
@@ -541,12 +553,12 @@ def test_requirements_r001_loop_has_verify_diagnose_fix_retest(self) -> None:
     self.assertIn("retest", first_cycle)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands tests.test_bug_auto_fix_loop -v`  
 Expected: 至少 1 条失败（未完整覆盖验收字段）
 
-- [ ] **Step 3: 最小实现（补齐 CI 集成运行命令）**
+- [x] **Step 3: 最小实现（补齐 CI 集成运行命令）**
 
 ```yaml
 # .github/workflows/mcp-integration.yml 增加步骤
@@ -555,7 +567,7 @@ Expected: 至少 1 条失败（未完整覆盖验收字段）
     python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop -v
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop tests.test_mcp_transport_protocol -v`  
 Expected: `OK`

@@ -16,7 +16,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from basic_flow_contracts import build_dual_conclusions
+from bug_fix_loop import run_bug_fix_loop
 from flow_execution import FlowExecutionStepFailed, FlowExecutionTimeout, FlowRunOptions, FlowRunner
+from nl_intent_router import route_nl_intent
 
 
 DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
@@ -1804,6 +1807,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         report = runner.run(flow_data)
     except FlowExecutionTimeout as exc:
         rep = exc.report or {}
+        dual = build_dual_conclusions(rep)
         raise AppError(
             "TIMEOUT",
             str(exc),
@@ -1812,10 +1816,14 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
                 "step_index": exc.step_index,
                 "step_id": exc.step_id,
                 "execution_report": rep,
+                "tool_usability": dual["tool_usability"],
+                "gameplay_runnability": dual["gameplay_runnability"],
+                "step_broadcast_summary": rep.get("step_broadcast_summary"),
             },
         ) from exc
     except FlowExecutionStepFailed as exc:
         rep = exc.report or {}
+        dual = build_dual_conclusions(rep)
         raise AppError(
             "STEP_FAILED",
             str(exc),
@@ -1824,9 +1832,13 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
                 "step_index": exc.step_index,
                 "step_id": exc.step_id,
                 "execution_report": rep,
+                "tool_usability": dual["tool_usability"],
+                "gameplay_runnability": dual["gameplay_runnability"],
+                "step_broadcast_summary": rep.get("step_broadcast_summary"),
             },
         ) from exc
     legacy_hints = _legacy_layout_hints(project_root)
+    dual = build_dual_conclusions(report)
     exp_artifact = _write_exp_runtime_artifact(
         project_root=project_root,
         cfg=cfg,
@@ -1840,6 +1852,9 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
             "run_id": report["run_id"],
             "status": report["status"],
             "execution_report": report,
+            "tool_usability": dual["tool_usability"],
+            "gameplay_runnability": dual["gameplay_runnability"],
+            "step_broadcast_summary": report.get("step_broadcast_summary"),
         },
     )
     return {
@@ -1847,6 +1862,9 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         "project_root": str(project_root),
         "flow_file": str(flow_file),
         "execution_report": report,
+        "tool_usability": dual["tool_usability"],
+        "gameplay_runnability": dual["gameplay_runnability"],
+        "step_broadcast_summary": report.get("step_broadcast_summary"),
         "exp_runtime": exp_artifact,
         "legacy_layout_hints": legacy_hints,
     }
@@ -1869,6 +1887,85 @@ def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: d
         "context_refresh": refreshed.get("context_refresh", {}),
         "flow_result": flow_result,
         "execution_result": executed,
+    }
+
+
+def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    project_root = _resolve_project_root(arguments)
+    issue = str(arguments.get("issue", "")).strip()
+    if not issue:
+        raise AppError("INVALID_ARGUMENT", "issue is required")
+
+    raw_max = arguments.get("max_cycles", 3)
+    try:
+        max_cycles = int(raw_max) if raw_max is not None else 3
+    except (TypeError, ValueError):
+        raise AppError("INVALID_ARGUMENT", "max_cycles must be an integer")
+    if max_cycles < 0:
+        raise AppError("INVALID_ARGUMENT", "max_cycles must be >= 0")
+
+    timeout_seconds: float | None
+    if arguments.get("timeout_seconds") is not None:
+        try:
+            timeout_seconds = float(arguments["timeout_seconds"])
+        except (TypeError, ValueError):
+            raise AppError("INVALID_ARGUMENT", "timeout_seconds must be a number")
+        if timeout_seconds < 0:
+            raise AppError("INVALID_ARGUMENT", "timeout_seconds must be >= 0")
+    else:
+        timeout_seconds = None
+
+    run_args = {**arguments, "project_root": str(project_root)}
+
+    def run_verification() -> dict[str, Any]:
+        try:
+            out = _tool_run_game_basic_test_flow_by_current_state(ctx, run_args)
+            exec_result = out.get("execution_result") or {}
+            status = str(exec_result.get("status", "failed"))
+            passed = status == "passed"
+            return {
+                "passed": passed,
+                "status": status,
+                "payload": out,
+                "app_error": None,
+            }
+        except AppError as exc:
+            if exc.code == "INVALID_ARGUMENT":
+                raise
+            code = str(exc.code or "ERROR")
+            return {
+                "passed": False,
+                "status": code.lower(),
+                "payload": None,
+                "app_error": exc.as_dict(),
+            }
+
+    loop_result = run_bug_fix_loop(
+        project_root=project_root,
+        issue=issue,
+        max_cycles=max_cycles,
+        timeout_seconds=timeout_seconds,
+        run_verification=run_verification,
+    )
+    return {
+        "final_status": loop_result["final_status"],
+        "cycles_completed": loop_result["cycles_completed"],
+        "loop_evidence": loop_result["loop_evidence"],
+        "issue": loop_result.get("issue", issue),
+        "project_root": loop_result.get("project_root", str(project_root)),
+        "initial_verification": loop_result.get("initial_verification"),
+    }
+
+
+def _tool_route_nl_intent(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    text = str(arguments.get("text", "")).strip()
+    if not text:
+        raise AppError("INVALID_ARGUMENT", "text is required")
+    routed = route_nl_intent(text)
+    return {
+        "text": text,
+        "target_tool": routed.target_tool,
+        "reason": routed.reason,
     }
 
 
@@ -2281,6 +2378,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         "tools": [
             "get_mcp_runtime_info",
             "get_adapter_contract",
+            "route_nl_intent",
             "install_godot_plugin",
             "enable_godot_plugin",
             "update_godot_plugin",
@@ -2297,6 +2395,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "suggest_ui_fix_patch",
             "run_game_basic_test_flow",
             "run_game_basic_test_flow_by_current_state",
+            "auto_fix_game_bug",
         ]
         + sorted(_LEGACY_GAMEPLAYFLOW_TOOL_NAMES),
     }
@@ -2380,6 +2479,7 @@ def _build_tool_map() -> dict[str, Any]:
     tools: dict[str, Any] = {
         "get_mcp_runtime_info": _tool_get_mcp_runtime_info,
         "get_adapter_contract": _tool_get_adapter_contract,
+        "route_nl_intent": _tool_route_nl_intent,
         "install_godot_plugin": _tool_install_godot_plugin,
         "enable_godot_plugin": _tool_enable_godot_plugin,
         "update_godot_plugin": _tool_update_godot_plugin,
@@ -2396,6 +2496,7 @@ def _build_tool_map() -> dict[str, Any]:
         "suggest_ui_fix_patch": _tool_suggest_ui_fix_patch,
         "run_game_basic_test_flow": _tool_run_game_basic_test_flow,
         "run_game_basic_test_flow_by_current_state": _tool_run_game_basic_test_flow_by_current_state,
+        "auto_fix_game_bug": _tool_auto_fix_game_bug,
     }
     tools.update(_build_legacy_bridge_tool_map())
     return tools
@@ -2417,6 +2518,16 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
         "get_adapter_contract": {
             "description": "Return adapter contract JSON for Godot integration.",
             "inputSchema": {"type": "object", "properties": {}},
+        },
+        "route_nl_intent": {
+            "description": "Route natural-language command text to MCP tool intents.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                    "text": {"type": "string", "description": "Natural-language command text."},
+                },
+            },
         },
         "install_godot_plugin": {
             "description": "Install PointerGPF plugin files and enable plugin in project.godot.",
@@ -2561,6 +2672,22 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                         "type": "boolean",
                         "description": "Require play mode runtime gate before running the flow.",
                     },
+                },
+            },
+        },
+        "auto_fix_game_bug": {
+            "description": "Run verify -> diagnose -> patch -> retest loop for gameplay bugs.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "issue"],
+                "properties": {
+                    **base_props,
+                    "issue": {"type": "string", "description": "User-reported gameplay bug description."},
+                    "max_cycles": {"type": "integer", "description": "Maximum fix cycles."},
+                    "timeout_seconds": {"type": "number", "description": "Wall-clock timeout for the whole loop."},
+                    "flow_id": {"type": "string", "description": "Optional flow id for verification runs."},
+                    "step_timeout_ms": {"type": "integer", "description": "Per-step timeout for verification flow."},
+                    "shell_report": {"type": "boolean", "description": "Enable readable shell broadcasts in verification."},
                 },
             },
         },

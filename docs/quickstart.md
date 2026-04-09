@@ -255,6 +255,15 @@ powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
   -SizeBytes 123456
 ```
 
+## 12.5) 一键发版入口（维护者）
+
+发版以仓库根目录 `VERSION` 为唯一版本源，推荐先 dry-run 再正式执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun
+powershell -ExecutionPolicy Bypass -File "scripts/release.ps1"
+```
+
 ## 13) 更新链路冒烟（维护者）
 
 建议每次改动 `install/update-mcp.ps1` 后执行：

@@ -1,6 +1,6 @@
 # Release Process Streamline Implementation Plan
 
-> 状态：草案（计划文档，未声明已全部落地）
+> 状态：可验收（Task 1/2/3/4/5/6 已落地验证；剩余为各 Task Step 5 提交）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,18 @@
 **Architecture:** 以 `VERSION` 作为单一版本源，新增 `scripts/sync-version.ps1` 与 `scripts/release.ps1` 进行“版本同步 + 打包 + manifest 更新 + 提交/打 tag/release”编排。CI 由“重流程全时运行”改为“快测常驻、重测按需/定时”，并为发布链路增加并发控制与耗时指标输出。发布工作流改为 tag 驱动，避免手工输入版本与重复本地打包。
 
 **Tech Stack:** PowerShell、GitHub Actions、Python 3.11（现有工具）、`gh` CLI
+
+## 2026-04-10 回填记录（本次）
+
+- 已补文件：`VERSION`、`scripts/sync-version.ps1`、`scripts/release.ps1`。
+- 已补发布解析：`.github/workflows/release-package.yml` 增加 `push.tags: v*`，并支持从 `github.ref_name` 解析版本。
+- 已补 manifest 脚本：`scripts/update-version-manifest.ps1` 支持不传 `-Version` 时从 `VERSION` 读取（可选 `-VersionFile`）。
+- 验证命令：
+  - `python -m unittest tests.test_release_single_directory_layout -v` -> `OK`
+  - `powershell -ExecutionPolicy Bypass -File "scripts/sync-version.ps1" -CheckOnly` -> `PASS`
+  - `powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun` -> `PASS`
+- 补充完成：Task 5/6 的 Step 1-4 已回填并完成验证（CI 分层与发布文档入口）。
+- 当前仍未回填：各 Task 的 Step 5（提交）未执行。
 
 ---
 
@@ -44,7 +56,7 @@
 - Create: `scripts/sync-version.ps1`
 - Test: `scripts/sync-version.ps1` (self-check mode)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 # 先在仓库根写入临时版本并运行未实现脚本（预期失败）
@@ -54,12 +66,12 @@ powershell -ExecutionPolicy Bypass -File "scripts/sync-version.ps1" -CheckOnly
 
 Expected: FAIL with "scripts/sync-version.ps1 not found" or "command not found".
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `powershell -ExecutionPolicy Bypass -File "scripts/sync-version.ps1" -CheckOnly`  
 Expected: FAIL (脚本尚未创建)。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```powershell
 param(
@@ -103,7 +115,7 @@ Write-Output ("[SYNC] version=" + $version)
 Write-Output ("[SYNC] mode=" + ($(if ($CheckOnly) { "check" } else { "write" })))
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `powershell -ExecutionPolicy Bypass -File "scripts/sync-version.ps1" -CheckOnly`  
 Expected: PASS and output includes `[SYNC] version=...`.
@@ -123,7 +135,7 @@ git commit -m "chore: add VERSION SSOT and sync script"
 - Modify: `scripts/update-version-manifest.ps1`
 - Test: `scripts/update-version-manifest.ps1` (dry local invocation)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 # 目标：不传 -Version 也能从 VERSION 读取
@@ -134,12 +146,12 @@ powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
 
 Expected: FAIL with "Missing an argument for parameter 'Version'"（当前实现要求必传）。
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run same command as Step 1.  
 Expected: FAIL。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```powershell
 param(
@@ -167,7 +179,7 @@ if (-not ($Version -match '^\d+\.\d+\.\d+\.\d+$')) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -196,7 +208,7 @@ git commit -m "chore: allow manifest update script to read VERSION"
 - Modify: `install/pointer-gpf.ps1` (optional: add `release` shortcut)
 - Test: `scripts/release.ps1` (`-DryRun` and `-PrepareOnly`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun
@@ -204,12 +216,12 @@ powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun
 
 Expected: FAIL with "script not found".
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run same command as Step 1.  
 Expected: FAIL。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```powershell
 param(
@@ -250,7 +262,7 @@ if ($PrepareOnly) {
 Write-Output "[RELEASE] publish complete."
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -276,7 +288,7 @@ git commit -m "feat: add one-command release orchestrator"
 - Modify: `.github/workflows/release-package.yml`
 - Test: workflow lint + dry tag simulation notes in docs
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 # 当前流程需要 workflow_dispatch 输入 version，无法直接 tag 驱动
@@ -285,7 +297,7 @@ Write-Output "No tag-driven trigger exists yet"
 
 Expected: FAIL against requirement "push tag triggers release".
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run manual inspection:
 
@@ -296,7 +308,7 @@ Select-String -Path ".github/workflows/release-package.yml" -Pattern "push:"
 
 Expected: only `workflow_dispatch` exists.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```yaml
 name: release-package
@@ -326,7 +338,7 @@ if ([string]::IsNullOrWhiteSpace($version)) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -353,7 +365,7 @@ git commit -m "ci: switch release workflow to tag-driven trigger"
 - Modify: `.github/workflows/mcp-integration.yml`
 - Test: workflow syntax check + trigger policy check
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 # 目标：PR 只跑快测，重测保留 nightly/manual
@@ -362,7 +374,7 @@ Select-String -Path ".github/workflows/mcp-integration.yml" -Pattern "pull_reque
 
 Expected: no PR trigger; if found, fail.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run policy check:
 
@@ -373,7 +385,7 @@ Select-String -Path ".github/workflows/mcp-smoke.yml" -Pattern "paths-ignore"
 
 Expected: currently missing at least one item.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```yaml
 # mcp-smoke.yml
@@ -405,7 +417,7 @@ on:
     - cron: "0 3 * * *"
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -434,7 +446,7 @@ git commit -m "ci: add fast/slow pipeline split with concurrency controls"
 - Modify: `CHANGELOG.md`
 - Test: docs command examples run in local dry-run mode
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 Select-String -Path "docs/quickstart.md" -Pattern "scripts/release.ps1"
@@ -442,12 +454,12 @@ Select-String -Path "docs/quickstart.md" -Pattern "scripts/release.ps1"
 
 Expected: not found (before docs update).
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run same command as Step 1.  
 Expected: FAIL（缺少新入口说明）。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```markdown
 ## Release (Maintainers)
@@ -467,7 +479,7 @@ Also add bilingual notes in README files about:
 - tag-driven release
 - quick vs integration CI responsibilities
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 

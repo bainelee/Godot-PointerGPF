@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- 新增 `VERSION` 单一版本源，并提供 `scripts/sync-version.ps1` 同步校验脚本。
+- 新增维护者一键发版入口 `scripts/release.ps1`（支持 `-DryRun` / `-PrepareOnly`）。
+- `release-package.yml` 支持 tag 触发（`push tags: v*`）并从 tag 解析版本。
+
 ## v0.2.4.3 - 2026-04-09
 
 - 修复 `install/update-mcp.ps1`：`-ForceRemote` 现在始终优先于本地 `artifact.url` 分支，确保“强制远端更新”语义正确。

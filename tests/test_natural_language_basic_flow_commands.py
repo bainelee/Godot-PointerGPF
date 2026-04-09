@@ -187,6 +187,41 @@ class NaturalLanguageBasicFlowCommandTests(unittest.TestCase):
         execution_report = execution_result["execution_report"]
         self.assertEqual(execution_report.get("status"), execution_status)
 
+    def test_nl_aliases_map_to_basic_flow_tools(self) -> None:
+        aliases = [
+            "设计一个基础测试流程",
+            "生成基础测试流程",
+            "跑一遍基础测试流程",
+            "要求跑基础测试流程",
+        ]
+        for phrase in aliases:
+            result = _run_tool(
+                self.repo_root,
+                "route_nl_intent",
+                {"text": phrase},
+            )
+            self.assertIn(
+                result.get("target_tool"),
+                {
+                    "design_game_basic_test_flow",
+                    "run_game_basic_test_flow_by_current_state",
+                },
+            )
+
+    def test_run_basic_flow_returns_dual_conclusions_and_readable_broadcast(self) -> None:
+        _start_bridge_responder(self.project_root)
+        result = _run_tool(
+            self.repo_root,
+            "run_game_basic_test_flow_by_current_state",
+            {"project_root": str(self.project_root), "flow_id": "dual_conclusion_flow", "shell_report": True},
+        )
+        execution = result["execution_result"]
+        self.assertIn("tool_usability", execution)
+        self.assertIn("gameplay_runnability", execution)
+        self.assertIn("step_broadcast_summary", execution)
+        summary = execution.get("step_broadcast_summary", {})
+        self.assertIsInstance(summary, dict)
+
 
 if __name__ == "__main__":
     unittest.main()

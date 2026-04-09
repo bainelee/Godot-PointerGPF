@@ -41,6 +41,43 @@ class ReleaseSingleDirectoryLayoutTests(unittest.TestCase):
         wf = (repo / ".github" / "workflows" / "release-package.yml").read_text(encoding="utf-8")
         self.assertIn("verify-release-package-layout.py", wf)
 
+    def test_release_workflow_supports_tag_trigger_and_ref_version_parse(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        wf = (repo / ".github" / "workflows" / "release-package.yml").read_text(encoding="utf-8")
+        self.assertIn("push:", wf)
+        self.assertIn("tags:", wf)
+        self.assertIn('"v*"', wf)
+        self.assertIn("github.ref_name", wf)
+
+    def test_mcp_smoke_workflow_has_concurrency_and_paths_ignore(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        wf = (repo / ".github" / "workflows" / "mcp-smoke.yml").read_text(encoding="utf-8")
+        self.assertIn("concurrency:", wf)
+        self.assertIn("cancel-in-progress: true", wf)
+        self.assertIn("paths-ignore:", wf)
+        self.assertIn("**/*.md", wf)
+
+    def test_mcp_integration_workflow_dispatch_has_scope_input(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        wf = (repo / ".github" / "workflows" / "mcp-integration.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", wf)
+        self.assertIn("inputs:", wf)
+        self.assertIn("scope:", wf)
+        self.assertIn("quick|full", wf)
+
+    def test_docs_mention_one_command_release_entry(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        quickstart = (repo / "docs" / "quickstart.md").read_text(encoding="utf-8")
+        readme = (repo / "README.md").read_text(encoding="utf-8")
+        readme_zh = (repo / "README.zh-CN.md").read_text(encoding="utf-8")
+        changelog = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/release.ps1", quickstart)
+        self.assertIn("scripts/release.ps1", readme)
+        self.assertIn("scripts/release.ps1", readme_zh)
+        self.assertIn("VERSION", readme)
+        self.assertIn("VERSION", readme_zh)
+        self.assertIn("scripts/release.ps1", changelog)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,12 @@ This matrix records current implementation status based on repository evidence.
   - `runtime_gate_passed`
   - `step_broadcast_summary.protocol_mode=three_phase`
   - `step_broadcast_summary.fail_fast_on_verify`
+- Natural-language intent routing is available via `route_nl_intent` (basic flow aliases).
+- Auto bug-fix loop is available via `auto_fix_game_bug` with `verification -> diagnosis -> patch -> retest` evidence.
+- Basic flow dual conclusions are available in tool response and runtime artifact:
+  - `tool_usability`
+  - `gameplay_runnability`
+  - `step_broadcast_summary`
 - Adapter contract now exposes runtime requirements via `mcp/adapter_contract_v1.json` (`runtime_requirements`).
 - Runtime bridge includes in-engine virtual input dispatch (`click`/`moveMouse`/`drag`) and virtual cursor overlay.
 

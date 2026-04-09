@@ -29,6 +29,8 @@ The result is a repeatable agent workflow that stays grounded in project files a
 - Figma validation loop: `figma_design_to_baseline`, `compare_figma_game_ui`, `annotate_ui_mismatch`, `approve_ui_fix_plan`, `suggest_ui_fix_patch`
 - Contract + runtime diagnostics: `get_adapter_contract`, `get_mcp_runtime_info`
 - Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` (with `--project-root` + `--flow-id` + `--args` including `step_timeout_ms`/`fail_fast`/`shell_report`; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- Natural-language routing and auto-fix loop: `route_nl_intent`, `auto_fix_game_bug`
+- Basic flow result fields: `tool_usability`, `gameplay_runnability`, `step_broadcast_summary`
 - Runtime outputs under `pointer_gpf/gpf-exp/runtime/` for traceability
 
 ## Supported MCP Clients
@@ -103,6 +105,13 @@ Check updates only:
 
 ```powershell
 .\pointer-gpf.cmd check
+```
+
+Maintainer one-command release entry (`VERSION` is the single source of truth):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun
+powershell -ExecutionPolicy Bypass -File "scripts/release.ps1"
 ```
 
 Notes:

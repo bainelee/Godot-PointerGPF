@@ -7,7 +7,7 @@
                                     "version":  "0.3.0.0",
                                     "min_compatible_version":  "0.3.0.0",
                                     "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
-                                    "published_at_utc":  "2026-04-09T17:17:04Z",
+                                    "published_at_utc":  "2026-04-09T17:59:57Z",
                                     "artifact":  {
                                                      "format":  "zip",
                                                      "filename":  "pointer-gpf-mcp-0.3.0.0.zip",
