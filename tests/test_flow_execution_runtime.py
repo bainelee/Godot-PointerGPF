@@ -501,6 +501,15 @@ class DocumentContractTests(unittest.TestCase):
         self.assertIn("run_game_basic_test_flow", text)
         self.assertIn("ValidateExecutionPipeline", text)
 
+    def test_readmes_runtime_command_exists(self) -> None:
+        for rel in ("README.md", "README.zh-CN.md"):
+            path = self.repo_root / rel
+            self.assertTrue(path.is_file(), msg=f"missing {path}")
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("design_game_basic_test_flow", text)
+            self.assertIn("run_game_basic_test_flow", text)
+            self.assertIn("ValidateExecutionPipeline", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,7 +28,7 @@ The result is a repeatable agent workflow that stays grounded in project files a
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
 - Figma validation loop: `figma_design_to_baseline`, `compare_figma_game_ui`, `annotate_ui_mismatch`, `approve_ui_fix_plan`, `suggest_ui_fix_patch`
 - Contract + runtime diagnostics: `get_adapter_contract`, `get_mcp_runtime_info`
-- Executable basic flow: `generate_flow_seed` → `run_game_basic_test_flow` (file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` (with `--project-root` + `--flow-id` + `--args` including `step_timeout_ms`/`fail_fast`/`shell_report`; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
 - Runtime outputs under `pointer_gpf/gpf-exp/runtime/` for traceability
 
 ## Supported MCP Clients
@@ -162,8 +162,8 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 **Give this to your coding agent:**
 
 ```powershell
-python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --strategy "auto"
-python "mcp/server.py" --tool run_game_basic_test_flow --args "{""project_root"":""D:/path/to/your/godot/project"",""flow_id"":""basic_exec"",""step_timeout_ms"":30000}"
+python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""strategy"":""auto""}"
+python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true}"
 powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "D:/path/to/your/godot/project" -FlowId "basic_exec" -ValidateExecutionPipeline
 ```
 
