@@ -76,6 +76,7 @@ jobs:
             Write-Host "::error title=examples 复制失败::robocopy exit code=$rc"
             exit 1
           }
+          $global:LASTEXITCODE = 0
           Copy-Item -LiteralPath "README.md" -Destination (Join-Path $stageDir "README.md") -Force
           Copy-Item -LiteralPath "gtr.config.json" -Destination (Join-Path $stageDir "gtr.config.json") -Force
           Copy-Item -LiteralPath ".gitignore" -Destination (Join-Path $stageDir ".gitignore") -Force
