@@ -1,19 +1,19 @@
 {
     "product":  "pointer-gpf-mcp",
     "repository":  "bainelee/Godot-PointerGPF",
-    "current_version":  "0.2.4.2",
+    "current_version":  "0.2.4.3",
     "channels":  {
                      "stable":  {
-                                    "version":  "0.2.4.2",
-                                    "min_compatible_version":  "0.2.4.2",
-                                   "release_notes":  "Fix Godot plugin template script path in addons/pointer_gpf/plugin.cfg to avoid duplicated res:// path resolution and plugin load failures after MCP install/update.",
-                                    "published_at_utc":  "2026-04-09T07:36:58Z",
+                                    "version":  "0.2.4.3",
+                                    "min_compatible_version":  "0.2.4.3",
+                                   "release_notes":  "Fix update-mcp ForceRemote priority, expand default sync scope to include gtr.config.json and godot_plugin_template, add installed-version consistency checks, and harden Windows extraction with selective fallback.",
+                                    "published_at_utc":  "2026-04-09T08:05:38Z",
                                     "artifact":  {
                                                      "format":  "zip",
-                                                     "filename":  "pointer-gpf-mcp-0.2.4.2.zip",
-                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.2/pointer-gpf-mcp-0.2.4.2.zip",
-                                                     "sha256":  "66f511d64afc2ce50e1c145f8d358134fad88144c0b4aa82bae7207afa2108ec",
-                                                     "size_bytes":  5109962,
+                                                     "filename":  "pointer-gpf-mcp-0.2.4.3.zip",
+                                                     "url":  "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.3/pointer-gpf-mcp-0.2.4.3.zip",
+                                                     "sha256":  "6abc340ae58df63efd993bc764469b7d00949440a0d8e248432a8200d724efff",
+                                                     "size_bytes":  3708525,
                                                      "zip_layout":  "repo_root"
                                                  }
                                 }

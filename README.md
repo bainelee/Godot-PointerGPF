@@ -22,7 +22,7 @@ Most automation setups for Godot are fragmented across scripts, ad-hoc notes, an
 
 The result is a repeatable agent workflow that stays grounded in project files and explicit runtime artifacts.
 
-## What's Included (v0.2.4.2)
+## What's Included (v0.2.4.3)
 
 - Plugin lifecycle tools: `install_godot_plugin`, `enable_godot_plugin`, `update_godot_plugin`, `check_plugin_status`
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
@@ -107,6 +107,9 @@ Check updates only:
 Notes:
 
 - `update` uses remote release by default.
+- `-ForceRemote` now has highest priority and always resolves GitHub release assets first.
+- Default update scope now syncs `mcp/`, `gtr.config.json`, and `godot_plugin_template/` together to avoid version drift.
+- Successful update logs now report installed versions (`installed_manifest_version`, `installed_runtime_version`) instead of only pre-update manifest targets.
 - To update from a local package directory:
 
 ```powershell

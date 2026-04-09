@@ -23,7 +23,27 @@ jobs:
           $outDir = "dist"
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           $zip = Join-Path $outDir ("pointer-gpf-mcp-" + $version + ".zip")
-          Compress-Archive -Path "mcp","install","godot_plugin_template","docs","examples","README.md","gtr.config.json",".gitignore" -DestinationPath $zip -Force
+          $stageDir = Join-Path $outDir "package-root"
+          if (Test-Path -LiteralPath $stageDir) {
+            Remove-Item -LiteralPath $stageDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+          Copy-Item -LiteralPath "mcp" -Destination (Join-Path $stageDir "mcp") -Recurse -Force
+          Copy-Item -LiteralPath "install" -Destination (Join-Path $stageDir "install") -Recurse -Force
+          Copy-Item -LiteralPath "godot_plugin_template" -Destination (Join-Path $stageDir "godot_plugin_template") -Recurse -Force
+          Copy-Item -LiteralPath "docs" -Destination (Join-Path $stageDir "docs") -Recurse -Force
+          Copy-Item -LiteralPath "examples" -Destination (Join-Path $stageDir "examples") -Recurse -Force
+          Copy-Item -LiteralPath "README.md" -Destination (Join-Path $stageDir "README.md") -Force
+          Copy-Item -LiteralPath "gtr.config.json" -Destination (Join-Path $stageDir "gtr.config.json") -Force
+          Copy-Item -LiteralPath ".gitignore" -Destination (Join-Path $stageDir ".gitignore") -Force
+
+          $cacheDirs = Get-ChildItem -LiteralPath (Join-Path $stageDir "examples") -Directory -Recurse -Force | Where-Object { $_.Name -eq ".godot" }
+          foreach ($dir in $cacheDirs) {
+            Remove-Item -LiteralPath $dir.FullName -Recurse -Force
+          }
+
+          Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $zip -Force
           $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
           Set-Content -Path (Join-Path $outDir "sha256.txt") -Value $sha -Encoding utf8
           Write-Output "ZIP_PATH=$zip" >> $env:GITHUB_ENV

@@ -32,6 +32,15 @@ powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -PackageDir "D
 powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -ForceRemote
 ```
 
+更新行为说明（v0.2.4.3+）：
+
+- `-ForceRemote` 优先级最高：即使本地 `mcp/version_manifest.json` 存在 `artifact.url`，也会优先解析 GitHub release 资产。
+- 默认执行“仓库级关键同步”：`mcp/` + `gtr.config.json` + `godot_plugin_template/`。
+- 如需仅更新 `mcp/`（不推荐），可附加 `-NoRootSync`。
+- 成功日志会输出安装后真实版本（`installed_manifest_version` / `installed_runtime_version`）。
+- 可用 `-FailOnVersionMismatch` 在版本不一致时直接失败（用于 CI/维护者校验）。
+- 若同时使用 `-NoRootSync` 与 `-FailOnVersionMismatch`，脚本可能因根目录版本未同步而失败，这是预期保护行为。
+
 如果仓库尚未发布 release，脚本会给出明确提示：
 `No GitHub release found ... Publish release-package first.`
 
@@ -183,10 +192,24 @@ powershell -ExecutionPolicy Bypass -File "scripts/migrate-legacy-layout.ps1" -Pr
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "scripts/update-version-manifest.ps1" `
-  -Version "0.2.4.2" `
-  -ArtifactUrl "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.2/pointer-gpf-mcp-0.2.4.2.zip" `
+  -Version "0.2.4.3" `
+  -ArtifactUrl "https://github.com/bainelee/Godot-PointerGPF/releases/download/v0.2.4.3/pointer-gpf-mcp-0.2.4.3.zip" `
   -Sha256 "<zip_sha256>" `
   -SizeBytes 123456
+```
+
+## 13) 更新链路冒烟（维护者）
+
+建议每次改动 `install/update-mcp.ps1` 后执行：
+
+```powershell
+# 本地包模式冒烟（覆盖版本一致性检查）
+powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" `
+  -PackageDir "D:/AI/pointer_gpf" `
+  -FailOnVersionMismatch
+
+# 仅检查远端通道元数据
+powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -CheckUpdateOnly
 ```
 
 生成的 flow seed 默认包含：

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.4.3 - 2026-04-09
+
+- 修复 `install/update-mcp.ps1`：`-ForceRemote` 现在始终优先于本地 `artifact.url` 分支，确保“强制远端更新”语义正确。
+- 更新同步范围扩展为 `mcp/`、`gtr.config.json`、`godot_plugin_template/`（支持 `-NoRootSync`），并新增安装后真实版本日志与版本一致性校验（支持 `-FailOnVersionMismatch`）。
+- 增强 Windows 解压容错：`Expand-Archive` 失败后自动降级为选择性解压关键目录，规避旧包中深层缓存路径导致的中断。
+- 发布流程改为 staging 打包并排除 `examples/**/.godot/**` 缓存目录；补充 update 冒烟测试与文档说明。
+
 ## v0.2.4.2 - 2026-04-09
 
 - 修复 Godot 插件模板 `addons/pointer_gpf/plugin.cfg` 的 `script` 路径：由绝对路径 `res://addons/pointer_gpf/plugin.gd` 改为相对路径 `plugin.gd`，避免 Godot 在部分加载链路中拼接出错误路径导致插件无法加载。

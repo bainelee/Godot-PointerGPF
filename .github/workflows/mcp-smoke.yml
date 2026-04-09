@@ -23,6 +23,11 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File "install/install-mcp.ps1"
 
+      - name: Update script smoke (local package mode)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File "install/update-mcp.ps1" -PackageDir "." -FailOnVersionMismatch
+
       - name: Runtime info smoke (CLI mode)
         shell: pwsh
         run: |
