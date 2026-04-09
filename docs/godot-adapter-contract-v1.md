@@ -36,6 +36,7 @@ Each required action must return a structured response with:
 
 ## Optional Actions
 
+- `moveMouse`
 - `drag`
 - `inputText`
 - `openMenu`
@@ -63,9 +64,22 @@ Adapter should return stable, machine-readable error codes:
 - `INVALID_ARGUMENT`
 - `TARGET_NOT_FOUND`
 - `ACTION_NOT_SUPPORTED`
+- `NOT_IN_PLAY_MODE`
+- `INPUT_PATH_BLOCKED`
 - `TIMEOUT`
 - `RUNTIME_EXCEPTION`
 - `IO_ERROR`
+
+## Runtime/Input Requirements
+
+For runtime input contract compliance, adapter/runtime execution should provide:
+
+- `runtime_mode_required`: `play_mode`
+- `runtime_entry_allowed`: `f5_equivalent` | `already_running_play_session` | `unknown`
+- `input_mode`: `in_engine_virtual_input`
+- `os_input_interference`: `false`
+- `protocol_mode`: `three_phase`
+- `fail_fast_on_verify`: `true`
 
 ## Chat Protocol Compatibility
 

@@ -19,12 +19,23 @@ This matrix records current implementation status based on repository evidence.
 - Smoke protocol assertions include stdio `tools/call` positive + negative path checks.
 - Artifact contract assertions are automated via `scripts/assert-mcp-artifacts.ps1` and wired in smoke/integration workflows.
 - Integration workflow produces trend report artifact (`mcp_integration_trend_report.json`).
+- Runtime gate contract path is available in `run_game_basic_test_flow` (`require_play_mode`) with structured `RUNTIME_GATE_FAILED`.
+- Execution report includes runtime/input evidence fields:
+  - `runtime_mode`
+  - `runtime_entry`
+  - `input_mode`
+  - `os_input_interference`
+  - `runtime_gate_passed`
+  - `step_broadcast_summary.protocol_mode=three_phase`
+  - `step_broadcast_summary.fail_fast_on_verify`
+- Adapter contract now exposes runtime requirements via `mcp/adapter_contract_v1.json` (`runtime_requirements`).
+- Runtime bridge includes in-engine virtual input dispatch (`click`/`moveMouse`/`drag`) and virtual cursor overlay.
 
 ## Partially Implemented
 
 - `exp_dir_rel` is configured and exposed in runtime info, but business-runtime read/write behavior requires dedicated artifact output and validation.
 - Trend analysis currently outputs per-run JSON artifact; long-term historical aggregation is not yet automated inside repository CI.
-- Godot plugin side remains bridge-only template; Figma-vs-game compare executes at MCP layer using supplied screenshots/metadata.
+- Runtime gate currently relies on runtime marker evidence (`pointer_gpf/tmp/runtime_gate.json`) for deterministic automation; automatic F5-equivalent launch is not fully implemented.
 
 ## Not Implemented (Before this execution)
 

@@ -179,6 +179,17 @@ jobs:
 
           bridge = project / "pointer_gpf" / "tmp"
           bridge.mkdir(parents=True, exist_ok=True)
+          (bridge / "runtime_gate.json").write_text(
+              json.dumps(
+                  {
+                      "runtime_mode": "play_mode",
+                      "runtime_entry": "already_running_play_session",
+                      "runtime_gate_passed": True,
+                  },
+                  ensure_ascii=False,
+              ),
+              encoding="utf-8",
+          )
           last_seq = [None]
 
           def respond():
@@ -215,7 +226,12 @@ jobs:
           )
           run_tool(
               "run_game_basic_test_flow",
-              {"project_root": str(project), "flow_id": flow_id, "step_timeout_ms": 8000},
+              {
+                  "project_root": str(project),
+                  "flow_id": flow_id,
+                  "step_timeout_ms": 8000,
+                  "require_play_mode": True,
+              },
           )
           '@ | Set-Content -LiteralPath "__mcp_exec_smoke.py" -Encoding UTF8
           python "__mcp_exec_smoke.py"

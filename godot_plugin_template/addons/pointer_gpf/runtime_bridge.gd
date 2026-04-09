@@ -8,20 +8,26 @@ const _TMP_DIR_REL := "res://pointer_gpf/tmp"
 var _last_run_id: String = ""
 var _last_seq: int = -1
 var _poll_accum: float = 0.0
+var _virtual_cursor_layer: CanvasLayer
+var _virtual_cursor_rect: ColorRect
+var _cursor_visible_until_msec: int = 0
 
 
 func _ready() -> void:
     var tmp_global := ProjectSettings.globalize_path(_TMP_DIR_REL)
     DirAccess.make_dir_recursive_absolute(tmp_global)
+    _setup_virtual_cursor_overlay()
     set_process(true)
 
 
 func _process(delta: float) -> void:
     _poll_accum += delta
     if _poll_accum < 0.05:
+        _hide_virtual_cursor_if_needed()
         return
     _poll_accum = 0.0
     _poll_bridge()
+    _hide_virtual_cursor_if_needed()
 
 
 func _poll_bridge() -> void:
@@ -100,15 +106,36 @@ func _extract_target(command: Dictionary, step: Dictionary) -> Variant:
 
 func _dispatch_action(action: String, seq: int, run_id: String, command: Dictionary, step: Dictionary) -> Dictionary:
     var key := action.to_lower()
+    if _requires_os_level_input(key):
+        return _error_payload("INPUT_PATH_BLOCKED", "input path cannot guarantee os isolation", seq, run_id)
     match key:
         "launchgame":
             return {"ok": true, "seq": seq, "run_id": run_id, "message": "launchGame acknowledged"}
         "click":
+            _dispatch_click_virtual(_extract_position(command, step))
             return {
                 "ok": true,
                 "seq": seq,
                 "run_id": run_id,
                 "message": "click acknowledged",
+                "target": _extract_target(command, step),
+            }
+        "movemouse":
+            _dispatch_move_mouse_virtual(_extract_position(command, step))
+            return {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "message": "moveMouse acknowledged",
+                "target": _extract_target(command, step),
+            }
+        "drag":
+            _dispatch_drag_virtual(_extract_position(command, step), _extract_end_position(command, step))
+            return {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "message": "drag acknowledged",
                 "target": _extract_target(command, step),
             }
         "wait":
@@ -138,6 +165,119 @@ func _dispatch_action(action: String, seq: int, run_id: String, command: Diction
             }
         _:
             return _error_payload("ACTION_NOT_SUPPORTED", "unsupported action: %s" % action, seq, run_id)
+
+
+func _setup_virtual_cursor_overlay() -> void:
+    _virtual_cursor_layer = CanvasLayer.new()
+    _virtual_cursor_layer.name = "PointerGPFVirtualCursorLayer"
+    _virtual_cursor_layer.layer = 256
+    add_child(_virtual_cursor_layer)
+
+    _virtual_cursor_rect = ColorRect.new()
+    _virtual_cursor_rect.name = "PointerGPFVirtualCursor"
+    _virtual_cursor_rect.color = Color(1, 0, 0, 0.95)
+    _virtual_cursor_rect.size = Vector2(8, 8)
+    _virtual_cursor_rect.visible = false
+    _virtual_cursor_layer.add_child(_virtual_cursor_rect)
+
+
+func _hide_virtual_cursor_if_needed() -> void:
+    if _virtual_cursor_rect == null:
+        return
+    if not _virtual_cursor_rect.visible:
+        return
+    if Time.get_ticks_msec() >= _cursor_visible_until_msec:
+        _hide_virtual_cursor()
+
+
+func _show_virtual_cursor(pos: Vector2, min_visible_ms: int = 120) -> void:
+    if _virtual_cursor_rect == null:
+        return
+    _virtual_cursor_rect.position = pos - Vector2(4, 4)
+    _virtual_cursor_rect.visible = true
+    _cursor_visible_until_msec = Time.get_ticks_msec() + max(0, min_visible_ms)
+
+
+func _hide_virtual_cursor() -> void:
+    if _virtual_cursor_rect == null:
+        return
+    _virtual_cursor_rect.visible = false
+
+
+func _extract_position(command: Dictionary, step: Dictionary) -> Vector2:
+    var target := _extract_target(command, step)
+    if typeof(target) == TYPE_DICTIONARY:
+        var td: Dictionary = target
+        var x := float(td.get("x", 0.0))
+        var y := float(td.get("y", 0.0))
+        return Vector2(x, y)
+    if typeof(target) == TYPE_ARRAY:
+        var arr: Array = target
+        if arr.size() >= 2:
+            return Vector2(float(arr[0]), float(arr[1]))
+    if typeof(target) == TYPE_STRING:
+        var s := str(target).strip_edges()
+        if s.contains(","):
+            var parts := s.split(",", false, 2)
+            if parts.size() == 2:
+                return Vector2(float(parts[0]), float(parts[1]))
+    return Vector2(0, 0)
+
+
+func _extract_end_position(command: Dictionary, step: Dictionary) -> Vector2:
+    var endpoint := step.get("to", command.get("to", null))
+    if typeof(endpoint) == TYPE_DICTIONARY:
+        var ep: Dictionary = endpoint
+        return Vector2(float(ep.get("x", 0.0)), float(ep.get("y", 0.0)))
+    return _extract_position(command, step)
+
+
+func _dispatch_move_mouse_virtual(pos: Vector2) -> void:
+    _show_virtual_cursor(pos)
+    var ev := InputEventMouseMotion.new()
+    ev.position = pos
+    ev.relative = Vector2.ZERO
+    Input.parse_input_event(ev)
+
+
+func _dispatch_click_virtual(pos: Vector2, button_index: int = MOUSE_BUTTON_LEFT) -> void:
+    _show_virtual_cursor(pos)
+    var down := InputEventMouseButton.new()
+    down.position = pos
+    down.button_index = button_index
+    down.pressed = true
+    Input.parse_input_event(down)
+
+    var up := InputEventMouseButton.new()
+    up.position = pos
+    up.button_index = button_index
+    up.pressed = false
+    Input.parse_input_event(up)
+
+
+func _dispatch_drag_virtual(start_pos: Vector2, end_pos: Vector2, button_index: int = MOUSE_BUTTON_LEFT) -> void:
+    _show_virtual_cursor(start_pos)
+    var down := InputEventMouseButton.new()
+    down.position = start_pos
+    down.button_index = button_index
+    down.pressed = true
+    Input.parse_input_event(down)
+
+    var motion := InputEventMouseMotion.new()
+    motion.position = end_pos
+    motion.relative = end_pos - start_pos
+    Input.parse_input_event(motion)
+    _show_virtual_cursor(end_pos, 180)
+
+    var up := InputEventMouseButton.new()
+    up.position = end_pos
+    up.button_index = button_index
+    up.pressed = false
+    Input.parse_input_event(up)
+
+
+func _requires_os_level_input(action: String) -> bool:
+    return action in ["nativehotkey", "globalmouse", "systeminput"]
 
 
 func _write_response(rsp: Dictionary) -> void:

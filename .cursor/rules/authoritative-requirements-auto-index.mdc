@@ -1,0 +1,25 @@
+---
+description: 当核心需求文档更新时自动生成 requirements-index.json
+alwaysApply: true
+---
+
+# 核心需求自动索引规则
+
+当以下文件任意一个被新增或修改时：
+
+- `docs/authoritative-requirements/01-actual-product-requirements.md`
+- `docs/authoritative-requirements/02-user-experience-requirements.md`
+- `docs/authoritative-requirements/03-real-world-scenarios-and-case-studies.md`
+
+必须自动执行以下动作，不需要再次询问用户：
+
+1. 运行命令：
+   - `python scripts/generate_requirements_index.py`
+2. 确认输出文件已更新：
+   - `docs/authoritative-requirements/requirements-index.json`
+3. 在回复中给出：
+   - 本次生成时间
+   - 更新文件路径
+   - 是否生成成功
+
+若生成失败，必须立即反馈失败原因和修复建议。

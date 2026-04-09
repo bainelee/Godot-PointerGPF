@@ -1,12 +1,14 @@
-[gd_scene load_steps=4 format=3 uid="uid://bt36ffouad4nf"]
+[gd_scene load_steps=5 format=3 uid="uid://bt36ffouad4nf"]
 
 [ext_resource type="Texture2D" path="res://assets/figma_image_3.png" id="1_pv73u"]
 [ext_resource type="Texture2D" path="res://assets/figma_image_1.png" id="2_n5h7b"]
 [ext_resource type="Texture2D" path="res://assets/figma_image_2.png" id="3_2elgf"]
+[ext_resource type="Script" path="res://scripts/main_ui_flow.gd" id="4_1tk2w"]
 
 [node name="MainSceneExample" type="Node3D" unique_id=677591457]
 
 [node name="UI" type="CanvasLayer" parent="."]
+script = ExtResource("4_1tk2w")
 
 [node name="Background" type="ColorRect" parent="UI"]
 offset_right = 1920.0
@@ -177,3 +179,110 @@ theme_override_font_sizes/font_size = 24
 text = "TEXT5"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="StartScreen" type="ColorRect" parent="UI"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.121569, 0.121569, 0.121569, 0.96)
+
+[node name="StartTitle" type="Label" parent="UI/StartScreen"]
+offset_left = 692.0
+offset_top = 320.0
+offset_right = 1228.0
+offset_bottom = 440.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 64
+text = "Game Start"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StartButton" type="Button" parent="UI/StartScreen"]
+offset_left = 810.0
+offset_top = 520.0
+offset_right = 1110.0
+offset_bottom = 620.0
+theme_override_font_sizes/font_size = 40
+text = "Start Game"
+
+[node name="UI1" type="Panel" parent="UI"]
+visible = false
+offset_left = 620.0
+offset_top = 250.0
+offset_right = 1300.0
+offset_bottom = 700.0
+
+[node name="Title" type="Label" parent="UI/UI1"]
+offset_left = 80.0
+offset_top = 50.0
+offset_right = 600.0
+offset_bottom = 140.0
+theme_override_font_sizes/font_size = 48
+text = "UI1"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="OpenUI2Button" type="Button" parent="UI/UI1"]
+offset_left = 190.0
+offset_top = 220.0
+offset_right = 490.0
+offset_bottom = 320.0
+theme_override_font_sizes/font_size = 32
+text = "Open UI2"
+
+[node name="UI2Popup" type="Panel" parent="UI"]
+visible = false
+offset_left = 700.0
+offset_top = 340.0
+offset_right = 1220.0
+offset_bottom = 640.0
+
+[node name="Title" type="Label" parent="UI/UI2Popup"]
+offset_left = 100.0
+offset_top = 40.0
+offset_right = 420.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 42
+text = "UI2 Popup"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NextButton" type="Button" parent="UI/UI2Popup"]
+offset_left = 110.0
+offset_top = 170.0
+offset_right = 410.0
+offset_bottom = 250.0
+theme_override_font_sizes/font_size = 28
+text = "Close UI2, Open UI3"
+
+[node name="UI3" type="Panel" parent="UI"]
+visible = false
+offset_left = 660.0
+offset_top = 300.0
+offset_right = 1260.0
+offset_bottom = 700.0
+
+[node name="Title" type="Label" parent="UI/UI3"]
+offset_left = 140.0
+offset_top = 50.0
+offset_right = 460.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 48
+text = "UI3"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="UI/UI3"]
+offset_left = 150.0
+offset_top = 200.0
+offset_right = 450.0
+offset_bottom = 290.0
+theme_override_font_sizes/font_size = 32
+text = "Close UI3"
+
+[connection signal="pressed" from="UI/StartScreen/StartButton" to="UI" method="_on_start_button_pressed"]
+[connection signal="pressed" from="UI/UI1/OpenUI2Button" to="UI" method="_on_ui1_open_ui2_button_pressed"]
+[connection signal="pressed" from="UI/UI2Popup/NextButton" to="UI" method="_on_ui2_next_button_pressed"]
+[connection signal="pressed" from="UI/UI3/CloseButton" to="UI" method="_on_ui3_close_button_pressed"]

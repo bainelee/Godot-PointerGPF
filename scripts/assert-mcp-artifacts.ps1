@@ -168,6 +168,28 @@ if ($ValidateExecutionPipeline) {
     if (($executionReport.PSObject.Properties.Name -contains "status") -and ($executionReport.status -ne "passed")) {
         throw "execution_report.status must be passed when present. actual=$($executionReport.status)"
     }
+    if ($executionReport.runtime_mode -ne "play_mode") {
+        throw "execution_report.runtime_mode must be play_mode. actual=$($executionReport.runtime_mode)"
+    }
+    if ($executionReport.input_mode -ne "in_engine_virtual_input") {
+        throw "execution_report.input_mode must be in_engine_virtual_input. actual=$($executionReport.input_mode)"
+    }
+    if ($executionReport.os_input_interference -ne $false) {
+        throw "execution_report.os_input_interference must be false. actual=$($executionReport.os_input_interference)"
+    }
+    if ($executionReport.runtime_gate_passed -ne $true) {
+        throw "execution_report.runtime_gate_passed must be true for ValidateExecutionPipeline"
+    }
+    $broadcastSummary = $executionReport.step_broadcast_summary
+    if (-not $broadcastSummary) {
+        throw "execution_report missing step_broadcast_summary"
+    }
+    if ($broadcastSummary.protocol_mode -ne "three_phase") {
+        throw "step_broadcast_summary.protocol_mode must be three_phase. actual=$($broadcastSummary.protocol_mode)"
+    }
+    if ($broadcastSummary.fail_fast_on_verify -ne $true) {
+        throw "step_broadcast_summary.fail_fast_on_verify must be true. actual=$($broadcastSummary.fail_fast_on_verify)"
+    }
     $phaseCoverage = $executionReport.phase_coverage
     if (-not $phaseCoverage) {
         throw "execution_report missing phase_coverage"

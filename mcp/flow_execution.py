@@ -49,6 +49,7 @@ class FlowRunOptions:
     run_id: str | None = None
     fail_fast: bool = True
     shell_report: bool = False
+    runtime_meta: dict[str, Any] | None = None
 
 
 class FlowRunner:
@@ -241,6 +242,20 @@ class FlowRunner:
             "flow_id": flow_id,
             "shell_report": bool(self.options.shell_report),
         }
+        runtime_meta = self.options.runtime_meta if isinstance(self.options.runtime_meta, dict) else {}
+        report.update(
+            {
+                "runtime_mode": str(runtime_meta.get("runtime_mode", "unknown")),
+                "runtime_entry": str(runtime_meta.get("runtime_entry", "unknown")),
+                "runtime_gate_passed": bool(runtime_meta.get("runtime_gate_passed", False)),
+                "input_mode": str(runtime_meta.get("input_mode", "in_engine_virtual_input")),
+                "os_input_interference": bool(runtime_meta.get("os_input_interference", False)),
+                "step_broadcast_summary": {
+                    "protocol_mode": "three_phase",
+                    "fail_fast_on_verify": bool(self.options.fail_fast),
+                },
+            }
+        )
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if reraise is not None:
             if isinstance(reraise, (FlowExecutionTimeout, FlowExecutionStepFailed)):

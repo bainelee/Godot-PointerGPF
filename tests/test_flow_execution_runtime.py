@@ -30,9 +30,30 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.project_root = self.work / "proj"
         self.project_root.mkdir(parents=True, exist_ok=True)
         (self.project_root / "project.godot").write_text('[application]\nconfig/name="tmp"\n', encoding="utf-8")
+        self._write_runtime_gate_marker()
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
+
+    def _write_runtime_gate_marker(
+        self,
+        runtime_mode: str = "play_mode",
+        runtime_entry: str = "already_running_play_session",
+        runtime_gate_passed: bool = True,
+    ) -> None:
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+        (bridge / "runtime_gate.json").write_text(
+            json.dumps(
+                {
+                    "runtime_mode": runtime_mode,
+                    "runtime_entry": runtime_entry,
+                    "runtime_gate_passed": runtime_gate_passed,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
     def test_get_mcp_runtime_info_lists_run_game_basic_test_flow(self) -> None:
         code, payload = _run_tool_cli_raw(self.repo_root, "get_mcp_runtime_info", {})
@@ -44,6 +65,17 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         flow_capability = capabilities.get("run_game_basic_test_flow", {})
         self.assertTrue(flow_capability.get("implemented"))
         self.assertEqual(flow_capability.get("status"), "implemented")
+        self.assertEqual(flow_capability.get("phase"), "runtime_gate_and_virtual_input")
+
+    def test_get_adapter_contract_includes_runtime_requirements(self) -> None:
+        code, payload = _run_tool_cli_raw(self.repo_root, "get_adapter_contract", {})
+        self.assertEqual(code, 0, msg=f"{payload}")
+        self.assertTrue(payload.get("ok"), msg=payload)
+        contract = payload.get("result") or {}
+        runtime_requirements = contract.get("runtime_requirements") or {}
+        self.assertEqual(runtime_requirements.get("input_mode"), "in_engine_virtual_input")
+        self.assertFalse(runtime_requirements.get("os_input_interference", True))
+        self.assertIn("NOT_IN_PLAY_MODE", contract.get("error_codes", []))
 
     def test_cli_run_game_basic_test_flow_missing_flow_returns_expected_error(self) -> None:
         code, payload = _run_tool_cli_raw(
@@ -183,9 +215,30 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.project_root = self.work / "proj"
         self.project_root.mkdir(parents=True, exist_ok=True)
         (self.project_root / "project.godot").write_text('[application]\nconfig/name="tmp"\n', encoding="utf-8")
+        self._write_runtime_gate_marker()
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
+
+    def _write_runtime_gate_marker(
+        self,
+        runtime_mode: str = "play_mode",
+        runtime_entry: str = "already_running_play_session",
+        runtime_gate_passed: bool = True,
+    ) -> None:
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        bridge.mkdir(parents=True, exist_ok=True)
+        (bridge / "runtime_gate.json").write_text(
+            json.dumps(
+                {
+                    "runtime_mode": runtime_mode,
+                    "runtime_entry": runtime_entry,
+                    "runtime_gate_passed": runtime_gate_passed,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
     def _start_bridge_responder(self, bridge: Path) -> tuple[threading.Thread, list[int | None]]:
         last_seq: list[int | None] = [None]
@@ -253,6 +306,14 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(report.get("status"), "passed")
         self.assertEqual(report.get("step_count"), 2)
         self.assertFalse(report.get("shell_report"))
+        self.assertEqual(report.get("runtime_mode"), "play_mode")
+        self.assertEqual(report.get("runtime_entry"), "already_running_play_session")
+        self.assertEqual(report.get("input_mode"), "in_engine_virtual_input")
+        self.assertFalse(report.get("os_input_interference"))
+        self.assertTrue(report.get("runtime_gate_passed"))
+        summary = report.get("step_broadcast_summary") or {}
+        self.assertEqual(summary.get("protocol_mode"), "three_phase")
+        self.assertTrue(summary.get("fail_fast_on_verify"))
         cov = report.get("phase_coverage") or {}
         self.assertEqual(cov.get("started"), 2)
         self.assertEqual(cov.get("result"), 2)
@@ -270,6 +331,42 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         report_path = Path(str(report.get("report_file", "")))
         self.assertTrue(report_path.is_file())
         self.assertEqual(report_path.parent.resolve(), runtime_dir)
+
+    def test_run_flow_require_play_mode_blocks_without_gate_marker(self) -> None:
+        flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        (flow_dir / "gate_flow.json").write_text(
+            json.dumps(
+                {
+                    "flowId": "gate_flow",
+                    "steps": [{"id": "g1", "action": "wait", "timeoutMs": 50}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        bridge = self.project_root / "pointer_gpf" / "tmp"
+        marker = bridge / "runtime_gate.json"
+        if marker.exists():
+            marker.unlink()
+
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {
+                "project_root": str(self.project_root),
+                "flow_id": "gate_flow",
+                "step_timeout_ms": 1000,
+                "require_play_mode": True,
+            },
+        )
+        self.assertEqual(code, 1, msg=f"expected gate failure, got: {payload}")
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "RUNTIME_GATE_FAILED")
+        details = err.get("details") or {}
+        self.assertEqual(details.get("runtime_mode"), "editor_bridge")
+        self.assertFalse(details.get("runtime_gate_passed"))
 
     def test_run_flow_times_out_when_bridge_no_response(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
@@ -476,6 +573,16 @@ class PluginBridgePackagingTests(unittest.TestCase):
         # Dedup uses (run_id, seq) so a new run can reuse seq without being skipped.
         self.assertIn("var _last_run_id: String = \"\"", src)
         self.assertIn("run_id == _last_run_id and seq == _last_seq", src)
+        # Runtime input contract: in-engine virtual input dispatch and cursor overlay.
+        self.assertIn("Input.parse_input_event", src)
+        self.assertIn("func _dispatch_click_virtual", src)
+        self.assertIn("func _dispatch_move_mouse_virtual", src)
+        self.assertIn("func _dispatch_drag_virtual", src)
+        self.assertIn("ColorRect", src)
+        self.assertIn("Color(1, 0, 0", src)
+        self.assertIn("func _show_virtual_cursor", src)
+        self.assertIn("func _hide_virtual_cursor", src)
+        self.assertIn("\"INPUT_PATH_BLOCKED\"", src)
         # Duplicate delivery: respond then remove command.json to avoid a stuck poll loop.
         self.assertIn("\"duplicate\": true", src)
         self.assertRegex(

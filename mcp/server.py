@@ -225,6 +225,41 @@ def _exp_runtime_dir(project_root: Path, cfg: RuntimeConfig) -> Path:
     return (project_root / cfg.exp_dir_rel / "runtime").resolve()
 
 
+def _probe_runtime_gate(project_root: Path) -> dict[str, Any]:
+    """Detect runtime mode hints for flow execution gate.
+
+    This keeps compatibility with file-bridge workflows by allowing a lightweight
+    marker file in `pointer_gpf/tmp/runtime_gate.json`.
+    """
+    bridge_dir = (project_root / "pointer_gpf" / "tmp").resolve()
+    marker = bridge_dir / "runtime_gate.json"
+    default = {
+        "runtime_mode": "editor_bridge",
+        "runtime_entry": "unknown",
+        "runtime_gate_passed": False,
+        "input_mode": "in_engine_virtual_input",
+        "os_input_interference": False,
+    }
+    if not marker.exists() or not marker.is_file():
+        return default
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+    if not isinstance(payload, dict):
+        return default
+    runtime_mode = str(payload.get("runtime_mode", "editor_bridge")).strip() or "editor_bridge"
+    runtime_entry = str(payload.get("runtime_entry", "unknown")).strip() or "unknown"
+    gate_passed = bool(payload.get("runtime_gate_passed", runtime_mode == "play_mode"))
+    return {
+        "runtime_mode": runtime_mode,
+        "runtime_entry": runtime_entry,
+        "runtime_gate_passed": gate_passed,
+        "input_mode": "in_engine_virtual_input",
+        "os_input_interference": False,
+    }
+
+
 def _legacy_layout_hints(project_root: Path) -> list[dict[str, str]]:
     candidates = [
         ("gameplayflow/project_context", "legacy_project_context"),
@@ -1715,6 +1750,18 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
     if step_timeout_ms <= 0:
         step_timeout_ms = 30_000
     run_id_opt = str(arguments.get("run_id", "")).strip() or None
+    runtime_meta = _probe_runtime_gate(project_root)
+    require_play_mode = bool(arguments.get("require_play_mode", False))
+    if require_play_mode and not bool(runtime_meta.get("runtime_gate_passed", False)):
+        raise AppError(
+            "RUNTIME_GATE_FAILED",
+            "play mode is required before executing flow",
+            {
+                "runtime_mode": runtime_meta.get("runtime_mode", "editor_bridge"),
+                "runtime_entry": runtime_meta.get("runtime_entry", "unknown"),
+                "runtime_gate_passed": False,
+            },
+        )
     runtime_dir = _exp_runtime_dir(project_root, cfg)
     opts = FlowRunOptions(
         project_root=project_root,
@@ -1724,6 +1771,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         run_id=run_id_opt,
         fail_fast=bool(arguments.get("fail_fast", True)),
         shell_report=bool(arguments.get("shell_report", False)),
+        runtime_meta=runtime_meta,
     )
     runner = FlowRunner(opts)
     try:
@@ -2201,7 +2249,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "run_game_basic_test_flow": {
                 "implemented": True,
                 "status": "implemented",
-                "phase": "task2_runtime",
+                "phase": "runtime_gate_and_virtual_input",
             }
         },
         "tools": [
@@ -2384,6 +2432,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
                     "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
                     "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
+                    "require_play_mode": {
+                        "type": "boolean",
+                        "description": "Require play mode runtime gate before running the flow.",
+                    },
                 },
             },
         },
@@ -2402,6 +2454,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "step_timeout_ms": {"type": "integer", "description": "Per-step timeout in milliseconds."},
                     "fail_fast": {"type": "boolean", "description": "Stop on first step failure."},
                     "shell_report": {"type": "boolean", "description": "Emit shell-oriented report artifacts when supported."},
+                    "require_play_mode": {
+                        "type": "boolean",
+                        "description": "Require play mode runtime gate before running the flow.",
+                    },
                 },
             },
         },
