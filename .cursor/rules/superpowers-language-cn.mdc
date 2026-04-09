@@ -1,0 +1,10 @@
+---
+description: Superpowers 相关提示统一使用中文
+alwaysApply: true
+---
+
+# Superpowers 提示语言规范
+
+- 所有与 superpowers 技能相关的提示、说明、状态更新、执行选项，默认使用简体中文输出。
+- 若必须引用英文原文（例如技能名、命令、文件名），应保留原文并附中文解释。
+- 除非用户明确要求英文，否则不要输出英文版 superpowers 话术模板。

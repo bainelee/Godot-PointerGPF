@@ -24,3 +24,4 @@ examples/**/.godot/
 dist/
 .mcp-update-work-*/
 .mcp-backup-*/
+.worktrees/

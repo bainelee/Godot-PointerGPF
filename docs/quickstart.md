@@ -142,6 +142,18 @@ powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" `
 - `builder`
 - `generic`
 
+自然语言触发基础测试流程命令（推荐给 Agent 用户）：
+
+```powershell
+python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project"
+python "mcp/server.py" --tool update_game_basic_design_flow_by_current_state --project-root "D:/path/to/your/godot/project"
+```
+
+语义对应：
+
+- `设计游戏基础测试流程` -> `design_game_basic_test_flow`
+- `根据游戏当前状态,更新设计游戏基础设计流程` -> `update_game_basic_design_flow_by_current_state`
+
 ## 7) 查看适配契约
 
 ```powershell

@@ -26,6 +26,9 @@
 
 - 插件生命周期工具：`install_godot_plugin`、`enable_godot_plugin`、`update_godot_plugin`、`check_plugin_status`
 - 项目上下文流水线：`init_project_context`、`refresh_project_context`、`generate_flow_seed`
+- 自然语言触发命令：
+  - `design_game_basic_test_flow`（触发词：`设计游戏基础测试流程`）
+  - `update_game_basic_design_flow_by_current_state`（触发词：`根据游戏当前状态,更新设计游戏基础设计流程`）
 - Figma 验证闭环：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`
 - 契约与运行时诊断：`get_adapter_contract`、`get_mcp_runtime_info`
 - 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow`（包含 `--project-root` + `--flow-id` + `--args` 的 `step_timeout_ms`/`fail_fast`/`shell_report`；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
@@ -140,6 +143,11 @@ python "mcp/server.py" --tool install_godot_plugin --project-root "D:/path/to/yo
 python "mcp/server.py" --tool init_project_context --project-root "D:/path/to/your/godot/project" --max-files 2500
 python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "smoke_seed" --strategy "auto"
 ```
+
+你也可以直接通过自然语言触发基础测试流设计：
+
+- `设计游戏基础测试流程` -> `design_game_basic_test_flow`
+- `根据游戏当前状态,更新设计游戏基础设计流程` -> `update_game_basic_design_flow_by_current_state`
 
 **你需要亲自动手（不可替代的人类操作）：**
 
