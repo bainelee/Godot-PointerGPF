@@ -36,6 +36,10 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertTrue(payload.get("ok"), msg=payload)
         tools = payload["result"].get("tools", [])
         self.assertIn("run_game_basic_test_flow", tools)
+        capabilities = payload["result"].get("tool_capabilities", {})
+        flow_capability = capabilities.get("run_game_basic_test_flow", {})
+        self.assertFalse(flow_capability.get("implemented"))
+        self.assertEqual(flow_capability.get("status"), "not_implemented")
 
     def test_cli_run_game_basic_test_flow_missing_flow_returns_expected_error(self) -> None:
         code, payload = _run_tool_cli_raw(
@@ -46,7 +50,34 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(code, 1, msg=f"expected failure, got: {payload}")
         self.assertFalse(payload.get("ok"))
         err = payload.get("error") or {}
-        self.assertIn(err.get("code"), ("INVALID_ARGUMENT", "NOT_IMPLEMENTED"))
+        self.assertEqual(err.get("code"), "INVALID_ARGUMENT")
+        self.assertIn("flow_id", str(err.get("message", "")))
+        self.assertIn("flow_file", str(err.get("message", "")))
+        self.assertIn("required", str(err.get("message", "")))
+
+    def test_cli_run_game_basic_test_flow_with_flow_id_returns_not_implemented(self) -> None:
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {"project_root": str(self.project_root), "flow_id": "smoke_flow"},
+        )
+        self.assertEqual(code, 1, msg=f"expected NOT_IMPLEMENTED failure, got: {payload}")
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "NOT_IMPLEMENTED")
+
+    def test_cli_run_game_basic_test_flow_with_flow_file_returns_not_implemented(self) -> None:
+        flow_file = self.work / "seed_flow.json"
+        flow_file.write_text("{\"flowId\":\"seed_flow\"}", encoding="utf-8")
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_game_basic_test_flow",
+            {"project_root": str(self.project_root), "flow_file": str(flow_file)},
+        )
+        self.assertEqual(code, 1, msg=f"expected NOT_IMPLEMENTED failure, got: {payload}")
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "NOT_IMPLEMENTED")
 
 
 if __name__ == "__main__":

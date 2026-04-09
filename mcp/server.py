@@ -1508,7 +1508,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
     flow_id = str(arguments.get("flow_id", "")).strip()
     flow_file = str(arguments.get("flow_file", "")).strip()
     if not flow_id and not flow_file:
-        raise AppError("INVALID_ARGUMENT", "flow_id or flow_file is required")
+        raise AppError("INVALID_ARGUMENT", "flow_id or flow_file required")
     raise AppError("NOT_IMPLEMENTED", "run_game_basic_test_flow execution is not implemented yet")
 
 
@@ -1911,6 +1911,13 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         "exp_runtime": exp_runtime_info,
         "config_sources": cfg.config_sources,
         "legacy_layout_hints": legacy_hints,
+        "tool_capabilities": {
+            "run_game_basic_test_flow": {
+                "implemented": False,
+                "status": "not_implemented",
+                "phase": "task1_interface_only",
+            }
+        },
         "tools": [
             "get_mcp_runtime_info",
             "get_adapter_contract",
