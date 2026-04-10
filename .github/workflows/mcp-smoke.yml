@@ -44,7 +44,7 @@ jobs:
       - name: Python contract tests (NL + flow + bugfix loop)
         shell: pwsh
         run: |
-          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop tests.test_basic_flow_dual_conclusions tests.test_nl_intent_router_expanded -v
+          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop tests.test_basic_flow_dual_conclusions tests.test_nl_intent_router_expanded tests.test_bug_fix_strategies_extra tests.test_mcp_transport_protocol -v
 
       - name: Stdio MCP protocol smoke
         shell: pwsh

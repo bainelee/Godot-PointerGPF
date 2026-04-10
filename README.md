@@ -11,6 +11,22 @@ Install and manage the Godot plugin, build project context, generate flow seeds,
 
 ---
 
+## Automation boundary (Windows)
+
+**One-time manual setup (cannot be skipped before tools work)**
+
+- Configure your MCP client (for example Cursor) with the `python -u …/mcp/server.py --stdio` command from `install/start-mcp.ps1`.
+- In the target Godot project, enable the PointerGPF plugin when a tool requires it.
+- When the file bridge is used, something must bring the editor/game into a state that can respond to `pointer_gpf/tmp` (see runtime gate docs).
+
+**After setup, agents can drive**
+
+- Context init/refresh, flow seed generation, basic test flow design/run, NL routing, and the auto-fix loop (when strategies match), without extra clicks for each of those steps.
+
+**Still human decisions**
+
+- Approving UI fix plans (`approve_ui_fix_plan`) and any product-level choice not encoded as a tool.
+
 ## Why PointerGPF
 
 Most automation setups for Godot are fragmented across scripts, ad-hoc notes, and editor actions. PointerGPF gives coding agents a stable MCP interface to:
@@ -22,7 +38,7 @@ Most automation setups for Godot are fragmented across scripts, ad-hoc notes, an
 
 The result is a repeatable agent workflow that stays grounded in project files and explicit runtime artifacts.
 
-## What's Included (v0.2.4.3)
+## What's Included (v0.3.0.0)
 
 - Plugin lifecycle tools: `install_godot_plugin`, `enable_godot_plugin`, `update_godot_plugin`, `check_plugin_status`
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`

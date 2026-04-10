@@ -11,6 +11,8 @@
 目录边界与职责见：`docs/project-structure-baseline.md`。
 MCP 文档导航见：`docs/mcp-docs-index.md`。
 
+「哪些步骤必须人工、哪些可在环境就绪后交给代理」见仓库根目录 `README.md` / `README.zh-CN.md` 中的 **Automation boundary** / **自动化边界** 小节。
+
 ## 1) 启动 MCP
 
 release 包默认采用单目录载荷：`pointer_gpf/`。  

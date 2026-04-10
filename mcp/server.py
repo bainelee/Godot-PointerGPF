@@ -64,6 +64,8 @@ def _read_mcp_version_from_manifest(repo_root: Path) -> str | None:
 
 
 _MCP_IO_MODE = "header"
+_STDIO_SOFT_ERROR_CAP = 8
+_stdio_soft_errors = 0
 
 _LEGACY_GAMEPLAYFLOW_TOOL_NAMES: frozenset[str] = frozenset(
     {
@@ -148,6 +150,18 @@ def _resolve_project_root(arguments: dict[str, Any]) -> Path:
     root = Path(raw).resolve()
     if not root.exists():
         raise AppError("INVALID_ARGUMENT", f"project_root not found: {root}")
+    skip_godot_check = bool(arguments.get("skip_godot_project_check", False))
+    if not skip_godot_check:
+        pg = root / "project.godot"
+        if not pg.is_file():
+            raise AppError(
+                "INVALID_GODOT_PROJECT",
+                f"project.godot not found under project_root: {root}",
+                {
+                    "project_root": str(root),
+                    "fix": "point project_root at a Godot project root directory, or pass skip_godot_project_check=true only for rare non-standard layouts",
+                },
+            )
     allow_temp_project = bool(arguments.get("allow_temp_project", False))
     if _is_path_under_temp_root(root) and not allow_temp_project:
         raise AppError(
@@ -3452,6 +3466,19 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
     return specs
 
 
+def _stdio_framing_error() -> None:
+    global _stdio_soft_errors
+    _stdio_soft_errors += 1
+    if _stdio_soft_errors >= _STDIO_SOFT_ERROR_CAP:
+        print("MCP stdio: too many consecutive parse/framing errors", file=sys.stderr)
+        sys.exit(2)
+
+
+def _stdio_framing_ok() -> None:
+    global _stdio_soft_errors
+    _stdio_soft_errors = 0
+
+
 def _read_mcp_message() -> dict[str, Any] | None:
     global _MCP_IO_MODE
     # Be lenient on transport framing:
@@ -3469,10 +3496,13 @@ def _read_mcp_message() -> dict[str, Any] | None:
             try:
                 payload = json.loads(first_text)
             except json.JSONDecodeError:
+                _stdio_framing_error()
                 continue
             if isinstance(payload, dict):
                 _MCP_IO_MODE = "jsonl"
+                _stdio_framing_ok()
                 return payload
+            _stdio_framing_error()
             continue
 
         headers: dict[str, str] = {}
@@ -3494,21 +3524,27 @@ def _read_mcp_message() -> dict[str, Any] | None:
 
         content_length_raw = headers.get("content-length", "")
         if not content_length_raw:
+            _stdio_framing_error()
             continue
         try:
             content_length = int(content_length_raw)
         except ValueError:
+            _stdio_framing_error()
             continue
         body = sys.stdin.buffer.read(content_length)
         if not body:
+            _stdio_framing_error()
             continue
         try:
             payload = json.loads(body.decode("utf-8"))
         except json.JSONDecodeError:
+            _stdio_framing_error()
             continue
         if isinstance(payload, dict):
             _MCP_IO_MODE = "header"
+            _stdio_framing_ok()
             return payload
+        _stdio_framing_error()
 
 
 def _write_mcp_message(payload: dict[str, Any]) -> None:

@@ -126,6 +126,25 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         err = payload.get("error") or {}
         self.assertEqual(err.get("code"), "TEMP_PROJECT_FORBIDDEN")
 
+    def test_project_root_without_project_godot_returns_invalid_godot_project(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bad = Path(td) / "not_a_godot_project"
+            bad.mkdir(parents=True, exist_ok=True)
+            cmd = [
+                sys.executable,
+                str(self.repo_root / "mcp" / "server.py"),
+                "--tool",
+                "init_project_context",
+                "--args",
+                json.dumps({"project_root": str(bad)}, ensure_ascii=False),
+            ]
+            proc = subprocess.run(cmd, cwd=str(self.repo_root), capture_output=True, text=True, check=False)
+            self.assertEqual(proc.returncode, 1, msg=proc.stdout)
+            payload = json.loads(proc.stdout)
+            self.assertFalse(payload.get("ok"))
+            err = payload.get("error") or {}
+            self.assertEqual(err.get("code"), "INVALID_GODOT_PROJECT")
+
     def test_cli_run_game_basic_test_flow_with_flow_id_succeeds(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
         flow_dir.mkdir(parents=True, exist_ok=True)

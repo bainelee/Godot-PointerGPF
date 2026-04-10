@@ -85,6 +85,28 @@ class McpTransportProtocolTests(unittest.TestCase):
             if proc.stderr:
                 proc.stderr.close()
 
+    def test_stdio_exits_after_repeated_invalid_jsonl_frames(self) -> None:
+        proc = subprocess.Popen(
+            [self.python_exe, self.server],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIsNotNone(proc.stdin)
+        try:
+            proc.stdin.write(b"{not-valid-json}\n" * 8)
+            proc.stdin.close()
+            rc = proc.wait(timeout=15)
+            self.assertEqual(rc, 2)
+            err = proc.stderr.read().decode("utf-8", errors="replace")
+            self.assertIn("too many consecutive", err.lower())
+            proc.stdout.close()
+            proc.stderr.close()
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=3)
+
 
 if __name__ == "__main__":
     unittest.main()

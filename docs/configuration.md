@@ -29,6 +29,10 @@ PointerGPF loads configuration in this order (later overrides earlier):
 
 `exp_dir_rel` is used for runtime artifacts such as `runtime/*.json` and `runtime/events.ndjson`.
 
+## MCP tool arguments (common)
+
+Most tools accept `project_root`. By default it must be a directory that contains `project.godot`. For rare tests or non-standard layouts only, you may pass `skip_godot_project_check=true`. Temporary-directory projects still require `allow_temp_project=true` where applicable.
+
 ## Version source recommendation
 
 - 推荐将 `mcp/version_manifest.json` 作为版本事实源。

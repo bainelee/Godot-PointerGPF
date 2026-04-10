@@ -11,6 +11,22 @@
 
 ---
 
+## 自动化边界（Windows）
+
+**一次性人工准备（环境未就绪前不能省略）**
+
+- 在 MCP 客户端（如 Cursor）中配置启动命令（见 `install/start-mcp.ps1` 输出的 `python -u …/mcp/server.py --stdio`）。
+- 在目标 Godot 工程中按需启用 PointerGPF 插件。
+- 使用文件桥时，需要编辑器/运行态能响应 `pointer_gpf/tmp`（详见运行门禁说明）。
+
+**准备完成后可由代理/工具自动执行**
+
+- 初始化或刷新项目上下文、生成与执行基础测试流程、自然语言路由、自动修复循环（在策略匹配时）等，无需为每一步再人工点一遍。
+
+**仍建议保留人工决策的环节**
+
+- UI 修复方案的批准（`approve_ui_fix_plan`）以及未工具化的产品层选择。
+
 ## 为什么使用 PointerGPF
 
 很多 Godot 自动化流程分散在脚本、临时文档和编辑器手动操作中。PointerGPF 提供稳定的 MCP 接口，让编码代理可以：
@@ -22,7 +38,7 @@
 
 这样可以把自动化流程沉淀为可复用、可追溯、可验证的工程能力。
 
-## 当前能力（v0.2.4.3）
+## 当前能力（v0.3.0.0）
 
 - 通用性约束：MCP 契约与工具设计面向全类型 Godot 项目，不绑定某一个具体游戏设定。
 - 插件生命周期工具：`install_godot_plugin`、`enable_godot_plugin`、`update_godot_plugin`、`check_plugin_status`
