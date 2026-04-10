@@ -1,6 +1,7 @@
 import base64
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,13 +13,16 @@ ONE_BY_ONE_PNG = base64.b64decode(
 
 
 def _run_tool(repo_root: Path, tool: str, args: dict) -> dict:
+    payload = dict(args)
+    if "project_root" in payload and "allow_temp_project" not in payload:
+        payload["allow_temp_project"] = True
     cmd = [
-        "python",
+        sys.executable,
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
         "--args",
-        json.dumps(args, ensure_ascii=False),
+        json.dumps(payload, ensure_ascii=False),
     ]
     proc = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
     if proc.returncode != 0:
@@ -30,13 +34,16 @@ def _run_tool(repo_root: Path, tool: str, args: dict) -> dict:
 
 
 def _run_tool_raw(repo_root: Path, tool: str, args: dict) -> tuple[int, dict]:
+    payload = dict(args)
+    if "project_root" in payload and "allow_temp_project" not in payload:
+        payload["allow_temp_project"] = True
     cmd = [
-        "python",
+        sys.executable,
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
         "--args",
-        json.dumps(args, ensure_ascii=False),
+        json.dumps(payload, ensure_ascii=False),
     ]
     proc = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
     return proc.returncode, json.loads(proc.stdout)

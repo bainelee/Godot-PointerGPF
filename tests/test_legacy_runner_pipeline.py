@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,7 +43,7 @@ class LegacyRunnerPipelineTests(unittest.TestCase):
             env["MCP_ALLOW_NON_BROADCAST"] = "1"
             proc = subprocess.run(
                 [
-                    "python",
+                    sys.executable,
                     str(repo / "mcp" / "server.py"),
                     "--tool",
                     "run_game_flow",

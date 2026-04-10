@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ class McpGapAuditTests(unittest.TestCase):
             out_file.unlink()
         proc = subprocess.run(
             [
-                "python",
+                sys.executable,
                 str(repo_root / "scripts" / "mcp_gap_audit.py"),
                 "--old-repo",
                 old_repo,

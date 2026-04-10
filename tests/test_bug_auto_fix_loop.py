@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 
 def _run_tool_cli(repo_root: Path, tool: str, args: dict) -> tuple[int, dict]:
     cmd = [
-        "python",
+        sys.executable,
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
@@ -85,6 +86,7 @@ class AutoFixGameBugCliTests(unittest.TestCase):
             "auto_fix_game_bug",
             {
                 "project_root": str(self.project_root),
+                "allow_temp_project": True,
                 "issue": "这个按钮无法点击",
                 "max_cycles": 2,
                 "timeout_seconds": 60,

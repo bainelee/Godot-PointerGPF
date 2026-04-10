@@ -26,4 +26,4 @@ window/stretch/mode="canvas_items"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/pointer_gpf/plugin.cfg")
+enabled=PackedStringArray("res://addons/pointer_gpf/plugin.cfg", "res://addons/test_orchestrator/plugin.cfg")

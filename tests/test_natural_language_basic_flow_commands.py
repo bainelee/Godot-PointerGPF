@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -12,7 +13,7 @@ def _run_tool(repo_root: Path, tool: str, args: dict) -> dict:
     if "project_root" in payload_args and "allow_temp_project" not in payload_args:
         payload_args["allow_temp_project"] = True
     cmd = [
-        "python",
+        sys.executable,
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,

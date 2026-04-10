@@ -16,7 +16,7 @@ def _run_tool_cli_raw(repo_root: Path, tool: str, args: dict) -> tuple[int, dict
     if "project_root" in payload_args and "allow_temp_project" not in payload_args:
         payload_args["allow_temp_project"] = True
     cmd = [
-        "python",
+        sys.executable,
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
@@ -32,7 +32,7 @@ def _run_tool_cli_raw_with_stderr(repo_root: Path, tool: str, args: dict) -> tup
     if "project_root" in payload_args and "allow_temp_project" not in payload_args:
         payload_args["allow_temp_project"] = True
     cmd = [
-        "python",
+        sys.executable,
         str(repo_root / "mcp" / "server.py"),
         "--tool",
         tool,
@@ -112,7 +112,7 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
 
     def test_temp_project_root_is_forbidden_without_explicit_allow_flag(self) -> None:
         cmd = [
-            "python",
+            sys.executable,
             str(self.repo_root / "mcp" / "server.py"),
             "--tool",
             "run_game_basic_test_flow",

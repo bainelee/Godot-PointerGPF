@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from pathlib import Path
 class McpTransportProtocolTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]
-        self.python_exe = "python"
+        self.python_exe = sys.executable
         self.server = str(self.repo_root / "mcp" / "server.py")
 
     def test_json_line_initialize_roundtrip(self) -> None:
