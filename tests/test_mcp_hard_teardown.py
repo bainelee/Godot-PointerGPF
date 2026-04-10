@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -37,6 +38,28 @@ class TestHardTeardownHelpers(unittest.TestCase):
             close_meta, {"runtime_mode": "editor_bridge", "runtime_gate_passed": False}
         )
         self.assertNotIn("stale_execution_report_runtime_fields", close_meta)
+
+    def test_read_teardown_debug_game_artifact_and_close_meta(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "proj"
+            art = root / "pointer_gpf" / "tmp" / "teardown_debug_game_last.json"
+            art.parent.mkdir(parents=True, exist_ok=True)
+            art.write_text(
+                json.dumps(
+                    {"schema": "pointer_gpf.teardown_debug_game.v1", "ok": False, "reason": "unit_test_reason"},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            got = mcp_server._read_teardown_debug_game_artifact(root)
+            self.assertFalse(got.get("ok"))
+            close_meta: dict = {}
+            mcp_server._attach_teardown_debug_game_artifact_to_close_meta(root, close_meta)
+            self.assertIn("debug_game_teardown_ok", close_meta)
+            self.assertIs(close_meta.get("debug_game_teardown_ok"), False)
+            self.assertEqual(close_meta.get("debug_game_teardown_reason"), "unit_test_reason")
 
     def test_hard_teardown_close_not_acked_default_no_force(self) -> None:
         root = Path("D:/proj/x")

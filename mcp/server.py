@@ -775,6 +775,25 @@ def _runtime_gate_implies_playing(marker: dict[str, Any]) -> bool | None:
     return None
 
 
+def _read_teardown_debug_game_artifact(project_root: Path) -> dict[str, Any]:
+    path = project_root / "pointer_gpf" / "tmp" / "teardown_debug_game_last.json"
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _attach_teardown_debug_game_artifact_to_close_meta(project_root: Path, close_meta: dict[str, Any]) -> None:
+    td = _read_teardown_debug_game_artifact(project_root)
+    if isinstance(td, dict) and td.get("ok") is False:
+        close_meta["debug_game_teardown_ok"] = False
+        close_meta["debug_game_teardown_reason"] = str(td.get("reason", ""))
+        close_meta["debug_game_teardown_schema"] = str(td.get("schema", ""))
+
+
 def _enrich_project_close_with_runtime_gate_evidence(project_root: Path, close_meta: dict[str, Any]) -> None:
     """Distinguish bridge closeProject ack from Play actually stopped (runtime_gate.json)."""
     snap0 = _read_runtime_gate_marker(project_root)
@@ -784,9 +803,11 @@ def _enrich_project_close_with_runtime_gate_evidence(project_root: Path, close_m
     }
     if not close_meta.get("requested"):
         close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(snap0)
+        _attach_teardown_debug_game_artifact_to_close_meta(project_root, close_meta)
         return
     if not close_meta.get("acknowledged"):
         close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(snap0)
+        _attach_teardown_debug_game_artifact_to_close_meta(project_root, close_meta)
         return
     last = snap0
     for _ in range(4):
@@ -800,6 +821,7 @@ def _enrich_project_close_with_runtime_gate_evidence(project_root: Path, close_m
         "runtime_gate_passed": last.get("runtime_gate_passed"),
     }
     close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(last)
+    _attach_teardown_debug_game_artifact_to_close_meta(project_root, close_meta)
 
 
 def _annotate_project_close_vs_execution_report(close_meta: dict[str, Any], execution_report: dict[str, Any] | None) -> None:

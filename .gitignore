@@ -15,7 +15,6 @@ gameplayflow/generated_flows/
 **/pointer_gpf/reports/plugin_install_report.json
 
 # Example project runtime outputs
-examples/godot_minimal/addons/pointer_gpf/
 examples/godot_minimal/pointer_gpf/
 examples/godot_minimal/gameplayflow/
 examples/godot_minimal/artifacts/

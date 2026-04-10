@@ -54,7 +54,7 @@
     - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）
     - 面向用户的中文语义行（`开始执行` / `执行结果` / `验证结论`）
   - 面向用户的播报中不显示技术字段（`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`）。
-  - 每次测试结束（通过/失败/超时/门禁失败）都必须执行关闭动作并输出 `project_close` 证据。`closeProject` 固定语义为“停止 `play_mode` 并回到编辑器空闲态”，默认保留编辑器进程。
+  - 每次测试结束（通过/失败/超时/门禁失败）都必须执行关闭动作并输出 `project_close` 证据。`closeProject` 固定语义为 **结束带 `(DEBUG)` 的游戏测试会话**（与编辑器「停止运行」同类）；**默认保留 Godot 编辑器进程**。`examples/godot_minimal` 内 `addons/pointer_gpf` 与模板 `godot_plugin_template/addons/pointer_gpf/` **同源并纳入版本库**，避免示例工程长期跑旧插件。
 - 自然语言路由与自动修复：`route_nl_intent`、`auto_fix_game_bug`（流程工具默认也会触发修复闭环，见 `docs/mcp-basic-test-flow-reference-usage.md`）
 - 基础流程执行结论字段：`tool_usability`、`gameplay_runnability`、`step_broadcast_summary`
 - Legacy gameplayflow（经根 MCP 桥接到 `tools/game-test-runner/mcp`）：`run_game_flow`、`start_stepwise_flow`、`pull_cursor_chat_plugin` 等；该部分用于历史兼容与回放，不代表单一游戏默认能力模型；CI 覆盖见 `.github/workflows/mcp-smoke.yml` / `mcp-integration.yml`；脚本入口见 `tools/game-test-runner/scripts/`

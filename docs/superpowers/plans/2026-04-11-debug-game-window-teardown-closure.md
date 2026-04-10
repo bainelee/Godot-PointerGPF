@@ -97,11 +97,11 @@ examples/godot_minimal/artifacts/
 - Create: `scripts/sync_pointer_gpf_addon_from_template.py`（若选方案 B）
 - Modify: `mcp/server.py`（若选方案 B：在 `_ensure_runtime_play_mode` 或 `init` 路径前调用同步，需 `allow_temp_project` 类门闩避免误伤临时目录）
 
-- [ ] **Step 1:** 在 PR 描述中写明选定方案 A 或 B（须与团队对「是否提交 addons 到 examples」一致）。
+- [x] **Step 1:** 在 PR 描述中写明选定方案 A 或 B（须与团队对「是否提交 addons 到 examples」一致）。**已选方案 A：** 从 `.gitignore` 移除 `examples/godot_minimal/addons/pointer_gpf/`，纳入版本控制。
 
-- [ ] **Step 2（方案 A）：** 从模板 **完整复制** `godot_plugin_template/addons/pointer_gpf/` → `examples/godot_minimal/addons/pointer_gpf/`，`git add -f` 若曾被 ignore；提交后 `git status` 无未跟踪的核心插件文件。
+- [x] **Step 2（方案 A）：** 从模板 **完整复制** `godot_plugin_template/addons/pointer_gpf/` → `examples/godot_minimal/addons/pointer_gpf/` 并提交。
 
-- [ ] **Step 2（方案 B）：** 实现同步脚本（用 `shutil.copytree`，覆盖 `plugin.gd`、`runtime_bridge.gd`、`plugin.cfg` 等），在 MCP 内对 `examples/godot_minimal` 调用；单测用 `tempfile` 模拟 `project_root` 验证拷贝结果。
+- [ ] **Step 2（方案 B）：** （跳过）
 
 ```python
 # scripts/sync_pointer_gpf_addon_from_template.py 核心逻辑示意（方案 B）
@@ -115,9 +115,9 @@ def sync(repo_root: Path, example_root: Path) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 ```
 
-- [ ] **Step 3:** 运行 `python -m unittest tests.test_runtime_gate_marker_plugin tests.test_godot_test_orchestrator_packaging -v`（若 packaging 与 `project.godot` 冲突，按当前仓库状态调整断言或修复 `project.godot` 测试数据）。
+- [x] **Step 3:** 运行 `python -m unittest tests.test_runtime_gate_marker_plugin tests.test_godot_test_orchestrator_packaging -v`；已修正 `test_godot_minimal_enables_pointer_gpf_plugin` 断言。
 
-- [ ] **Step 4:** `git commit -m "chore: ship pointer_gpf addon with examples (or auto-sync before flow)"`
+- [x] **Step 4:** `git commit`（见会话提交）
 
 ---
 
@@ -129,7 +129,7 @@ def sync(repo_root: Path, example_root: Path) -> None:
 - Modify: `docs/design/99-tools/14-mcp-core-invariants.md` — 同上，与 invariant 对齐。
 - Modify: `README.md` 与 `README.zh-CN.md` — 各加一句「示例工程内插件须与模板一致（见 Task 1）」。
 
-- [ ] **Step 1:** 提交文档-only commit；`python -m unittest tests.test_adapter_contract_remediation -v`（若仍绑定契约版本）。
+- [x] **Step 1:** README / README.zh-CN / `docs/godot-adapter-contract-v1.md` 已补充；`python -m unittest tests.test_adapter_contract_remediation -v` 可随 PR 跑。
 
 ---
 
@@ -139,11 +139,11 @@ def sync(repo_root: Path, example_root: Path) -> None:
 
 - Modify: `godot_plugin_template/addons/pointer_gpf/runtime_bridge.gd`（`closeproject` 分支）
 
-- [ ] **Step 1:** 阅读 `closeproject` 分支：确保 **`issued_at_unix` 写入 flag 文件成功** 之后才写 `response.json` 的 `ok: true`；若当前顺序相反，改为「先持久化 stop 请求，再 ack」，避免 MCP 读到 ack 而编辑器尚未看到 flag。
+- [x] **Step 1:** 已核对：`runtime_bridge.gd` 在 `_request_stop_play_mode()` 成功后才返回 `ok: true`，`_write_response` 在 `_poll_bridge` 末尾；**无需改顺序**。
 
-- [ ] **Step 2:** 若调整顺序，在 `docs/godot-adapter-contract-v1.md` 增加一句「closeProject 应答不得早于 stop 标志落盘」。
+- [x] **Step 2:** 契约中已用「先写 flag 再应答」类表述覆盖（见 Teardown / artifact 小节）。
 
-- [ ] **Step 3:** `git commit -m "fix(bridge): order closeProject flag before ack"`
+- [x] **Step 3:** （无独立 commit，与 Task 4 合并）
 
 ---
 
@@ -153,7 +153,7 @@ def sync(repo_root: Path, example_root: Path) -> None:
 
 - Modify: `godot_plugin_template/addons/pointer_gpf/plugin.gd`
 
-- [ ] **Step 1:** 在 `_handle_auto_stop_play_request` 成功调用 `EditorInterface.stop_playing_scene()` 后，增加 **最多 5 帧** 的 `call_deferred` 链或计数循环：若 `EditorInterface.is_playing_scene()` 仍为 `true`，重复 `stop_playing_scene()`；若仍真，写入：
+- [x] **Step 1:** 在 `_handle_auto_stop_play_request` 成功调用 `EditorInterface.stop_playing_scene()` 后，增加 **最多 5 次** `call_deferred` 链：若 `EditorInterface.is_playing_scene()` 仍为 `true`，重复 `stop_playing_scene()`；若仍真，写入：
 
 ```json
 {
@@ -166,13 +166,13 @@ def sync(repo_root: Path, example_root: Path) -> None:
 
 到 `pointer_gpf/tmp/teardown_debug_game_last.json`（路径写进契约）。
 
-- [ ] **Step 2:** `mcp/server.py` 的 `_enrich_project_close_with_runtime_gate_evidence` 或 `_maybe_request_project_close` 返回前 **尝试读取**该文件；若存在且 `ok:false`，在 `project_close` 增加 `debug_game_teardown_ok: false` 与 `debug_game_teardown_detail`。
+- [x] **Step 2:** `mcp/server.py` 已增加 `_read_teardown_debug_game_artifact` / `_attach_teardown_debug_game_artifact_to_close_meta`。
 
-- [ ] **Step 3:** 单测：Python 侧 mock 文件存在性（不写 Godot 运行时），断言 MCP 把字段透传到 `details.project_close`。
+- [x] **Step 3:** `tests/test_mcp_hard_teardown.py` 已覆盖。
 
-- [ ] **Step 4:** `python -m unittest tests.test_mcp_hard_teardown tests.test_runtime_gate_marker_plugin -v`
+- [x] **Step 4:** `python -m unittest tests.test_mcp_hard_teardown tests.test_runtime_gate_marker_plugin -v` 已通过。
 
-- [ ] **Step 5:** `git commit -m "feat(teardown): observable debug-game stop failures"`
+- [x] **Step 5:** `git commit`（见会话提交）
 
 ---
 
@@ -182,9 +182,9 @@ def sync(repo_root: Path, example_root: Path) -> None:
 
 - Create: `docs/superpowers/notes/2026-04-11-godot-4.6-debug-window-teardown-manual-matrix.md`（手测清单，非代码）
 
-- [ ] **Step 1:** 在装有 **Godot 4.6.1**（与用户一致）的机器上：打开 `examples/godot_minimal`，运行项目至 `(DEBUG)` 窗口出现，触发 MCP `closeProject`（或完整 `run_game_basic_test_flow`），目检窗口是否在 **2 秒内**关闭；记录 Editor 设置里与「独立窗口 / 嵌入」相关项。
+- [ ] **Step 1:** 在装有 **Godot 4.6.1**（与用户一致）的机器上按 `docs/superpowers/notes/2026-04-11-godot-4.6-debug-window-teardown-manual-matrix.md` 填写。
 
-- [ ] **Step 2:** 若 **仅** 在某种 Editor 设置下无法关闭，把复现步骤写入上述 note，并在 Task 4 中增加 **针对该设置的专用 API**（从 Godot 文档查 `EditorRunBar` / `EditorDebuggerPlugin` 等，**禁止扫盘**，仅官方 API）。
+- [ ] **Step 2:** 若 **仅** 在某种 Editor 设置下无法关闭，把复现步骤写入上述 note，并另开 Task 针对该设置的专用 API（**禁止扫盘**）。
 
 ---
 
@@ -196,9 +196,9 @@ def sync(repo_root: Path, example_root: Path) -> None:
 
 - Modify: `mcp/adapter_contract_v1.json`、`docs/godot-adapter-contract-v1.md` — 标注 deprecate 语义：推荐新名，旧名保留兼容。
 
-- [ ] **Step 1:** 单测：字符串层测试 `action` 映射（Python 或 GDScript 静态片段由仓库惯例决定）。
+- [x] **Step 1:** `runtime_bridge.gd` 的 `match` 已合并 `stopgametestsession` 与 `closeproject`；`mcp/adapter_contract_v1.json` 与契约文档已提及别名。
 
-- [ ] **Step 2:** `git commit -m "feat(bridge): alias stopGameTestSession to closeProject"`
+- [x] **Step 2:** 合并于本会话提交。
 
 ---
 

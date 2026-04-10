@@ -49,7 +49,7 @@ The result is a repeatable agent workflow that stays grounded in project files a
     - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS` (local system time)
     - User-facing Chinese semantic line (`开始执行` / `执行结果` / `验证结论`)
   - No technical field lines in user-facing broadcast (`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`).
-  - Each test run must issue close action (`closeProject`) and expose `project_close` evidence. `closeProject` means stop `play_mode` and return to editor idle state; editor process is kept by default.
+  - Each test run must issue close action (`closeProject`) and expose `project_close` evidence. `closeProject` ends the **(DEBUG) game test session** (same class as editor **Stop**); the Godot **editor** process stays open by default. The bundled addon for `examples/godot_minimal` is **tracked in git** (synced from `godot_plugin_template/addons/pointer_gpf/`) so template fixes reach the sample project.
 - Natural-language routing and auto-fix loop: `route_nl_intent`, `auto_fix_game_bug`
 - Basic flow result fields: `tool_usability`, `gameplay_runnability`, `step_broadcast_summary`
 - Runtime outputs under `pointer_gpf/gpf-exp/runtime/` for traceability

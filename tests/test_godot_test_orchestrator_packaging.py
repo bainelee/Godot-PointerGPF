@@ -46,10 +46,10 @@ class GodotTestOrchestratorPackagingTests(unittest.TestCase):
         self.assertIn("@tool", text)
         self.assertIn("extends EditorPlugin", text)
 
-    def test_godot_minimal_enables_test_orchestrator(self) -> None:
+    def test_godot_minimal_enables_pointer_gpf_plugin(self) -> None:
         proj = _repo_root() / "examples" / "godot_minimal" / "project.godot"
         text = proj.read_text(encoding="utf-8")
-        self.assertIn("res://addons/test_orchestrator/plugin.cfg", text)
+        self.assertIn("res://addons/pointer_gpf/plugin.cfg", text)
 
 
 if __name__ == "__main__":

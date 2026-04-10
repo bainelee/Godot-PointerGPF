@@ -93,7 +93,7 @@
     "required_response_fields": ["ok", "seq", "run_id"],
     "timeout_error_code": "TIMEOUT",
     "auto_stop_play_mode_flag_rel": "pointer_gpf/tmp/auto_stop_play_mode.flag",
-    "auto_stop_play_mode_flag_note": "Written by runtime_bridge when action closeProject is handled; Godot EditorPlugin consumes it to call EditorInterface.stop_playing_scene(). Payload should include issued_at_unix (Unix seconds) for freshness; stale or invalid files must not stop manual Play. Default: stop Play but do not quit the editor executable — stopping Play is required, not optional."
+    "auto_stop_play_mode_flag_note": "Written by runtime_bridge when action closeProject or stopGameTestSession (alias) is handled; Godot EditorPlugin consumes it to call EditorInterface.stop_playing_scene(). Payload should include issued_at_unix (Unix seconds) for freshness; stale or invalid files must not stop manual Play. Default: stop Play but do not quit the editor executable — stopping Play is required, not optional. On repeated failure to exit play, plugin may write pointer_gpf/tmp/teardown_debug_game_last.json (schema pointer_gpf.teardown_debug_game.v1)."
   },
   "runtime_diagnostics": {
     "schema_id": "pointer_gpf.runtime_diagnostics.v1",
