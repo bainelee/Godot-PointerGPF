@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+[node name="StartScreen" type="ColorRect"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.121569, 0.121569, 0.121569, 0.96)
+
+[node name="StartTitle" type="Label" parent="."]
+layout_mode = 0
+offset_left = 692.0
+offset_top = 320.0
+offset_right = 1228.0
+offset_bottom = 440.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 64
+text = "Game Start"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StartButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 810.0
+offset_top = 520.0
+offset_right = 1110.0
+offset_bottom = 620.0
+theme_override_font_sizes/font_size = 40
+text = "Start Game"
