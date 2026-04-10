@@ -48,6 +48,7 @@
 3. shell 播报保留两行结构（按阶段输出）：
    - 时间戳行：`[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）。
    - 中文语义行：只保留用户可读语义，不展示技术字段。
+
 4. 播报模板只定义句式，步骤文案必须来自 flow 功能语义。
 5. 中文语义句式固定为：
    - `开始执行:...`
@@ -57,7 +58,12 @@
 7. 一次测试流程结束后（通过/失败/超时/门禁失败），必须发起关闭动作；关闭语义为“停止 Play 运行态并回到编辑器空闲态”。
 8. 默认行为下应保留编辑器进程，不得把“停止 Play”错误实现为“退出整个编辑器”。
 
-### 3.4 虚拟鼠标可视化规则
+### 3.4 运行态诊断与失败衔接
+
+1. 在等待文件桥响应期间，实现应轮询 `pointer_gpf/tmp/runtime_diagnostics.json`（契约见 `mcp/adapter_contract_v1.json` 与 `docs/design/99-tools/16-pointer-gpf-runtime-diagnostics-bridge.md`）。
+2. 当诊断为 `error`/`fatal` 时，应返回 `ENGINE_RUNTIME_STALLED`（或等价结构化错误），并在 `details` 中附带 `suggested_next_tool: auto_fix_game_bug` 与可复制的 `issue` 草稿，避免代理在引擎已报错时仍表现为「长时间无反馈等待」。
+
+### 3.5 虚拟鼠标可视化规则
 
 1. 自动化输入执行时，必须在游戏画面中实时显示“虚拟鼠标位置”。
 2. 可视化标记采用红色方形（与旧版一致），用于让人类观察输入落点与移动轨迹。
@@ -174,8 +180,22 @@
   - `scripts/assert-mcp-artifacts.ps1` 与 `mcp-smoke/mcp-integration` 已加入执行层 runtime/input 字段断言。
 - 收尾语义：
   - `closeProject` 已固定为“停止 Play 运行态，不退出编辑器”。
+- **停止 Play 的标志文件（与契约对齐）**：
+  - 路径（相对项目根）：`pointer_gpf/tmp/auto_stop_play_mode.flag`（与 `mcp/adapter_contract_v1.json` 的 `runtime_bridge.auto_stop_play_mode_flag_rel` 一致）。
+  - 由 `runtime_bridge.gd` 在处理 `closeProject` 时写入；载荷需含 `issued_at_unix`（Unix 秒）供编辑器插件判断新鲜度；**写文件失败**时须返回 `ok=false`、`error.code=STOP_FLAG_WRITE_FAILED`，不得冒充成功。
+  - `plugin.gd` 轮询消费该文件并调用 `EditorInterface.stop_playing_scene()`；须忽略过期/畸形/无时间戳的残留文件，并在插件加载时清除残留标志，避免用户手动 F5 后被误停（详见模板与 `examples/godot_minimal` 中实现）。
 - 运行桥接挂载：
   - `godot_plugin_template/addons/pointer_gpf/plugin.gd` 使用 autoload 方式挂载 `runtime_bridge.gd`，避免编辑器树挂载导致的运行态失真。
+- **`runtime_diagnostics.json` 当前覆盖范围（2026-04）**：
+  - **桥接步骤结果**：`runtime_bridge.gd` 在分发命令后调用 `note_bridge_dispatch`；失败应答会将快照 `severity` 提升为 `error`。
+  - **引擎 `_log_error` 路径（Godot 4.5+）**：参考实现通过 `OS.add_logger` 注册 `Logger` 子类 `runtime_diagnostics_logger.gd`，在 `_log_error` 中把 `rationale`、文件、行号与 `ScriptBacktrace` 文本入队，由 `runtime_diagnostics_writer.gd` 在主线程 `tick_flush` 中合并写入；**不**经过 `_log_message` 的 `push_error`/`push_warning` 仍以引擎文档为准（见官方 Logging 教程中 `_log_message` 与 `_log_error` 的差异说明）。
+  - **仍可能缺失的情况**：主线程死锁、磁盘写入失败、或未走 `_log_error` 的仅 stdout 输出等；MCP 侧仍须把 `step_timeout` 与 `TIMEOUT` 视为合法失败路径。
+- **失败收尾与可选硬杀进程**：
+  - 运行失败时 MCP 会在错误详情中附带 **`hard_teardown`**（关闭请求是否发出、是否得到应答、是否建议人工检查引擎进程）。
+  - **`force_terminate_godot_on_flow_failure`**（默认 `false`）：仅在「已请求 `closeProject` 但未收到应答」时，尝试结束命令行中包含 `project_root` 的 Godot 进程；有误杀同一工程编辑器实例的风险，须由调用方显式开启。
+- **跑流程默认自动修与 L2（2026-04-10 起）**：
+  - `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` 默认 **`auto_repair: true`**（可用参数或 **`GPF_AUTO_REPAIR_DEFAULT=0`** 关闭）；失败时在 `max_repair_rounds` / `auto_fix_max_cycles` 上限内调用 `auto_fix_game_bug` 并复测。
+  - **`GPF_REPAIR_BACKEND_CMD`**：可选 L2 子进程，在 `bug_fix_strategies` 未应用补丁后执行；约定见 `docs/mcp-basic-test-flow-reference-usage.md` 与 `mcp/repair_backend.py`。
 
 ## 9. 新项目基础流程自动生成契约（真实化版本）
 

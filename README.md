@@ -21,7 +21,7 @@ Install and manage the Godot plugin, build project context, generate flow seeds,
 
 **After setup, agents can drive**
 
-- Context init/refresh, flow seed generation, basic test flow design/run, NL routing, and the auto-fix loop (when strategies match), without extra clicks for each of those steps.
+- Context init/refresh, flow seed generation, basic test flow design/run, NL routing, and the bundled verify→auto-fix→retest loop on flow failures (default `auto_repair`; disable with `auto_repair: false` or `GPF_AUTO_REPAIR_DEFAULT=0`), without extra clicks for each of those steps.
 
 **Still human decisions**
 
@@ -44,7 +44,7 @@ The result is a repeatable agent workflow that stays grounded in project files a
 - Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
 - Figma validation loop: `figma_design_to_baseline`, `compare_figma_game_ui`, `annotate_ui_mismatch`, `approve_ui_fix_plan`, `suggest_ui_fix_patch`
 - Contract + runtime diagnostics: `get_adapter_contract`, `get_mcp_runtime_info`
-- Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` (strict policy: real `play_mode` runtime + step-by-step shell output; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`; auto bootstrap when engine is not open) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` (strict policy: real `play_mode` runtime + step-by-step shell output; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`; auto bootstrap when engine is not open; **default** chained `auto_fix_game_bug` within limits; optional `GPF_REPAIR_BACKEND_CMD` for L2) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
   - Per-phase shell broadcast format:
     - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS` (local system time)
     - User-facing Chinese semantic line (`开始执行` / `执行结果` / `验证结论`)

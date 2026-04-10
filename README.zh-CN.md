@@ -48,13 +48,14 @@
   - `update_game_basic_design_flow_by_current_state`（触发词：`根据游戏当前状态,更新设计游戏基础设计流程`）
 - Figma 验证闭环：`figma_design_to_baseline`、`compare_figma_game_ui`、`annotate_ui_mismatch`、`approve_ui_fix_plan`、`suggest_ui_fix_patch`
 - 契约与运行时诊断：`get_adapter_contract`、`get_mcp_runtime_info`
-- 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow`（强制真实 `play_mode` + 逐步骤 shell 输出；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`；引擎未开时自动拉起）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
+- 基础测试流程参照与用法（可读回 Markdown）：`get_basic_test_flow_reference_guide`（可与 `route_nl_intent` 配合；说明见 `docs/mcp-basic-test-flow-reference-usage.md`）
+- 可执行基础流程：`design_game_basic_test_flow` → `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state`（强制真实 `play_mode` + 逐步骤 shell 输出；文件桥 `pointer_gpf/tmp/command.json` ↔ `response.json`；引擎未开时自动拉起；**默认**失败后在限制内串联 `auto_fix_game_bug`，可用 `auto_repair: false` 或 `GPF_AUTO_REPAIR_DEFAULT=0` 关闭；可选 `GPF_REPAIR_BACKEND_CMD` 作为 L2）→ 可选 `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
   - 每个阶段的 shell 播报固定为：
     - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS`（本地系统时间）
     - 面向用户的中文语义行（`开始执行` / `执行结果` / `验证结论`）
   - 面向用户的播报中不显示技术字段（`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`）。
   - 每次测试结束（通过/失败/超时/门禁失败）都必须执行关闭动作并输出 `project_close` 证据。`closeProject` 固定语义为“停止 `play_mode` 并回到编辑器空闲态”，默认保留编辑器进程。
-- 自然语言路由与自动修复：`route_nl_intent`、`auto_fix_game_bug`
+- 自然语言路由与自动修复：`route_nl_intent`、`auto_fix_game_bug`（流程工具默认也会触发修复闭环，见 `docs/mcp-basic-test-flow-reference-usage.md`）
 - 基础流程执行结论字段：`tool_usability`、`gameplay_runnability`、`step_broadcast_summary`
 - Legacy gameplayflow（经根 MCP 桥接到 `tools/game-test-runner/mcp`）：`run_game_flow`、`start_stepwise_flow`、`pull_cursor_chat_plugin` 等；该部分用于历史兼容与回放，不代表单一游戏默认能力模型；CI 覆盖见 `.github/workflows/mcp-smoke.yml` / `mcp-integration.yml`；脚本入口见 `tools/game-test-runner/scripts/`
 - 运行产物统一落盘到 `pointer_gpf/gpf-exp/runtime/`
@@ -183,6 +184,7 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 - `设计游戏基础测试流程` -> `design_game_basic_test_flow`
 - `根据游戏当前状态,更新设计游戏基础设计流程` -> `update_game_basic_design_flow_by_current_state`
+- `基础测试流程怎么用` / `流程预期说明` -> 先 `route_nl_intent` 再调用 `get_basic_test_flow_reference_guide`（全文与路径说明见 `docs/mcp-basic-test-flow-reference-usage.md`）
 
 **你需要亲自动手（不可替代的人类操作）：**
 

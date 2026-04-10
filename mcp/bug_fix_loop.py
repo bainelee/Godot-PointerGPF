@@ -10,6 +10,7 @@ from bug_fix_strategies import run_apply_patch, run_diagnosis
 
 VerificationFn = Callable[[], dict[str, Any]]
 MonotonicFn = Callable[[], float]
+L2TryPatchFn = Callable[[Path, str, dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
 def run_bug_fix_loop(
@@ -20,6 +21,7 @@ def run_bug_fix_loop(
     timeout_seconds: float | None,
     run_verification: VerificationFn,
     monotonic: MonotonicFn | None = None,
+    l2_try_patch: L2TryPatchFn | None = None,
 ) -> dict[str, Any]:
     mono = monotonic if monotonic is not None else time.monotonic
     deadline: float | None = None
@@ -80,6 +82,15 @@ def run_bug_fix_loop(
 
         diagnosis = run_diagnosis(str(issue), verification)
         patch = run_apply_patch(project_root.resolve(), str(issue), diagnosis)
+        if not bool(patch.get("applied")) and l2_try_patch is not None:
+            try:
+                l2_patch = l2_try_patch(project_root.resolve(), str(issue), diagnosis, verification)
+            except Exception as exc:  # noqa: BLE001 — L2 is third-party hook; keep loop stable
+                l2_patch = {"applied": False, "changed_files": [], "notes": str(exc)}
+            if isinstance(l2_patch, dict) and bool(l2_patch.get("applied")):
+                patch = l2_patch
+            elif isinstance(l2_patch, dict):
+                patch = {**patch, "l2_attempt": l2_patch}
 
         if timed_out():
             loop_evidence.append(

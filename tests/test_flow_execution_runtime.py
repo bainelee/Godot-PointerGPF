@@ -987,6 +987,63 @@ class McpToolSchemaTests(unittest.TestCase):
         self.assertEqual(candidates[0], expected)
 
 
+class OrchestratedFlowDelegationTests(unittest.TestCase):
+    """run_basic_test_flow_orchestrated maps to by_current_state + auto_repair (Task 3)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        rr = Path(__file__).resolve().parents[1]
+        mp = str(rr / "mcp")
+        if mp not in sys.path:
+            sys.path.insert(0, mp)
+
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[1]
+        self.tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self.tmp.name)
+        self.project_root = self.work / "proj"
+        self.project_root.mkdir(parents=True, exist_ok=True)
+        (self.project_root / "project.godot").write_text('[application]\nconfig/name="tmp"\n', encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_orchestrated_delegates_with_mapped_limits(self) -> None:
+        import server as srv  # noqa: E402
+
+        with mock.patch.object(srv, "_tool_run_game_basic_test_flow_by_current_state") as mock_inner:
+            mock_inner.return_value = {
+                "status": "passed",
+                "execution_result": {"status": "passed", "execution_report": {"status": "passed", "run_id": "r"}},
+                "auto_repair": {
+                    "enabled": True,
+                    "final_status": "passed",
+                    "rounds": [{"round_index": 1, "outcome": "passed"}],
+                },
+            }
+            ctx = srv.ServerCtx(
+                repo_root=self.repo_root,
+                template_plugin_dir=self.repo_root / "godot_plugin_template" / "addons" / "pointer_gpf",
+            )
+            out = srv._tool_run_basic_test_flow_orchestrated(
+                ctx,
+                {
+                    "project_root": str(self.project_root),
+                    "allow_temp_project": True,
+                    "orchestration_explicit_opt_in": True,
+                    "max_orchestration_rounds": 3,
+                    "auto_fix_max_cycles": 1,
+                },
+            )
+            self.assertEqual(out["final_status"], "passed")
+            self.assertTrue(out.get("orchestration_alias"))
+            mock_inner.assert_called_once()
+            passed_args = mock_inner.call_args[0][1]
+            self.assertTrue(passed_args.get("auto_repair"))
+            self.assertEqual(passed_args.get("max_repair_rounds"), 3)
+            self.assertEqual(passed_args.get("auto_fix_max_cycles"), 1)
+
+
 class DocumentContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[1]

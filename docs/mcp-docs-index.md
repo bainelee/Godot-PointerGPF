@@ -13,6 +13,9 @@
 - `docs/mcp-testing-spec.md`：测试与验证口径。
 - `docs/mcp-real-runtime-input-contract-design.md`：运行时输入契约设计。
 - `docs/design/99-tools/14-mcp-core-invariants.md`：MCP 核心不变量。
+- `docs/design/99-tools/16-pointer-gpf-runtime-diagnostics-bridge.md`：`runtime_diagnostics.json` 与 MCP 并行观测约定。
+- `docs/mcp-basic-test-flow-game-type-expectations.md`：基础测试流程按游戏类型的**流程预期**（执行参照）；`init_project_context` 生成的 `04-flow-authoring-guide.md` 内嵌精简版。
+- `docs/mcp-basic-test-flow-reference-usage.md`：**使用方式**与**自然语言触发**对照（`get_basic_test_flow_reference_guide` / `route_nl_intent`）；含默认 `auto_repair` 与可选 **`GPF_REPAIR_BACKEND_CMD`**（实现见 `mcp/repair_backend.py`）。
 
 ## 3. 实现状态与审计（Status/Audit）
 

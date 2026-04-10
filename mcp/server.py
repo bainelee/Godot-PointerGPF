@@ -32,6 +32,7 @@ from flow_execution import (
     FlowRunner,
 )
 from nl_intent_router import route_nl_intent
+from repair_backend import build_l2_try_patch_from_env
 from operational_profile import (
     build_operational_profile_bundle,
     pick_enter_game_candidate,
@@ -3198,11 +3199,15 @@ _ORCHESTRATION_STRIPPED_KEYS = frozenset(
 
 
 def _tool_run_basic_test_flow_orchestrated(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Chain: refresh+run basic flow, then on failure run auto_fix_game_bug, up to N rounds (explicit opt-in)."""
+    """Legacy explicit-opt-in tool: delegates to run_game_basic_test_flow_by_current_state with auto_repair enabled.
+
+    New integrations should call run_game_basic_test_flow_by_current_state with auto_repair=true (default)
+    and max_repair_rounds / auto_fix_max_cycles directly; this tool remains for backward compatibility.
+    """
     if not bool(arguments.get("orchestration_explicit_opt_in", False)):
         raise AppError(
             "INVALID_ARGUMENT",
-            "orchestration_explicit_opt_in must be true (this tool chains flow runs and auto_fix; high cost)",
+            "orchestration_explicit_opt_in must be true (legacy orchestration entry; high cost)",
             {
                 "fix": "read docs/mcp-basic-test-flow-reference-usage.md and set orchestration_explicit_opt_in=true",
                 "blocking_point": "orchestration_opt_in_required",
@@ -3223,71 +3228,27 @@ def _tool_run_basic_test_flow_orchestrated(ctx: ServerCtx, arguments: dict[str, 
     if fix_cycles < 0:
         raise AppError("INVALID_ARGUMENT", "auto_fix_max_cycles must be >= 0")
     project_root = _resolve_project_root(arguments)
-    run_base = {k: v for k, v in arguments.items() if k not in _ORCHESTRATION_STRIPPED_KEYS}
-    run_base["auto_repair"] = False
-    rounds: list[dict[str, Any]] = []
-    last_out: dict[str, Any] | None = None
-    for idx in range(max_rounds):
-        entry: dict[str, Any] = {"round_index": idx + 1, "max_rounds": max_rounds}
-        try:
-            last_out = _tool_run_game_basic_test_flow_by_current_state(ctx, run_base)
-        except AppError as exc:
-            entry["flow_phase"] = "exception"
-            entry["flow_error"] = exc.as_dict()
-            issue = _issue_text_from_flow_app_error(exc)
-            entry["issue_used_for_auto_fix"] = issue
-            if fix_cycles == 0:
-                entry["auto_fix"] = {"skipped": True, "reason": "auto_fix_max_cycles=0"}
-            else:
-                try:
-                    fix_payload = _tool_auto_fix_game_bug(
-                        ctx,
-                        {
-                            **run_base,
-                            "issue": issue,
-                            "max_cycles": fix_cycles,
-                        },
-                    )
-                    entry["auto_fix"] = {"ok": True, "result": fix_payload}
-                except AppError as fix_exc:
-                    entry["auto_fix"] = {"ok": False, "error": fix_exc.as_dict()}
-            rounds.append(entry)
-            continue
-        entry["flow_phase"] = "returned"
-        er = last_out.get("execution_result") if isinstance(last_out.get("execution_result"), dict) else {}
-        entry["flow_snapshot"] = {"execution_status": er.get("status")}
-        if str(er.get("status", "")).strip() == "passed":
-            entry["outcome"] = "passed"
-            rounds.append(entry)
-            return {
-                "final_status": "passed",
-                "project_root": str(project_root),
-                "rounds": rounds,
-                "last_flow_bundle": last_out,
-            }
-        issue = _issue_text_from_execution_payload(er)
-        entry["issue_used_for_auto_fix"] = issue
-        if fix_cycles == 0:
-            entry["auto_fix"] = {"skipped": True, "reason": "auto_fix_max_cycles=0"}
-        else:
-            try:
-                fix_payload = _tool_auto_fix_game_bug(
-                    ctx,
-                    {
-                        **run_base,
-                        "issue": issue,
-                        "max_cycles": fix_cycles,
-                    },
-                )
-                entry["auto_fix"] = {"ok": True, "result": fix_payload}
-            except AppError as fix_exc:
-                entry["auto_fix"] = {"ok": False, "error": fix_exc.as_dict()}
-        rounds.append(entry)
+    run_merged = {k: v for k, v in arguments.items() if k not in _ORCHESTRATION_STRIPPED_KEYS}
+    run_merged["auto_repair"] = True
+    run_merged["max_repair_rounds"] = max_rounds
+    run_merged["auto_fix_max_cycles"] = fix_cycles
+    inner = _tool_run_game_basic_test_flow_by_current_state(ctx, run_merged)
+    ar = inner.get("auto_repair") if isinstance(inner.get("auto_repair"), dict) else {}
+    rounds = ar.get("rounds") if isinstance(ar.get("rounds"), list) else []
+    fs_inner = str(ar.get("final_status", "")).strip()
+    er = inner.get("execution_result") if isinstance(inner.get("execution_result"), dict) else {}
+    st = str(er.get("status", "")).strip()
+    if fs_inner == "passed" or st == "passed":
+        final_status = "passed"
+    else:
+        final_status = "exhausted_rounds" if fs_inner == "exhausted_rounds" else (fs_inner or "exhausted_rounds")
     return {
-        "final_status": "exhausted_rounds",
+        "final_status": final_status,
         "project_root": str(project_root),
         "rounds": rounds,
-        "last_flow_bundle": last_out,
+        "last_flow_bundle": inner,
+        "orchestration_alias": True,
+        "delegates_to": "run_game_basic_test_flow_by_current_state",
     }
 
 
@@ -3353,6 +3314,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
         max_cycles=max_cycles,
         timeout_seconds=timeout_seconds,
         run_verification=run_verification,
+        l2_try_patch=build_l2_try_patch_from_env(),
     )
     return {
         "final_status": loop_result["final_status"],
@@ -4219,9 +4181,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
         },
         "run_basic_test_flow_orchestrated": {
             "description": (
-                "Explicit opt-in orchestration: refresh+run basic test flow by current state, then on failure invoke "
-                "auto_fix_game_bug, repeating up to max_orchestration_rounds. High token/runtime cost; requires "
-                "orchestration_explicit_opt_in=true."
+                "Legacy explicit-opt-in entry: maps to run_game_basic_test_flow_by_current_state with "
+                "auto_repair=true, max_repair_rounds=max_orchestration_rounds, auto_fix_max_cycles as passed. "
+                "Prefer calling run_game_basic_test_flow_by_current_state directly with those fields; "
+                "orchestration_explicit_opt_in=true still required for this tool name."
             ),
             "inputSchema": {
                 "type": "object",

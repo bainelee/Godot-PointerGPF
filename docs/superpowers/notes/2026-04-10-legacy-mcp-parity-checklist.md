@@ -30,12 +30,12 @@ Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
 
 ### 3.2 默认行为：基础流程是否会自动调用 auto_fix？
 
-**不会。** `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` 默认不在失败后自动调用 `auto_fix_game_bug`；失败路径通过 `suggested_next_tool`、`auto_fix_arguments_suggestion` 等供编排层或助手**显式**决定是否调用自动修。
+**会（默认）。** `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` 默认 **`auto_repair: true`**：在 `max_repair_rounds` / `auto_fix_max_cycles` 上限内于失败后调用 `auto_fix_game_bug` 并复测。传 **`auto_repair: false`** 或环境变量 **`GPF_AUTO_REPAIR_DEFAULT=0`**（CI 已设）可关闭。若干错误码（如 `TEMP_PROJECT_FORBIDDEN`、`INVALID_ARGUMENT` 等）**不进入**修复环，直接抛错。
 
 依据：
 
-- `docs/design/99-tools/14-mcp-core-invariants.md`「能力与边界」：**自动修工具非串联默认环节**；基础流程**不会**在失败后自动调用自动修；串联需使用 `run_basic_test_flow_orchestrated` 且 **`orchestration_explicit_opt_in=true`**（同节与编排工具说明）。
-- `mcp/server.py` 中 `_tool_run_basic_test_flow_orchestrated`：若 `orchestration_explicit_opt_in` 不为真则直接 `INVALID_ARGUMENT` 拒绝（约 `3022:3030:mcp/server.py`）。
+- `docs/design/99-tools/14-mcp-core-invariants.md`「能力与边界」：已更新为默认串联说明。
+- `mcp/server.py`：`_parse_auto_repair_params`、`_tool_run_game_basic_test_flow_with_repair_loop`、`_tool_run_game_basic_test_flow_by_current_state_with_repair`；`run_basic_test_flow_orchestrated` 为委托别名（仍须 `orchestration_explicit_opt_in=true`）。
 
 ### 3.3 `bug_fix_strategies.py`：`DEFAULT_STRATEGIES` 中 `strategy_id` 顺序
 
@@ -59,9 +59,9 @@ Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
 
 | 能力项 | 旧工程（待填） | 本仓库当前 | 计划 Task 编号 |
 |--------|----------------|------------|----------------|
-| 默认是否串联 auto_fix | 待路径 | 否；仅 `run_basic_test_flow_orchestrated` 在 `orchestration_explicit_opt_in=true` 时串联 | 统一计划 Task 2（默认 `auto_repair`）、Task 3（编排去重） |
-| 策略数量/类型 | 待路径 | `DEFAULT_STRATEGIES` 共 4 条专用策略（上表 `strategy_id`）；另可有 `generic` 诊断 | 统一计划 Task 5（从旧工程迁移） |
-| 是否存在 L2 外部修复后端 | 待路径 | 当前无独立 L2 协议模块；自动修为 `auto_fix_game_bug` + `bug_fix_strategies` | 统一计划 Task 4（`RepairBackend`） |
+| 默认是否串联 auto_fix | 待路径 | **是**：`run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` 默认 `auto_repair=true`（可关）；`run_basic_test_flow_orchestrated` 为兼容别名，仍须 `orchestration_explicit_opt_in=true` | 已实现（统一计划 Task 2/3） |
+| 策略数量/类型 | 待路径 | `DEFAULT_STRATEGIES` 共 4 条专用策略（上表 `strategy_id`）；另可有 `generic` 诊断 | Task 5：待 `GPF_LEGACY_MCP_ROOT` 对照迁移 |
+| 是否存在 L2 外部修复后端 | 待路径 | **可选**：`GPF_REPAIR_BACKEND_CMD` + `mcp/repair_backend.py`，由 `auto_fix_game_bug` → `run_bug_fix_loop` 在 L1 未 `applied` 时调用 | 已实现 Task 4 |
 | NL「跑流程」目标工具名 | 待路径 | 精确短语「跑一遍基础测试流程」→ `run_game_basic_test_flow_by_current_state` | Task 0（本清单）；语义变更见统一计划 Task 2 |
 
 ## 5. 下一步

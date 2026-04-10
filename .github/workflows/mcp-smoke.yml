@@ -18,6 +18,8 @@ jobs:
   smoke:
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      GPF_AUTO_REPAIR_DEFAULT: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +46,7 @@ jobs:
       - name: Python contract tests (NL + flow + bugfix loop)
         shell: pwsh
         run: |
-          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop tests.test_basic_flow_dual_conclusions tests.test_nl_intent_router_expanded tests.test_bug_fix_strategies_extra tests.test_mcp_transport_protocol -v
+          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_flow_engine_diagnostics tests.test_mcp_hard_teardown tests.test_repair_backend tests.test_bug_auto_fix_loop tests.test_basic_flow_dual_conclusions tests.test_nl_intent_router_expanded tests.test_bug_fix_strategies_extra tests.test_mcp_transport_protocol -v
 
       - name: Stdio MCP protocol smoke
         shell: pwsh
@@ -106,6 +108,7 @@ jobs:
           assert "compare_figma_game_ui" in tool_names
           assert "approve_ui_fix_plan" in tool_names
           assert "design_game_basic_test_flow" in tool_names
+          assert "get_basic_test_flow_reference_guide" in tool_names
           assert "run_game_basic_test_flow" in tool_names
 
           send_msg(
