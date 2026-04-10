@@ -1,0 +1,11 @@
+---
+description: 自然语言要求跑基础测试流程时，先用中文 AskQuestion 澄清失败时是否自动修复；本仓库内「示例」默认 examples/godot_minimal
+alwaysApply: true
+---
+
+# 跑基础测试流程前的交互（强制）
+
+1. **本仓库内「示例项目」**：用户未指定其它路径时，`project_root` 使用 **`examples/godot_minimal`** 的绝对路径（见 **`global-communication-terminology.mdc`** §1.1）。
+2. 当用户自然语言触发 **`run_game_basic_test_flow`** / **`run_game_basic_test_flow_by_current_state`**（含经 **`route_nl_intent`** 路由），且用户 **尚未** 明确说「不要自动修 / 只跑不修」或「失败时要自动修」等等价语义时：必须先使用 **AskQuestion**，文案与选项严格采用 **`docs/gpf-nl-basic-flow-clarifying-questions.md`** 中的 **prompt** 与 **两档 label**。
+3. 得到用户选项后，再构造 MCP **`tools/call`** 的 `arguments`：**禁止**在面向用户的句子中出现 `GPF_AGENT_SESSION_DEFAULTS` 等实现细节词；实现侧映射见该文档表格。
+4. 若用户在同一条消息里已明确二选一（与表格语义等价），可跳过 AskQuestion，但须在回复中 **复述** 用户选择。

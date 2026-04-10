@@ -3455,15 +3455,18 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
     }
 
 
-def _tool_route_nl_intent(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+def _tool_route_nl_intent(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     text = str(arguments.get("text", "")).strip()
     if not text:
         raise AppError("INVALID_ARGUMENT", "text is required")
     routed = route_nl_intent(text)
+    example_root = (ctx.repo_root / "examples" / "godot_minimal").resolve()
     return {
         "text": text,
         "target_tool": routed.target_tool,
         "reason": routed.reason,
+        "canonical_example_project_rel": "examples/godot_minimal",
+        "canonical_example_project_root": str(example_root),
     }
 
 
@@ -4066,7 +4069,11 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         "route_nl_intent": {
-            "description": "Route natural-language command text to MCP tool intents.",
+            "description": (
+                "Route natural-language command text to MCP tool intents. "
+                "Result includes canonical_example_project_root / canonical_example_project_rel "
+                "for this repo's MCP dev sample (examples/godot_minimal)."
+            ),
             "inputSchema": {
                 "type": "object",
                 "required": ["text"],

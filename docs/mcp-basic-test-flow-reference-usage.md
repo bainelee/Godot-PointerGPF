@@ -7,9 +7,9 @@
 | 动作 | 工具名 | 说明 |
 |------|--------|------|
 | 一次性取出本说明全文 + 目标工程内路径提示 | `get_basic_test_flow_reference_guide` | 可选传入 `project_root`，返回 `markdown` 与 `project_context_paths` |
-| 仅判断「这句话该调用哪个工具」 | `route_nl_intent` | 传入 `text`，返回 `target_tool` 与 `reason` |
+| 仅判断「这句话该调用哪个工具」 | `route_nl_intent` | 传入 `text`，返回 `target_tool`、`reason`，以及本仓库示例工程路径字段 `canonical_example_project_root` / `canonical_example_project_rel`（见 **`docs/gpf-nl-basic-flow-clarifying-questions.md`**） |
 
-代理执行顺序建议：用户口述需求 → `route_nl_intent` → 若 `target_tool` 为本表中的工具名，则 `tools/call` 执行之。
+代理执行顺序建议：用户口述需求 → `route_nl_intent` → 若 `target_tool` 为跑流程类工具，先按 **`docs/gpf-nl-basic-flow-clarifying-questions.md`** 做用户澄清（AskQuestion）→ 再 `tools/call` 执行之。
 
 ## 2. 自然语言示例 → `route_nl_intent` 结果
 

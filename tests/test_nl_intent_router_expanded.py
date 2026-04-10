@@ -37,6 +37,10 @@ class NlIntentRouterExpandedTests(unittest.TestCase):
             ("试一下 smoke 游戏流程", "run_game_basic_test_flow_by_current_state"),
             ("界面和 Figma 对比核查", "compare_figma_game_ui"),
             ("按钮按不了自动修复一下", "auto_fix_game_bug"),
+            ("基础测试流程怎么用", "get_basic_test_flow_reference_guide"),
+            ("流程预期说明文档在哪", "get_basic_test_flow_reference_guide"),
+            ("游戏类型流程预期查看说明", "get_basic_test_flow_reference_guide"),
+            ("基础测试流程使用说明", "get_basic_test_flow_reference_guide"),
         ]
         self.assertGreaterEqual(len(cases), 20, "plan requires at least 20 phrasings")
         for text, expected_tool in cases:
@@ -47,6 +51,33 @@ class NlIntentRouterExpandedTests(unittest.TestCase):
     def test_unknown_when_no_intent(self) -> None:
         self.assertEqual(route_nl_intent("今天天气真好").target_tool, "unknown")
         self.assertEqual(route_nl_intent("").target_tool, "unknown")
+
+    def test_route_nl_intent_tool_includes_canonical_example_paths(self) -> None:
+        import server as srv
+
+        ctx = srv.ServerCtx(
+            repo_root=REPO,
+            template_plugin_dir=REPO / "godot_plugin_template" / "addons" / "pointer_gpf",
+        )
+        out = srv._tool_route_nl_intent(ctx, {"text": "跑一遍基础测试流程"})
+        self.assertEqual(out.get("canonical_example_project_rel"), "examples/godot_minimal")
+        self.assertEqual(out.get("canonical_example_project_root"), str((REPO / "examples" / "godot_minimal").resolve()))
+
+    def test_get_basic_test_flow_reference_guide_tool_returns_doc(self) -> None:
+        import server as srv
+
+        ctx = srv.ServerCtx(
+            repo_root=REPO,
+            template_plugin_dir=REPO / "godot_plugin_template" / "addons" / "pointer_gpf",
+        )
+        out = srv._tool_get_basic_test_flow_reference_guide(
+            ctx,
+            {"project_root": str(REPO / "examples" / "godot_minimal")},
+        )
+        self.assertEqual(out.get("status"), "ok")
+        self.assertIn("自然语言", str(out.get("markdown", "")))
+        paths = out.get("project_context_paths") or {}
+        self.assertIn("project_root", paths)
 
 
 if __name__ == "__main__":

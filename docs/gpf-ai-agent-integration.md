@@ -2,6 +2,8 @@
 
 本文说明：**终端用户**、**自动化代理（含 AI IDE）** 与 **CI** 在使用 PointerGPF（GPF）跑基础测试流程时的责任边界。目标：用户完成「安装与初始化」后，**不因 CI 环境变量或遗漏字段**而被迫手动按 Play 或改 shell 才能走自动修复。
 
+> **给终端用户：** 你不需要记住任何环境变量名。用自然语言说「跑一遍基础测试流程」时，助手应先给你一个 **二选一** 的澄清问题（固定文案见 **`docs/gpf-nl-basic-flow-clarifying-questions.md`**）。下面「环境变量」小节主要给 **CI 与脚本集成方** 阅读。
+
 ## 1. 用户一次性义务（类比「插电」）
 
 用户或工程维护者需保证：
@@ -13,9 +15,11 @@
 
 以上不满足时，返回体中的 **`blocking_point`**、`engine_bootstrap`、`next_actions` 为**硬失败依据**，不是「请用户去按 F5」的软性提示。
 
-## 2. 代理 / AI IDE 义务（电流应流入空调）
+## 2.（集成方）代理如何覆盖 CI 的关自动修
 
-当代理代表用户执行 **`run_game_basic_test_flow`** 或 **`run_game_basic_test_flow_by_current_state`** 且 **未显式传** `auto_repair` 时，必须二选一（推荐两者同时满足）：
+终端用户侧请优先走 **`docs/gpf-nl-basic-flow-clarifying-questions.md`**（AskQuestion 二选一后再调 MCP），不要在对话里向用户口述本节环境变量名。
+
+当代理代表用户执行 **`run_game_basic_test_flow`** 或 **`run_game_basic_test_flow_by_current_state`** 且 **未显式传** `auto_repair` 时，集成方可二选一（推荐两者同时满足）：
 
 1. **环境变量**：在运行 `python mcp/server.py` 的进程中设置 **`GPF_AGENT_SESSION_DEFAULTS=1`**（或 `true` / `yes`，大小写不敏感，见 `mcp/server.py` 中 `_truthy_env`）。
 2. **请求 JSON**：传入 **`"agent_session_defaults": true`**。
@@ -37,6 +41,7 @@
 ## 5. 与用户文档的关系
 
 - 面向步骤与命令的 **`docs/quickstart.md`**、**`docs/mcp-basic-test-flow-reference-usage.md`**：保留用户侧说明，并 **链接到本文** 供「代理/集成方」阅读。
+- 自然语言跑流程前的 **AskQuestion 固定文案**：**`docs/gpf-nl-basic-flow-clarifying-questions.md`**。
 - 本文 **不** 要求终端用户理解 `GPF_AGENT_SESSION_DEFAULTS`；该变量由 **IDE 集成、Cursor 规则、或代理包装脚本** 注入即可。
 
 ## 6. 字段对照
