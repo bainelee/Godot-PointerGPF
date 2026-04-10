@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -23,8 +24,19 @@ from typing import Any
 
 from basic_flow_contracts import build_dual_conclusions
 from bug_fix_loop import run_bug_fix_loop
-from flow_execution import FlowExecutionStepFailed, FlowExecutionTimeout, FlowRunOptions, FlowRunner
+from flow_execution import (
+    FlowExecutionEngineStalled,
+    FlowExecutionStepFailed,
+    FlowExecutionTimeout,
+    FlowRunOptions,
+    FlowRunner,
+)
 from nl_intent_router import route_nl_intent
+from operational_profile import (
+    build_operational_profile_bundle,
+    pick_enter_game_candidate,
+    split_flow_candidates_by_phase,
+)
 
 
 DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
@@ -624,6 +636,251 @@ def _maybe_request_project_close(project_root: Path, close_project_on_finish: bo
     if not close_project_on_finish:
         return _project_close_skipped_meta()
     return _request_project_close(project_root)
+
+
+def _windows_find_godot_pids_holding_path(project_root: Path) -> list[int]:
+    """Return PIDs whose command line mentions Godot and contains the project path (Windows / PowerShell)."""
+    norm = str(project_root.resolve()).replace("\\", "/").lower()
+    norm_esc = norm.replace("'", "''")
+    ps_script = (
+        f"$pn = '{norm_esc}'; "
+        "Get-CimInstance Win32_Process | Where-Object { "
+        "  $cl = $_.CommandLine; "
+        "  $cl -and "
+        "  (($cl.Replace([char]92,'/').ToLowerInvariant()) -match 'godot') -and "
+        "  ($cl.Replace([char]92,'/').ToLowerInvariant().Contains($pn)) "
+        "} | ForEach-Object { [int]$_.ProcessId }"
+    )
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        creationflags=creationflags,
+    )
+    if proc.returncode != 0:
+        raise OSError(f"powershell list processes failed: {proc.stderr.strip() or proc.stdout.strip()}")
+    out: list[int] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(int(line))
+        except ValueError:
+            continue
+    return sorted(set(out))
+
+
+def _posix_find_godot_pids_holding_path(project_root: Path) -> list[int]:
+    norm = str(project_root.resolve()).lower()
+    # Linux: ps -eo pid= args= ; macOS often supports ps -ax -o pid=,command=
+    for ps_args in (["ps", "-eo", "pid=", "-o", "args="], ["ps", "-ax", "-o", "pid=", "-o", "command="]):
+        proc = subprocess.run(ps_args, capture_output=True, text=True, timeout=25, check=False)
+        if proc.returncode != 0:
+            continue
+        pids: list[int] = []
+        for raw in proc.stdout.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            parts = line.split(None, 1)
+            if len(parts) < 2:
+                continue
+            try:
+                pid = int(parts[0])
+            except ValueError:
+                continue
+            blob = parts[1].lower()
+            if "godot" not in blob:
+                continue
+            blob_slash = blob.replace("\\", "/")
+            if norm.replace("\\", "/") in blob_slash or norm in blob:
+                pids.append(pid)
+        return sorted(set(pids))
+    raise OSError("failed to enumerate processes via ps")
+
+
+def _force_terminate_godot_processes_holding_project(project_root: Path) -> dict[str, Any]:
+    """Best-effort: kill processes that look like Godot and reference project_root. Caller must opt in."""
+    try:
+        if os.name == "nt":
+            pids = _windows_find_godot_pids_holding_path(project_root)
+        else:
+            pids = _posix_find_godot_pids_holding_path(project_root)
+    except OSError as exc:
+        return {"outcome": "enumerate_failed", "pids": [], "detail": str(exc)}
+    if not pids:
+        return {
+            "outcome": "no_matching_process",
+            "pids": [],
+            "detail": f"no Godot process with command line containing {project_root}",
+        }
+    killed: list[int] = []
+    errors: list[str] = []
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    for pid in pids:
+        try:
+            if os.name == "nt":
+                proc = subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                    creationflags=creationflags,
+                )
+                if proc.returncode != 0:
+                    errors.append(f"pid {pid}: {proc.stderr.strip() or proc.stdout.strip()}")
+                else:
+                    killed.append(pid)
+            else:
+                os.kill(pid, signal.SIGTERM)
+                killed.append(pid)
+        except OSError as exc:
+            errors.append(f"pid {pid}: {exc}")
+    return {
+        "outcome": "terminated" if killed else "terminate_failed",
+        "pids": killed,
+        "detail": "; ".join(errors) if errors else "",
+    }
+
+
+def _hard_teardown_for_flow_failure(
+    project_root: Path,
+    arguments: dict[str, Any],
+    close_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Structured evidence after a failed flow: whether Play likely still runs, and optional process kill."""
+    requested = bool(close_meta.get("requested", False))
+    acknowledged = bool(close_meta.get("acknowledged", False))
+    force = bool(arguments.get("force_terminate_godot_on_flow_failure", False))
+    block: dict[str, Any] = {
+        "close_requested": requested,
+        "close_acknowledged": acknowledged,
+        "user_must_check_engine_process": requested and not acknowledged,
+        "force_terminate_godot": {
+            "opt_in": force,
+            "attempted": False,
+            "outcome": "",
+            "pids": [],
+            "detail": "",
+        },
+    }
+    ft = block["force_terminate_godot"]
+    if not requested:
+        ft["outcome"] = "close_not_requested"
+        ft["detail"] = "close_project_on_finish was false; no bridge close was sent"
+        return block
+    if acknowledged:
+        ft["outcome"] = "skipped_close_acknowledged"
+        ft["detail"] = "closeProject was acknowledged; engine should be back in editor idle"
+        return block
+    if not force:
+        ft["outcome"] = "disabled_by_default"
+        ft["detail"] = (
+            "closeProject was not acknowledged within timeout; Play mode may still be running. "
+            "Pass force_terminate_godot_on_flow_failure=true only if you accept terminating Godot processes "
+            "whose command line contains this project_root (may close the editor holding the project)."
+        )
+        return block
+    ft["attempted"] = True
+    res = _force_terminate_godot_processes_holding_project(project_root)
+    ft["outcome"] = str(res.get("outcome", ""))
+    ft["pids"] = list(res.get("pids", []))
+    ft["detail"] = str(res.get("detail", ""))
+    return block
+
+
+def _attach_hard_teardown(
+    details: dict[str, Any],
+    project_root: Path,
+    arguments: dict[str, Any],
+    close_meta: dict[str, Any],
+) -> None:
+    details["hard_teardown"] = _hard_teardown_for_flow_failure(project_root, arguments, close_meta)
+
+
+def _issue_text_from_flow_app_error(exc: AppError) -> str:
+    det = exc.details if isinstance(exc.details, dict) else {}
+    sug = det.get("auto_fix_arguments_suggestion")
+    if isinstance(sug, dict):
+        iss = str(sug.get("issue", "")).strip()
+        if iss:
+            return iss
+    return f"{exc.code}: {exc.message}"
+
+
+def _issue_text_from_execution_payload(payload: dict[str, Any]) -> str:
+    rep = payload.get("execution_report")
+    if not isinstance(rep, dict):
+        rep = payload
+    status = str(rep.get("status", "")).strip()
+    rid = str(rep.get("run_id", "")).strip()
+    return f"basic flow finished with status={status!r} run_id={rid!r}"
+
+
+def _env_auto_repair_default() -> bool:
+    raw = os.environ.get("GPF_AUTO_REPAIR_DEFAULT")
+    if raw is None:
+        return True
+    return raw.strip() not in ("0", "false", "False", "")
+
+
+_NON_REPAIRABLE_FLOW_APP_CODES = frozenset(
+    {
+        "INVALID_ARGUMENT",
+        "TEMP_PROJECT_FORBIDDEN",
+        "INVALID_GODOT_PROJECT",
+        "BROADCAST_ENTRY_REQUIRED",
+        "FLOW_GENERATION_BLOCKED",
+    }
+)
+
+
+def _parse_auto_repair_params(arguments: dict[str, Any]) -> tuple[bool, int, int]:
+    if "auto_repair" in arguments:
+        auto_repair = bool(arguments.get("auto_repair"))
+    else:
+        auto_repair = _env_auto_repair_default()
+    raw_mr = arguments.get("max_repair_rounds", 2)
+    try:
+        max_repair_rounds = int(raw_mr) if raw_mr is not None else 2
+    except (TypeError, ValueError):
+        max_repair_rounds = 2
+    max_repair_rounds = max(1, min(8, max_repair_rounds))
+    raw_fc = arguments.get("auto_fix_max_cycles", 3)
+    try:
+        fix_cycles = int(raw_fc) if raw_fc is not None else 3
+    except (TypeError, ValueError):
+        fix_cycles = 3
+    fix_cycles = max(0, fix_cycles)
+    return auto_repair, max_repair_rounds, fix_cycles
+
+
+def _invoke_auto_fix_round_for_flow(
+    ctx: ServerCtx,
+    fix_base: dict[str, Any],
+    issue: str,
+    fix_cycles: int,
+) -> dict[str, Any]:
+    if fix_cycles <= 0:
+        return {"skipped": True, "reason": "auto_fix_max_cycles=0"}
+    try:
+        payload = _tool_auto_fix_game_bug(
+            ctx,
+            {
+                **fix_base,
+                "issue": issue,
+                "max_cycles": fix_cycles,
+                "auto_repair": False,
+            },
+        )
+        return {"ok": True, "result": payload}
+    except AppError as fix_exc:
+        return {"ok": False, "error": fix_exc.as_dict()}
 
 
 def _legacy_layout_hints(project_root: Path) -> list[dict[str, str]]:
@@ -1602,6 +1859,56 @@ def _compute_delta(previous: dict[str, Any], files: list[FileEntry]) -> dict[str
     }
 
 
+def _interaction_static_rank(action: dict[str, Any]) -> int:
+    si = action.get("static_interaction") if isinstance(action.get("static_interaction"), dict) else {}
+    lk = str(si.get("player_click_likelihood", "medium"))
+    return {"high": 3, "medium": 2, "low": 1, "none": 0}.get(lk, 2)
+
+
+def _rank_click_actions_by_static_interaction(
+    actions: list[dict[str, Any]],
+    *,
+    allow_low_likelihood: bool = False,
+) -> list[dict[str, Any]]:
+    sorted_a = sorted(actions, key=lambda x: -_interaction_static_rank(x))
+    if allow_low_likelihood:
+        return sorted_a
+    non_none = [x for x in sorted_a if _interaction_static_rank(x) > 0]
+    return non_none if non_none else sorted_a
+
+
+def _enrich_flow_candidates_static_interaction(
+    project_root: Path,
+    flow_candidates: dict[str, Any],
+    viewport: tuple[int, int],
+) -> None:
+    from scene_interaction_model import parse_tscn_nodes, summarize_control_interaction
+
+    cache: dict[str, list[Any]] = {}
+    for act in flow_candidates.get("action_candidates", []):
+        if not isinstance(act, dict):
+            continue
+        for ev in act.get("evidence", []) or []:
+            if not isinstance(ev, str) or not ev.startswith("scene_button:"):
+                continue
+            rest = ev[len("scene_button:") :]
+            idx = rest.rfind(":")
+            if idx <= 0:
+                continue
+            scene_rel = rest[:idx].replace("\\", "/")
+            node_name = rest[idx + 1 :]
+            if scene_rel not in cache:
+                p = project_root / scene_rel
+                if p.is_file():
+                    cache[scene_rel] = parse_tscn_nodes(p.read_text(encoding="utf-8", errors="replace"))
+                else:
+                    cache[scene_rel] = []
+            nodes = cache[scene_rel]
+            if nodes:
+                act["static_interaction"] = summarize_control_interaction(nodes, node_name, viewport=viewport)
+            break
+
+
 def _build_context_docs(
     project_root: Path,
     files: list[FileEntry],
@@ -1628,6 +1935,13 @@ def _build_context_docs(
         scene_signals=scene_signals,
         data_signals=data_signals,
         inferred_keywords=keywords,
+    )
+    from scene_interaction_model import read_viewport_size_from_project
+
+    _enrich_flow_candidates_static_interaction(
+        project_root,
+        flow_candidates,
+        read_viewport_size_from_project(project_root / "project.godot"),
     )
     delta = _compute_delta(previous, files)
 
@@ -1687,13 +2001,40 @@ def _build_context_docs(
         "- Prefer explicit action and verify pairs.\n"
         "- Use scene and script signals from `index.json` to pick stable targets.\n"
         "- If confidence < 0.6, generate conservative smoke flows first.\n"
-        "- After major refactor, call `refresh_project_context` before generating new flows.\n\n"
+        "- After major refactor, call `refresh_project_context` before generating new flows.\n"
+        "- Read `06-operational-profile.md` for phased runtime (menu vs post-`change_scene`) before authoring flows.\n"
+        "- Before extending `design_game_basic_test_flow` output, read **§ 按游戏类型的流程预期** below and the full reference in the PointerGPF repo: `docs/mcp-basic-test-flow-game-type-expectations.md`.\n\n"
+        "## 按游戏类型的流程预期（思考参照）\n\n"
+        "- 目的：在步数有限时，仍尽量覆盖「进入可玩态 → 一条核心交互 → 可观察结果」；一切必须以 `flow_candidates`、`06-operational-profile.md`（含静态可点性）中的**证据**为准。\n"
+        "- 未完成或未接入的功能不要写进步骤；证据不足时接受 `blocked` 或保守冒烟，并看 `generation_evidence`。\n"
+        "- 完整表与说明见仓库文档（上路径）；下为速查。\n\n"
+        "| 类型线索 | 进入可玩态后优先覆盖 |\n"
+        "|----------|----------------------|\n"
+        "| FPS / 第一人称 | 移动或视角相关一次；若自动化仅 UI，则进关后点一条 HUD/模式相关控件 |\n"
+        "| 平台 / 横版 | 进第一关；跳跃或移动；仅菜单自动化则「开始」+ 关卡 UI 断言 |\n"
+        "| RTS / 塔防 / 建造 | 进战斗或沙盘；选单位、放塔、开波次之一（有候选才写） |\n"
+        "| 回合制 / 卡牌 | 进对局；结束回合或出牌或「开始对战」之一 |\n"
+        "| 解谜 / 叙事 | 进首个可互动场景；与谜题或对话相关的一次点击 |\n"
+        "| 竞速 / 体育 | 开赛；暂停或设置其一作为可观察点 |\n"
+        "| 休闲 / 超休闲 | 开始 → 单局内最小操作 → 分数或重开 |\n"
+        "| 纯菜单 / UI 驱动 | 主路径 + 子面板往返（如设置→返回） |\n"
+        "| RPG / 开放世界（重内容） | 新游戏/继续 → 可操作角色态 → 地图或背包（有证据才写） |\n"
+        "| 联网 / 多人 | 通常仅测到大厅/登录 UI；勿假设匹配成功 |\n\n"
+        "- **用法与自然语言**：可调用 MCP 工具 `get_basic_test_flow_reference_guide` 获取本段与触发说明全文；"
+        "用户说「基础测试流程怎么用」「流程预期说明」等时，`route_nl_intent` 可路由到该工具。仓库文档：`docs/mcp-basic-test-flow-reference-usage.md`。\n\n"
         "## Refresh Delta\n\n"
         f"- added: {delta['added_count']}\n"
         f"- removed: {delta['removed_count']}\n"
         f"- changed: {delta['changed_count']}\n"
     )
     flow_catalog = _flow_candidates_markdown(flow_candidates)
+
+    op_bundle = build_operational_profile_bundle(
+        project_root,
+        script_signals=script_signals,
+        scene_signals=scene_signals,
+        inferred_keywords=keywords,
+    )
 
     fingerprints = {f.rel: f.fingerprint() for f in files}
     index = {
@@ -1711,6 +2052,7 @@ def _build_context_docs(
         "scene_signals": scene_signals,
         "data_signals": data_signals,
         "flow_candidates": flow_candidates,
+        "operational_profile": op_bundle.data,
         "todo_signals": todo_signals[:80],
         "documents": {
             "overview": "01-project-overview.md",
@@ -1718,6 +2060,7 @@ def _build_context_docs(
             "test_surface": "03-test-surface.md",
             "flow_authoring_guide": "04-flow-authoring-guide.md",
             "flow_candidate_catalog": "05-flow-candidate-catalog.md",
+            "operational_profile": "06-operational-profile.md",
         },
         "config_sources": cfg.config_sources,
         "effective_config": {
@@ -1738,6 +2081,7 @@ def _build_context_docs(
     _write_text(context_dir / "03-test-surface.md", test_surface)
     _write_text(context_dir / "04-flow-authoring-guide.md", flow_guide)
     _write_text(context_dir / "05-flow-candidate-catalog.md", flow_catalog)
+    _write_text(context_dir / "06-operational-profile.md", op_bundle.markdown)
     _write_text(context_dir / "index.json", json.dumps(index, ensure_ascii=False, indent=2))
     return {
         "documents": {
@@ -1747,6 +2091,7 @@ def _build_context_docs(
             "test_surface": str(context_dir / "03-test-surface.md"),
             "flow_authoring_guide": str(context_dir / "04-flow-authoring-guide.md"),
             "flow_candidate_catalog": str(context_dir / "05-flow-candidate-catalog.md"),
+            "operational_profile": str(context_dir / "06-operational-profile.md"),
             "index_json": str(context_dir / "index.json"),
         },
         "index": index,
@@ -2076,6 +2421,22 @@ def _save_load_capability_signals(context_index: dict[str, Any]) -> dict[str, An
     }
 
 
+def _filter_action_candidates_basic(action_candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    filtered_actions: list[dict[str, Any]] = []
+    for candidate in action_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        kind = str(candidate.get("kind", "")).strip().lower()
+        if kind not in {"click", "wait"}:
+            continue
+        if kind == "click" and not str(candidate.get("target_hint", "")).strip():
+            continue
+        if kind == "wait" and not str(candidate.get("until_hint", "")).strip():
+            continue
+        filtered_actions.append(candidate)
+    return filtered_actions
+
+
 def _filter_candidates_for_basic_flow(
     action_candidates: list[dict[str, Any]],
     assertion_candidates: list[dict[str, Any]],
@@ -2120,6 +2481,7 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
     flow_name = str(arguments.get("flow_name", "")).strip() or "基础游戏测试流程"
     max_feature_checks = int(arguments.get("max_feature_checks", 3))
     max_feature_checks = max(1, min(max_feature_checks, 8))
+    allow_low_likelihood = bool(arguments.get("allow_low_likelihood", False))
 
     flow_candidates = context_index.get("flow_candidates", {}) if isinstance(context_index.get("flow_candidates"), dict) else {}
     action_candidates_raw = [
@@ -2130,6 +2492,9 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
     ]
     action_candidates, assertion_candidates, candidate_reasons = _filter_candidates_for_basic_flow(
         action_candidates_raw, assertion_candidates_raw
+    )
+    action_candidates = _rank_click_actions_by_static_interaction(
+        action_candidates, allow_low_likelihood=allow_low_likelihood
     )
     save_load = _save_load_capability_signals(context_index)
 
@@ -2145,7 +2510,78 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
         "blocked_reasons": list(candidate_reasons),
         "selected_steps": {},
     }
-    selected_actions = action_candidates[:max_feature_checks]
+
+    op_profile = (
+        context_index.get("operational_profile") if isinstance(context_index.get("operational_profile"), dict) else {}
+    )
+    phase_split = split_flow_candidates_by_phase(flow_candidates, op_profile)
+    transitions: list[Any] = []
+    phases = op_profile.get("runtime_phases")
+    if isinstance(phases, list) and len(phases) > 1 and isinstance(phases[1], dict):
+        transitions = phases[1].get("scene_transitions") or []
+    use_phased = bool(phase_split.get("enabled")) and isinstance(transitions, list) and len(transitions) > 0
+
+    selected_actions: list[dict[str, Any]]
+    if use_phased:
+        menu_actions_raw = [x for x in phase_split.get("menu_actions", []) if isinstance(x, dict)]
+        level_actions_raw = [x for x in phase_split.get("level_actions", []) if isinstance(x, dict)]
+        level_assert_raw = [x for x in phase_split.get("level_assertions", []) if isinstance(x, dict)]
+        menu_a = _filter_action_candidates_basic(menu_actions_raw)
+        level_a = _filter_action_candidates_basic(level_actions_raw)
+        level_a_f, level_ast, level_only_reasons = _filter_candidates_for_basic_flow(
+            level_actions_raw, level_assert_raw
+        )
+        if not level_ast:
+            level_a_f, level_ast, level_only_reasons = _filter_candidates_for_basic_flow(
+                level_actions_raw, assertion_candidates_raw
+            )
+        # Prefer filtered level click actions; keep assertions aligned to level phase.
+        level_a = level_a_f or level_a
+        menu_a = _rank_click_actions_by_static_interaction(menu_a, allow_low_likelihood=allow_low_likelihood)
+        level_a = _rank_click_actions_by_static_interaction(level_a, allow_low_likelihood=allow_low_likelihood)
+        generation_evidence["candidate_counts"]["phased"] = {
+            "menu_action_raw": len(menu_actions_raw),
+            "level_action_raw": len(level_actions_raw),
+            "menu_action_filtered": len(menu_a),
+            "level_action_filtered": len(level_a),
+        }
+        generation_evidence["phased_generation"] = True
+        generation_evidence["scene_transitions"] = transitions
+        entry_action = pick_enter_game_candidate(menu_a) or (menu_a[0] if menu_a else None)
+        if entry_action is None:
+            exp_artifact = _write_exp_runtime_artifact(
+                project_root=project_root,
+                cfg=cfg,
+                artifact_name="basic_game_test_flow_last",
+                payload={
+                    "tool": "design_game_basic_test_flow",
+                    "generated_at": _utc_iso(),
+                    "project_root": str(project_root),
+                    "flow_id": flow_id,
+                    "status": "blocked",
+                    "reasons": ["no_menu_phase_actions_for_scene_change"],
+                    "generation_evidence": generation_evidence,
+                },
+            )
+            return {
+                "status": "blocked",
+                "project_root": str(project_root),
+                "flow_id": flow_id,
+                "flow_file": "",
+                "step_count": 0,
+                "selected_feature_checks": 0,
+                "save_load_signals": save_load,
+                "reasons": ["no_menu_phase_actions_for_scene_change"],
+                "generation_evidence": generation_evidence,
+                "exp_runtime": exp_artifact,
+            }
+        selected_actions = [entry_action] + level_a[:max_feature_checks]
+        assertion_candidates = level_ast
+        candidate_reasons = [x for x in level_only_reasons if x]
+        generation_evidence["blocked_reasons"] = list(candidate_reasons)
+    else:
+        selected_actions = action_candidates[:max_feature_checks]
+
     if not selected_actions:
         exp_artifact = _write_exp_runtime_artifact(
             project_root=project_root,
@@ -2243,6 +2679,8 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
             "Focus: evidence-driven minimal flow (entry interaction + verification + snapshot).",
             "Save/Load steps are included only when both script and UI entry evidence are detected.",
             f"selected_feature_checks={len(selected_actions)}",
+            f"phased_by_operational_profile={use_phased}",
+            f"operational_profile_doc={cfg.context_dir_rel}/06-operational-profile.md",
         ],
         "generation_evidence": generation_evidence,
     }
@@ -2398,7 +2836,23 @@ def _tool_generate_flow_seed(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict
     }
 
 
-def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+def _diagnostics_to_issue_text(d: dict[str, Any]) -> str:
+    summary = str(d.get("summary", "")).strip()
+    items = d.get("items")
+    chunks: list[str] = []
+    if summary:
+        chunks.append(summary)
+    if isinstance(items, list):
+        for it in items[:3]:
+            if isinstance(it, dict):
+                msg = str(it.get("message", "")).strip()
+                if msg:
+                    chunks.append(msg)
+    out = " | ".join(chunks)
+    return out if out else "runtime diagnostics reported error/fatal"
+
+
+def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
     cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
     flow_file_raw = str(arguments.get("flow_file", "")).strip()
@@ -2437,23 +2891,25 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         auto_enter_requested = bool(engine_bootstrap.get("auto_enter_play_mode_requested", False))
     if not bool(runtime_meta.get("runtime_gate_passed", False)):
         close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+        _rgf_details: dict[str, Any] = {
+            "runtime_mode": runtime_meta.get("runtime_mode", "editor_bridge"),
+            "runtime_entry": runtime_meta.get("runtime_entry", "unknown"),
+            "runtime_gate_passed": False,
+            "auto_enter_play_mode_requested": auto_enter_requested,
+            "engine_bootstrap": engine_bootstrap,
+            "blocking_point": "runtime_gate_not_passed_after_bootstrap_attempt",
+            "next_actions": [
+                "check project_root points to intended project",
+                "set godot_executable or tools/game-test-runner/config/godot_executable.json",
+                "re-run run_game_basic_test_flow after engine starts and enters play mode",
+            ],
+            "project_close": close_meta,
+        }
+        _attach_hard_teardown(_rgf_details, project_root, arguments, close_meta)
         raise AppError(
             "RUNTIME_GATE_FAILED",
             "play mode is required before executing flow (strict policy)",
-            {
-                "runtime_mode": runtime_meta.get("runtime_mode", "editor_bridge"),
-                "runtime_entry": runtime_meta.get("runtime_entry", "unknown"),
-                "runtime_gate_passed": False,
-                "auto_enter_play_mode_requested": auto_enter_requested,
-                "engine_bootstrap": engine_bootstrap,
-                "blocking_point": "runtime_gate_not_passed_after_bootstrap_attempt",
-                "next_actions": [
-                    "check project_root points to intended project",
-                    "set godot_executable or tools/game-test-runner/config/godot_executable.json",
-                    "re-run run_game_basic_test_flow after engine starts and enters play mode",
-                ],
-                "project_close": close_meta,
-            },
+            _rgf_details,
         )
     runtime_dir = _exp_runtime_dir(project_root, cfg)
     opts = FlowRunOptions(
@@ -2465,6 +2921,7 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         fail_fast=bool(arguments.get("fail_fast", True)),
         shell_report=shell_report,
         runtime_meta=runtime_meta,
+        observe_engine_errors=bool(arguments.get("observe_engine_errors", True)),
     )
     runner = FlowRunner(opts)
     try:
@@ -2473,38 +2930,82 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
         close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
-        raise AppError(
-            "TIMEOUT",
-            str(exc),
-            {
-                "run_id": exc.run_id,
-                "step_index": exc.step_index,
-                "step_id": exc.step_id,
-                "execution_report": rep,
-                "tool_usability": dual["tool_usability"],
-                "gameplay_runnability": dual["gameplay_runnability"],
-                "step_broadcast_summary": rep.get("step_broadcast_summary"),
-                "project_close": close_meta,
+        _to_details: dict[str, Any] = {
+            "run_id": exc.run_id,
+            "step_index": exc.step_index,
+            "step_id": exc.step_id,
+            "execution_report": rep,
+            "tool_usability": dual["tool_usability"],
+            "gameplay_runnability": dual["gameplay_runnability"],
+            "step_broadcast_summary": rep.get("step_broadcast_summary"),
+            "project_close": close_meta,
+            "diagnostics_file_rel": "pointer_gpf/tmp/runtime_diagnostics.json",
+            "blocking_point": "file_bridge_no_response_within_step_timeout",
+            "next_actions": [
+                "confirm PointerGPF plugin autoload is running in play mode",
+                "inspect pointer_gpf/tmp/runtime_diagnostics.json for engine-side errors",
+                "inspect pointer_gpf/tmp/response.json and command.json pairing",
+            ],
+            "suggested_next_tool": "auto_fix_game_bug",
+            "auto_fix_arguments_suggestion": {
+                "issue": (
+                    f"basic flow step timed out (no bridge response): step_id={exc.step_id!r} run_id={exc.run_id!r}: {exc}"
+                ),
+                "max_cycles": 3,
             },
-        ) from exc
+        }
+        _attach_hard_teardown(_to_details, project_root, arguments, close_meta)
+        raise AppError("TIMEOUT", str(exc), _to_details) from exc
     except FlowExecutionStepFailed as exc:
         close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
-        raise AppError(
-            "STEP_FAILED",
-            str(exc),
-            {
-                "run_id": exc.run_id,
-                "step_index": exc.step_index,
-                "step_id": exc.step_id,
-                "execution_report": rep,
-                "tool_usability": dual["tool_usability"],
-                "gameplay_runnability": dual["gameplay_runnability"],
-                "step_broadcast_summary": rep.get("step_broadcast_summary"),
-                "project_close": close_meta,
+        _sf_details: dict[str, Any] = {
+            "run_id": exc.run_id,
+            "step_index": exc.step_index,
+            "step_id": exc.step_id,
+            "execution_report": rep,
+            "tool_usability": dual["tool_usability"],
+            "gameplay_runnability": dual["gameplay_runnability"],
+            "step_broadcast_summary": rep.get("step_broadcast_summary"),
+            "project_close": close_meta,
+            "diagnostics_file_rel": "pointer_gpf/tmp/runtime_diagnostics.json",
+            "suggested_next_tool": "auto_fix_game_bug",
+            "auto_fix_arguments_suggestion": {
+                "issue": f"basic flow step failed: {exc.step_id}: {str(exc)}",
+                "max_cycles": 3,
             },
-        ) from exc
+        }
+        _attach_hard_teardown(_sf_details, project_root, arguments, close_meta)
+        raise AppError("STEP_FAILED", str(exc), _sf_details) from exc
+    except FlowExecutionEngineStalled as exc:
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+        rep = exc.report or {}
+        dual = build_dual_conclusions(rep)
+        _es_details: dict[str, Any] = {
+            "run_id": exc.run_id,
+            "step_index": exc.step_index,
+            "step_id": exc.step_id,
+            "execution_report": rep,
+            "runtime_diagnostics": exc.diagnostics,
+            "diagnostics_file_rel": "pointer_gpf/tmp/runtime_diagnostics.json",
+            "tool_usability": dual["tool_usability"],
+            "gameplay_runnability": dual["gameplay_runnability"],
+            "step_broadcast_summary": rep.get("step_broadcast_summary"),
+            "project_close": close_meta,
+            "blocking_point": "runtime_diagnostics_error_or_fatal_while_waiting_for_bridge",
+            "next_actions": [
+                "fix script or scene errors indicated in runtime_diagnostics.items",
+                "or call auto_fix_game_bug with auto_fix_arguments_suggestion.issue",
+            ],
+            "suggested_next_tool": "auto_fix_game_bug",
+            "auto_fix_arguments_suggestion": {
+                "issue": _diagnostics_to_issue_text(exc.diagnostics),
+                "max_cycles": 3,
+            },
+        }
+        _attach_hard_teardown(_es_details, project_root, arguments, close_meta)
+        raise AppError("ENGINE_RUNTIME_STALLED", str(exc), _es_details) from exc
     close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
     legacy_hints = _legacy_layout_hints(project_root)
     dual = build_dual_conclusions(report)
@@ -2541,7 +3042,68 @@ def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) ->
     }
 
 
-def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+def _tool_run_game_basic_test_flow_with_repair_loop(
+    ctx: ServerCtx,
+    arguments: dict[str, Any],
+    *,
+    max_repair_rounds: int,
+    auto_fix_max_cycles: int,
+) -> dict[str, Any]:
+    fix_base = dict(arguments)
+    rounds: list[dict[str, Any]] = []
+    last_out: dict[str, Any] | None = None
+    for idx in range(max_repair_rounds):
+        entry: dict[str, Any] = {"round_index": idx + 1, "max_rounds": max_repair_rounds}
+        try:
+            last_out = _tool_run_game_basic_test_flow_execute(ctx, arguments)
+        except AppError as exc:
+            if str(exc.code or "") in _NON_REPAIRABLE_FLOW_APP_CODES:
+                raise
+            entry["flow_phase"] = "exception"
+            entry["flow_error"] = exc.as_dict()
+            issue = _issue_text_from_flow_app_error(exc)
+            entry["issue_used_for_auto_fix"] = issue
+            entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+            rounds.append(entry)
+            continue
+        entry["flow_phase"] = "returned"
+        top_status = str(last_out.get("status", "")).strip()
+        er = last_out.get("execution_report") if isinstance(last_out.get("execution_report"), dict) else {}
+        exec_status = str(er.get("status", top_status)).strip()
+        entry["flow_snapshot"] = {"execution_status": exec_status}
+        if exec_status == "passed":
+            entry["outcome"] = "passed"
+            rounds.append(entry)
+            merged = dict(last_out)
+            merged["auto_repair"] = {
+                "enabled": True,
+                "final_status": "passed",
+                "rounds": rounds,
+            }
+            return merged
+        issue = _issue_text_from_execution_payload(last_out)
+        entry["issue_used_for_auto_fix"] = issue
+        entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+        rounds.append(entry)
+    exhaust: dict[str, Any] = dict(last_out) if last_out else {"status": "failed"}
+    exhaust["auto_repair"] = {
+        "enabled": True,
+        "final_status": "exhausted_rounds",
+        "rounds": rounds,
+    }
+    return exhaust
+
+
+def _tool_run_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    auto_repair, max_rr, fix_c = _parse_auto_repair_params(arguments)
+    if not auto_repair:
+        return _tool_run_game_basic_test_flow_execute(ctx, arguments)
+    return _tool_run_game_basic_test_flow_with_repair_loop(
+        ctx, arguments, max_repair_rounds=max_rr, auto_fix_max_cycles=fix_c
+    )
+
+
+def _tool_run_game_basic_test_flow_by_current_state_once(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
     refreshed = _tool_update_game_basic_design_flow_by_current_state(ctx, {**arguments, "project_root": str(project_root)})
     flow_result = refreshed.get("flow_result", {})
@@ -2562,6 +3124,7 @@ def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: d
         "flow_file": str(flow_result.get("flow_file", "")).strip(),
         "require_play_mode": True,
         "shell_report": True,
+        "auto_repair": False,
     }
     executed = _tool_run_game_basic_test_flow(ctx, run_args)
     return {
@@ -2569,6 +3132,162 @@ def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: d
         "context_refresh": refreshed.get("context_refresh", {}),
         "flow_result": flow_result,
         "execution_result": executed,
+    }
+
+
+def _tool_run_game_basic_test_flow_by_current_state_with_repair(
+    ctx: ServerCtx,
+    arguments: dict[str, Any],
+    max_repair_rounds: int,
+    auto_fix_max_cycles: int,
+) -> dict[str, Any]:
+    fix_base = dict(arguments)
+    rounds: list[dict[str, Any]] = []
+    last_out: dict[str, Any] | None = None
+    for idx in range(max_repair_rounds):
+        entry: dict[str, Any] = {"round_index": idx + 1, "max_rounds": max_repair_rounds}
+        try:
+            last_out = _tool_run_game_basic_test_flow_by_current_state_once(ctx, arguments)
+        except AppError as exc:
+            if str(exc.code or "") in _NON_REPAIRABLE_FLOW_APP_CODES:
+                raise
+            entry["flow_phase"] = "exception"
+            entry["flow_error"] = exc.as_dict()
+            issue = _issue_text_from_flow_app_error(exc)
+            entry["issue_used_for_auto_fix"] = issue
+            entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+            rounds.append(entry)
+            continue
+        entry["flow_phase"] = "returned"
+        er = last_out.get("execution_result") if isinstance(last_out.get("execution_result"), dict) else {}
+        st = str(er.get("status", "")).strip()
+        entry["flow_snapshot"] = {"execution_status": st}
+        if st == "passed":
+            entry["outcome"] = "passed"
+            rounds.append(entry)
+            merged = dict(last_out)
+            merged["auto_repair"] = {
+                "enabled": True,
+                "final_status": "passed",
+                "rounds": rounds,
+            }
+            return merged
+        issue = _issue_text_from_execution_payload(er)
+        entry["issue_used_for_auto_fix"] = issue
+        entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+        rounds.append(entry)
+    exhaust: dict[str, Any] = dict(last_out) if last_out else {"status": "failed"}
+    exhaust["auto_repair"] = {
+        "enabled": True,
+        "final_status": "exhausted_rounds",
+        "rounds": rounds,
+    }
+    return exhaust
+
+
+def _tool_run_game_basic_test_flow_by_current_state(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    auto_repair, max_rr, fix_c = _parse_auto_repair_params(arguments)
+    if not auto_repair:
+        return _tool_run_game_basic_test_flow_by_current_state_once(ctx, arguments)
+    return _tool_run_game_basic_test_flow_by_current_state_with_repair(ctx, arguments, max_rr, fix_c)
+
+
+_ORCHESTRATION_STRIPPED_KEYS = frozenset(
+    {"orchestration_explicit_opt_in", "max_orchestration_rounds", "auto_fix_max_cycles"}
+)
+
+
+def _tool_run_basic_test_flow_orchestrated(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Chain: refresh+run basic flow, then on failure run auto_fix_game_bug, up to N rounds (explicit opt-in)."""
+    if not bool(arguments.get("orchestration_explicit_opt_in", False)):
+        raise AppError(
+            "INVALID_ARGUMENT",
+            "orchestration_explicit_opt_in must be true (this tool chains flow runs and auto_fix; high cost)",
+            {
+                "fix": "read docs/mcp-basic-test-flow-reference-usage.md and set orchestration_explicit_opt_in=true",
+                "blocking_point": "orchestration_opt_in_required",
+            },
+        )
+    raw_max = arguments.get("max_orchestration_rounds", 2)
+    try:
+        max_rounds = int(raw_max) if raw_max is not None else 2
+    except (TypeError, ValueError):
+        raise AppError("INVALID_ARGUMENT", "max_orchestration_rounds must be an integer")
+    if max_rounds < 1 or max_rounds > 8:
+        raise AppError("INVALID_ARGUMENT", "max_orchestration_rounds must be between 1 and 8")
+    raw_fix = arguments.get("auto_fix_max_cycles", 3)
+    try:
+        fix_cycles = int(raw_fix) if raw_fix is not None else 3
+    except (TypeError, ValueError):
+        raise AppError("INVALID_ARGUMENT", "auto_fix_max_cycles must be an integer")
+    if fix_cycles < 0:
+        raise AppError("INVALID_ARGUMENT", "auto_fix_max_cycles must be >= 0")
+    project_root = _resolve_project_root(arguments)
+    run_base = {k: v for k, v in arguments.items() if k not in _ORCHESTRATION_STRIPPED_KEYS}
+    run_base["auto_repair"] = False
+    rounds: list[dict[str, Any]] = []
+    last_out: dict[str, Any] | None = None
+    for idx in range(max_rounds):
+        entry: dict[str, Any] = {"round_index": idx + 1, "max_rounds": max_rounds}
+        try:
+            last_out = _tool_run_game_basic_test_flow_by_current_state(ctx, run_base)
+        except AppError as exc:
+            entry["flow_phase"] = "exception"
+            entry["flow_error"] = exc.as_dict()
+            issue = _issue_text_from_flow_app_error(exc)
+            entry["issue_used_for_auto_fix"] = issue
+            if fix_cycles == 0:
+                entry["auto_fix"] = {"skipped": True, "reason": "auto_fix_max_cycles=0"}
+            else:
+                try:
+                    fix_payload = _tool_auto_fix_game_bug(
+                        ctx,
+                        {
+                            **run_base,
+                            "issue": issue,
+                            "max_cycles": fix_cycles,
+                        },
+                    )
+                    entry["auto_fix"] = {"ok": True, "result": fix_payload}
+                except AppError as fix_exc:
+                    entry["auto_fix"] = {"ok": False, "error": fix_exc.as_dict()}
+            rounds.append(entry)
+            continue
+        entry["flow_phase"] = "returned"
+        er = last_out.get("execution_result") if isinstance(last_out.get("execution_result"), dict) else {}
+        entry["flow_snapshot"] = {"execution_status": er.get("status")}
+        if str(er.get("status", "")).strip() == "passed":
+            entry["outcome"] = "passed"
+            rounds.append(entry)
+            return {
+                "final_status": "passed",
+                "project_root": str(project_root),
+                "rounds": rounds,
+                "last_flow_bundle": last_out,
+            }
+        issue = _issue_text_from_execution_payload(er)
+        entry["issue_used_for_auto_fix"] = issue
+        if fix_cycles == 0:
+            entry["auto_fix"] = {"skipped": True, "reason": "auto_fix_max_cycles=0"}
+        else:
+            try:
+                fix_payload = _tool_auto_fix_game_bug(
+                    ctx,
+                    {
+                        **run_base,
+                        "issue": issue,
+                        "max_cycles": fix_cycles,
+                    },
+                )
+                entry["auto_fix"] = {"ok": True, "result": fix_payload}
+            except AppError as fix_exc:
+                entry["auto_fix"] = {"ok": False, "error": fix_exc.as_dict()}
+        rounds.append(entry)
+    return {
+        "final_status": "exhausted_rounds",
+        "project_root": str(project_root),
+        "rounds": rounds,
+        "last_flow_bundle": last_out,
     }
 
 
@@ -2602,6 +3321,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
         "project_root": str(project_root),
         "require_play_mode": True,
         "shell_report": True,
+        "auto_repair": False,
     }
 
     def run_verification() -> dict[str, Any]:
@@ -2653,6 +3373,48 @@ def _tool_route_nl_intent(_ctx: ServerCtx, arguments: dict[str, Any]) -> dict[st
         "text": text,
         "target_tool": routed.target_tool,
         "reason": routed.reason,
+    }
+
+
+def _tool_get_basic_test_flow_reference_guide(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Return usage + NL trigger documentation for basic test flow references (repo markdown)."""
+    cfg = _resolve_runtime_config(ctx, arguments)
+    doc_rel = "docs/mcp-basic-test-flow-reference-usage.md"
+    doc_path = (ctx.repo_root / "docs" / "mcp-basic-test-flow-reference-usage.md").resolve()
+    status = "ok"
+    if doc_path.is_file():
+        markdown = doc_path.read_text(encoding="utf-8", errors="replace")
+    else:
+        status = "doc_missing"
+        markdown = (
+            f"未在 MCP 包内找到 `{doc_rel}`（期望路径: {doc_path}）。"
+            "请从 PointerGPF 仓库获取该文件，或查阅目标工程内 "
+            f"`{cfg.context_dir_rel}/04-flow-authoring-guide.md` 与 `{cfg.context_dir_rel}/06-operational-profile.md`。"
+        )
+    project_root_raw = str(arguments.get("project_root", "")).strip()
+    proj_paths: dict[str, str] = {
+        "flow_authoring_guide": f"{cfg.context_dir_rel}/04-flow-authoring-guide.md",
+        "operational_profile": f"{cfg.context_dir_rel}/06-operational-profile.md",
+        "flow_candidate_catalog": f"{cfg.context_dir_rel}/05-flow-candidate-catalog.md",
+        "index_json": f"{cfg.context_dir_rel}/index.json",
+    }
+    if project_root_raw:
+        proj_paths["project_root"] = str(Path(project_root_raw).resolve())
+    return {
+        "status": status,
+        "repo_doc_rel": doc_rel,
+        "repo_doc_path": str(doc_path),
+        "related_repo_docs": [
+            "docs/mcp-basic-test-flow-game-type-expectations.md",
+            "docs/mcp-docs-index.md",
+        ],
+        "project_context_paths": proj_paths,
+        "natural_language_triggers": [
+            "基础测试流程怎么用",
+            "流程预期说明",
+            "游戏类型流程预期查看说明",
+        ],
+        "markdown": markdown,
     }
 
 
@@ -3067,6 +3829,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
         "tools": [
             "get_mcp_runtime_info",
             "get_adapter_contract",
+            "get_basic_test_flow_reference_guide",
             "route_nl_intent",
             "install_godot_plugin",
             "enable_godot_plugin",
@@ -3084,6 +3847,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "suggest_ui_fix_patch",
             "run_game_basic_test_flow",
             "run_game_basic_test_flow_by_current_state",
+            "run_basic_test_flow_orchestrated",
             "auto_fix_game_bug",
         ]
         + sorted(_LEGACY_GAMEPLAYFLOW_TOOL_NAMES),
@@ -3168,6 +3932,7 @@ def _build_tool_map() -> dict[str, Any]:
     tools: dict[str, Any] = {
         "get_mcp_runtime_info": _tool_get_mcp_runtime_info,
         "get_adapter_contract": _tool_get_adapter_contract,
+        "get_basic_test_flow_reference_guide": _tool_get_basic_test_flow_reference_guide,
         "route_nl_intent": _tool_route_nl_intent,
         "install_godot_plugin": _tool_install_godot_plugin,
         "enable_godot_plugin": _tool_enable_godot_plugin,
@@ -3185,6 +3950,7 @@ def _build_tool_map() -> dict[str, Any]:
         "suggest_ui_fix_patch": _tool_suggest_ui_fix_patch,
         "run_game_basic_test_flow": _tool_run_game_basic_test_flow,
         "run_game_basic_test_flow_by_current_state": _tool_run_game_basic_test_flow_by_current_state,
+        "run_basic_test_flow_orchestrated": _tool_run_basic_test_flow_orchestrated,
         "auto_fix_game_bug": _tool_auto_fix_game_bug,
     }
     tools.update(_build_legacy_bridge_tool_map())
@@ -3215,6 +3981,19 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                 "required": ["text"],
                 "properties": {
                     "text": {"type": "string", "description": "Natural-language command text."},
+                },
+            },
+        },
+        "get_basic_test_flow_reference_guide": {
+            "description": (
+                "Return markdown for basic test flow reference usage and natural-language triggers "
+                "(docs/mcp-basic-test-flow-reference-usage.md). "
+                "Users can say e.g. '基础测试流程怎么用' and route_nl_intent will target this tool."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    **base_props,
                 },
             },
         },
@@ -3289,7 +4068,8 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
         "design_game_basic_test_flow": {
             "description": (
                 "Natural-language trigger command: '设计游戏基础测试流程'. "
-                "Generate a basic game smoke test flow that covers open/enter game, save-load if available, and simple implemented feature checks."
+                "Generate a basic game smoke test flow that covers open/enter game, save-load if available, and simple implemented feature checks. "
+                "Agents should consult `project_context/04-flow-authoring-guide.md` (game-type expectations) and PointerGPF `docs/mcp-basic-test-flow-game-type-expectations.md` when refining steps for fuller/faster gameplay coverage."
             ),
             "inputSchema": {
                 "type": "object",
@@ -3301,6 +4081,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "output_file": {"type": "string"},
                     "max_feature_checks": {"type": "integer"},
                     "strategy": {"type": "string", "enum": ["auto", "ui", "exploration", "builder", "generic"]},
+                    "allow_low_likelihood": {
+                        "type": "boolean",
+                        "description": "If true, keep static player_click_likelihood=none/low candidates when ordering.",
+                    },
                 },
             },
         },
@@ -3320,6 +4104,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "max_files": {"type": "integer", "description": "Maximum files to scan during refresh."},
                     "max_feature_checks": {"type": "integer"},
                     "strategy": {"type": "string", "enum": ["auto", "ui", "exploration", "builder", "generic"]},
+                    "allow_low_likelihood": {
+                        "type": "boolean",
+                        "description": "If true, keep static player_click_likelihood=none/low candidates when ordering.",
+                    },
                 },
             },
         },
@@ -3345,13 +4133,48 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                         "type": "boolean",
                         "description": "Compatibility field. Runtime always enforces play mode gate.",
                     },
+                    "observe_engine_errors": {
+                        "type": "boolean",
+                        "description": "If true (default), poll pointer_gpf/tmp/runtime_diagnostics.json while waiting for bridge and fail fast on severity error/fatal.",
+                    },
+                    "close_project_on_finish": {
+                        "type": "boolean",
+                        "description": "If true (default), request closeProject after the run (stop Play, keep editor).",
+                    },
+                    "force_terminate_godot_on_flow_failure": {
+                        "type": "boolean",
+                        "description": (
+                            "If true, after a failed flow when closeProject is not acknowledged, attempt to terminate "
+                            "Godot OS processes whose command line contains project_root (may kill the editor). "
+                            "Default false; see docs/design/99-tools/14-mcp-core-invariants.md."
+                        ),
+                    },
+                    "godot_executable": {"type": "string", "description": "Optional path to Godot editor binary for auto-launch."},
+                    "godot_editor_executable": {"type": "string", "description": "Alias for godot_executable."},
+                    "godot_path": {"type": "string", "description": "Alias for godot_executable."},
+                    "auto_repair": {
+                        "type": "boolean",
+                        "description": (
+                            "If true (default unless env GPF_AUTO_REPAIR_DEFAULT=0), on failure chain auto_fix_game_bug "
+                            "and re-run up to max_repair_rounds. CI often sets false explicitly."
+                        ),
+                    },
+                    "max_repair_rounds": {
+                        "type": "integer",
+                        "description": "When auto_repair: outer flow+fix rounds, 1–8. Default 2.",
+                    },
+                    "auto_fix_max_cycles": {
+                        "type": "integer",
+                        "description": "When auto_repair: max_cycles passed to auto_fix_game_bug each round. Default 3; 0 skips fix.",
+                    },
                 },
             },
         },
         "run_game_basic_test_flow_by_current_state": {
             "description": (
                 "Refresh project context, regenerate the basic game test flow from current state, then run it via the file bridge. "
-                "Combines update_game_basic_design_flow_by_current_state and run_game_basic_test_flow using the generated flow_file."
+                "Combines update_game_basic_design_flow_by_current_state and run_game_basic_test_flow using the generated flow_file. "
+                "Same auto_repair / max_repair_rounds / auto_fix_max_cycles semantics as run_game_basic_test_flow."
             ),
             "inputSchema": {
                 "type": "object",
@@ -3370,6 +4193,63 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                         "type": "boolean",
                         "description": "Compatibility field. Runtime always enforces play mode gate and step shell output.",
                     },
+                    "observe_engine_errors": {
+                        "type": "boolean",
+                        "description": "Forwarded to run_game_basic_test_flow: poll runtime_diagnostics.json while waiting for bridge.",
+                    },
+                    "close_project_on_finish": {
+                        "type": "boolean",
+                        "description": "Forwarded to run_game_basic_test_flow.",
+                    },
+                    "force_terminate_godot_on_flow_failure": {
+                        "type": "boolean",
+                        "description": "Forwarded to run_game_basic_test_flow.",
+                    },
+                    "godot_executable": {"type": "string"},
+                    "godot_editor_executable": {"type": "string"},
+                    "godot_path": {"type": "string"},
+                    "auto_repair": {
+                        "type": "boolean",
+                        "description": "Same as run_game_basic_test_flow; forwarded to inner run after refresh.",
+                    },
+                    "max_repair_rounds": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
+                    "auto_fix_max_cycles": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
+                },
+            },
+        },
+        "run_basic_test_flow_orchestrated": {
+            "description": (
+                "Explicit opt-in orchestration: refresh+run basic test flow by current state, then on failure invoke "
+                "auto_fix_game_bug, repeating up to max_orchestration_rounds. High token/runtime cost; requires "
+                "orchestration_explicit_opt_in=true."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "orchestration_explicit_opt_in"],
+                "properties": {
+                    **base_props,
+                    "orchestration_explicit_opt_in": {
+                        "type": "boolean",
+                        "description": "Must be true to run; prevents accidental expensive chained calls.",
+                    },
+                    "max_orchestration_rounds": {
+                        "type": "integer",
+                        "description": "Flow+fix cycles (1–8). Default 2.",
+                    },
+                    "auto_fix_max_cycles": {
+                        "type": "integer",
+                        "description": "max_cycles passed to auto_fix_game_bug each round. Default 3.",
+                    },
+                    "flow_id": {"type": "string"},
+                    "flow_file": {"type": "string"},
+                    "step_timeout_ms": {"type": "integer"},
+                    "fail_fast": {"type": "boolean"},
+                    "observe_engine_errors": {"type": "boolean"},
+                    "close_project_on_finish": {"type": "boolean"},
+                    "force_terminate_godot_on_flow_failure": {"type": "boolean"},
+                    "godot_executable": {"type": "string"},
+                    "godot_editor_executable": {"type": "string"},
+                    "godot_path": {"type": "string"},
                 },
             },
         },
@@ -3668,6 +4548,8 @@ def _run_cli_mode(args: argparse.Namespace, ctx: ServerCtx, tool_map: dict[str, 
         payload["output_file"] = args.output_file
     if args.strategy is not None:
         payload["strategy"] = args.strategy
+    if getattr(args, "allow_low_likelihood", False):
+        payload["allow_low_likelihood"] = True
     handler = tool_map.get(args.tool)
     if handler is None:
         raise AppError("UNSUPPORTED_TOOL", f"unsupported tool: {args.tool}")
@@ -3688,6 +4570,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--flow-name", default=None, help="Shortcut for flow_name")
     parser.add_argument("--output-file", default=None, help="Shortcut for output_file")
     parser.add_argument("--strategy", default=None, help="Shortcut for seed strategy (auto/ui/exploration/builder/generic)")
+    parser.add_argument(
+        "--allow-low-likelihood",
+        action="store_true",
+        help="For design_game_basic_test_flow: include static low/none click-likelihood candidates when ranking.",
+    )
     return parser
 
 

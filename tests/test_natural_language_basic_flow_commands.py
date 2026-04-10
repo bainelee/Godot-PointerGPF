@@ -10,6 +10,9 @@ from pathlib import Path
 
 def _run_tool(repo_root: Path, tool: str, args: dict) -> dict:
     payload_args = dict(args)
+    if tool in ("run_game_basic_test_flow", "run_game_basic_test_flow_by_current_state"):
+        if "auto_repair" not in payload_args:
+            payload_args["auto_repair"] = False
     if "project_root" in payload_args and "allow_temp_project" not in payload_args:
         payload_args["allow_temp_project"] = True
     cmd = [

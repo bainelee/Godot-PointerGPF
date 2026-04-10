@@ -13,6 +13,9 @@ from pathlib import Path
 
 def _run_tool_cli_raw(repo_root: Path, tool: str, args: dict) -> tuple[int, dict]:
     payload_args = dict(args)
+    if tool in ("run_game_basic_test_flow", "run_game_basic_test_flow_by_current_state"):
+        if "auto_repair" not in payload_args:
+            payload_args["auto_repair"] = False
     if "project_root" in payload_args and "allow_temp_project" not in payload_args:
         payload_args["allow_temp_project"] = True
     cmd = [
@@ -29,6 +32,9 @@ def _run_tool_cli_raw(repo_root: Path, tool: str, args: dict) -> tuple[int, dict
 
 def _run_tool_cli_raw_with_stderr(repo_root: Path, tool: str, args: dict) -> tuple[int, dict, str]:
     payload_args = dict(args)
+    if tool in ("run_game_basic_test_flow", "run_game_basic_test_flow_by_current_state"):
+        if "auto_repair" not in payload_args:
+            payload_args["auto_repair"] = False
     if "project_root" in payload_args and "allow_temp_project" not in payload_args:
         payload_args["allow_temp_project"] = True
     cmd = [
@@ -76,12 +82,29 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_run_basic_test_flow_orchestrated_requires_explicit_opt_in(self) -> None:
+        code, payload = _run_tool_cli_raw(
+            self.repo_root,
+            "run_basic_test_flow_orchestrated",
+            {
+                "project_root": str(self.project_root),
+                "orchestration_explicit_opt_in": False,
+                "allow_temp_project": True,
+            },
+        )
+        self.assertEqual(code, 1, msg=f"{payload}")
+        self.assertFalse(payload.get("ok"))
+        err = payload.get("error") or {}
+        self.assertEqual(err.get("code"), "INVALID_ARGUMENT")
+
     def test_get_mcp_runtime_info_lists_run_game_basic_test_flow(self) -> None:
         code, payload = _run_tool_cli_raw(self.repo_root, "get_mcp_runtime_info", {})
         self.assertEqual(code, 0, msg=f"{payload}")
         self.assertTrue(payload.get("ok"), msg=payload)
         tools = payload["result"].get("tools", [])
+        self.assertIn("get_basic_test_flow_reference_guide", tools)
         self.assertIn("run_game_basic_test_flow", tools)
+        self.assertIn("run_basic_test_flow_orchestrated", tools)
         capabilities = payload["result"].get("tool_capabilities", {})
         flow_capability = capabilities.get("run_game_basic_test_flow", {})
         self.assertTrue(flow_capability.get("implemented"))
@@ -97,6 +120,9 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertEqual(runtime_requirements.get("input_mode"), "in_engine_virtual_input")
         self.assertFalse(runtime_requirements.get("os_input_interference", True))
         self.assertIn("NOT_IN_PLAY_MODE", contract.get("error_codes", []))
+        self.assertIn("STOP_FLAG_WRITE_FAILED", contract.get("error_codes", []))
+        rb = contract.get("runtime_bridge") or {}
+        self.assertEqual(rb.get("auto_stop_play_mode_flag_rel"), "pointer_gpf/tmp/auto_stop_play_mode.flag")
 
     def test_cli_run_game_basic_test_flow_missing_flow_returns_expected_error(self) -> None:
         code, payload = _run_tool_cli_raw(
@@ -666,6 +692,13 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(rep.get("status"), "timeout")
         self.assertEqual(rep.get("phase_coverage", {}).get("started"), 1)
         self.assertEqual(rep.get("phase_coverage", {}).get("result"), 0)
+        self.assertEqual(details.get("suggested_next_tool"), "auto_fix_game_bug")
+        sug = details.get("auto_fix_arguments_suggestion") or {}
+        self.assertEqual(sug.get("max_cycles"), 3)
+        self.assertIn("timed out", str(sug.get("issue", "")))
+        ht = details.get("hard_teardown") or {}
+        self.assertTrue(ht.get("user_must_check_engine_process"))
+        self.assertEqual((ht.get("force_terminate_godot") or {}).get("outcome"), "disabled_by_default")
 
     def test_run_flow_ignores_malformed_seq_and_waits_for_valid_response(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
