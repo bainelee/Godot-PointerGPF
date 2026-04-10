@@ -109,6 +109,13 @@ func _handle_auto_stop_play_request() -> void:
     if not bool(EditorInterface.is_playing_scene()):
         return
     EditorInterface.stop_playing_scene()
+    # 与人类点「停止运行」一致：必须结束 F5 调试会话（含独立 debug 窗口）。少数情况下单帧内 is_playing_scene 仍真，下一帧再停一次。
+    call_deferred("_deferred_ensure_stop_playing_once")
+
+
+func _deferred_ensure_stop_playing_once() -> void:
+    if bool(EditorInterface.is_playing_scene()):
+        EditorInterface.stop_playing_scene()
 
 
 func _read_bootstrap_session_id() -> String:

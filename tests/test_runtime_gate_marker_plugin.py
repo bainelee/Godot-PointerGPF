@@ -19,6 +19,7 @@ class RuntimeGateMarkerPluginTests(unittest.TestCase):
         self.assertIn("_STOP_FLAG_MAX_AGE_SEC", content)
         self.assertIn("_STOP_FLAG_MAX_CLOCK_SKEW_SEC", content)
         self.assertIn("_was_playing_scene", content)
+        self.assertIn("_deferred_ensure_stop_playing_once", content)
 
     def test_auto_stop_play_polled_before_gate_sync_throttle(self) -> None:
         """closeProject stop flag must not wait for the 200ms gate sync tick (Task 4 teardown plan)."""
