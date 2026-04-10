@@ -39,6 +39,30 @@ DEFAULT_SEED_FLOW_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/generated_flows"
 DEFAULT_REPORT_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/reports"
 DEFAULT_EXP_DIR_REL = f"{DEFAULT_WORKSPACE_DIR_REL}/gpf-exp"
 DEFAULT_SCAN_ROOTS = ["scripts", "scenes", "addons", "datas", "docs", "flows", "tests", "test", "src"]
+
+
+def _read_mcp_version_from_manifest(repo_root: Path) -> str | None:
+    manifest = repo_root / "mcp" / "version_manifest.json"
+    if not manifest.is_file():
+        return None
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, dict):
+        v = str(data.get("current_version", "")).strip()
+        if v:
+            return v
+        ch = data.get("channels")
+        if isinstance(ch, dict):
+            st = ch.get("stable")
+            if isinstance(st, dict):
+                sv = str(st.get("version", "")).strip()
+                if sv:
+                    return sv
+    return None
+
+
 _MCP_IO_MODE = "header"
 
 _LEGACY_GAMEPLAYFLOW_TOOL_NAMES: frozenset[str] = frozenset(
@@ -138,9 +162,11 @@ def _resolve_project_root(arguments: dict[str, Any]) -> Path:
 
 
 def _default_runtime_config(ctx: ServerCtx) -> RuntimeConfig:
+    mv = _read_mcp_version_from_manifest(ctx.repo_root)
+    ver = mv if mv else DEFAULT_SERVER_VERSION
     return RuntimeConfig(
         server_name=DEFAULT_SERVER_NAME,
-        server_version=DEFAULT_SERVER_VERSION,
+        server_version=ver,
         plugin_id=DEFAULT_PLUGIN_ID,
         plugin_cfg_rel=DEFAULT_PLUGIN_CFG_REL,
         context_dir_rel=DEFAULT_CONTEXT_DIR_REL,
@@ -3511,6 +3537,7 @@ def _mcp_jsonrpc_error(request_id: Any, code: int, message: str, data: dict[str,
 
 def _run_stdio_mcp(ctx: ServerCtx, tool_map: dict[str, Any], startup_config_file: str | None = None) -> int:
     tool_specs = _build_tool_specs()
+    stdio_server_version = _default_runtime_config(ctx).server_version
     while True:
         req = _read_mcp_message()
         if req is None:
@@ -3531,7 +3558,7 @@ def _run_stdio_mcp(ctx: ServerCtx, tool_map: dict[str, Any], startup_config_file
                         {
                             "protocolVersion": "2024-11-05",
                             "capabilities": {"tools": {}},
-                            "serverInfo": {"name": DEFAULT_SERVER_NAME, "version": DEFAULT_SERVER_VERSION},
+                            "serverInfo": {"name": DEFAULT_SERVER_NAME, "version": stdio_server_version},
                         },
                     )
                 )

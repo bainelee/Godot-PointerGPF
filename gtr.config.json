@@ -1,6 +1,6 @@
 {
   "server_name": "pointer-gpf-mcp",
-  "server_version": "0.2.4.3",
+  "server_version": "0.3.0.0",
   "plugin_id": "pointer_gpf",
   "plugin_cfg_rel": "addons/pointer_gpf/plugin.cfg",
   "plugin_template_dir_rel": "godot_plugin_template/addons/pointer_gpf",
