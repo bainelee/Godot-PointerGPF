@@ -59,10 +59,10 @@ Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
 
 | 能力项 | 旧工程（待填） | 本仓库当前 | 计划 Task 编号 |
 |--------|----------------|------------|----------------|
-| 默认是否串联 auto_fix | 待路径 | 否；仅 `run_basic_test_flow_orchestrated` 在 `orchestration_explicit_opt_in=true` 时串联 | `14-mcp-core-invariants.md` 所述编排相关为 Task 5 |
-| 策略数量/类型 | 待路径 | `DEFAULT_STRATEGIES` 共 4 条专用策略（上表 `strategy_id`）；另可有 `generic` 诊断 | —（待与父计划对齐） |
-| 是否存在 L2 外部修复后端 | 待路径 | 代码库内未检索到以「L2」「外部修复」等命名的专用后端；自动修为仓库内 `auto_fix_game_bug` + `bug_fix_strategies` 路径 | —（待与父计划对齐） |
-| NL「跑流程」目标工具名 | 待路径 | 精确短语「跑一遍基础测试流程」→ `run_game_basic_test_flow_by_current_state` | Task 0（本清单） |
+| 默认是否串联 auto_fix | 待路径 | 否；仅 `run_basic_test_flow_orchestrated` 在 `orchestration_explicit_opt_in=true` 时串联 | 统一计划 Task 2（默认 `auto_repair`）、Task 3（编排去重） |
+| 策略数量/类型 | 待路径 | `DEFAULT_STRATEGIES` 共 4 条专用策略（上表 `strategy_id`）；另可有 `generic` 诊断 | 统一计划 Task 5（从旧工程迁移） |
+| 是否存在 L2 外部修复后端 | 待路径 | 当前无独立 L2 协议模块；自动修为 `auto_fix_game_bug` + `bug_fix_strategies` | 统一计划 Task 4（`RepairBackend`） |
+| NL「跑流程」目标工具名 | 待路径 | 精确短语「跑一遍基础测试流程」→ `run_game_basic_test_flow_by_current_state` | Task 0（本清单）；语义变更见统一计划 Task 2 |
 
 ## 5. 下一步
 
