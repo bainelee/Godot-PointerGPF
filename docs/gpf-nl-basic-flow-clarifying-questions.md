@@ -19,10 +19,12 @@
 
 **选项（必须两项，且顺序固定）：**
 
-| option id | 展示给用户的文案（label） | 代理后续 MCP 行为 |
+| option id | 展示给用户的文案（label） | 代理后续 MCP 行为（**契约字段，推荐**） |
 |-----------|---------------------------|-------------------|
-| `auto_try_fix` | **失败时自动尝试修复并重试**（会按内置规则修改工程或写入提示文件，有轮次上限；适合日常开发） | 调用 run 工具时在 `--args` JSON 中传 **`"agent_session_defaults": true`**，且 **不传** `auto_repair` 键；若 shell 继承了 CI 的关自动修环境，仍保持「会尝试修」。 |
-| `run_only` | **只运行、失败时不要自动改工程**（适合你想先看原始错误） | 在 `--args` JSON 中显式传 **`"auto_repair": false`**。 |
+| `auto_try_fix` | **失败时自动尝试修复并重试**（会按内置规则修改工程或写入提示文件，有轮次上限；适合日常开发） | 在 `--args` JSON 中传 **`"failure_handling": "auto_try_fix"`**（**不传** `auto_repair` 键）。效果与原先 `agent_session_defaults` 组合等价，且可被 CLI/单测强制校验。 |
+| `run_only` | **只运行、失败时不要自动改工程**（适合你想先看原始错误） | 在 `--args` JSON 中传 **`"failure_handling": "run_only"`**。 |
+
+**说明：** 工程设计见 **`docs/design/99-tools/17-basic-flow-failure-handling-contract.md`**。显式传 **`"auto_repair": true/false`** 时仍优先于 `failure_handling`（兼容旧集成）。
 
 用户选择后，代理在回复中用 **一句话** 复述用户选择（用 label 里的可读中文，不要改成环境变量名）。
 

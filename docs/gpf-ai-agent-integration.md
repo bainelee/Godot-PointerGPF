@@ -51,3 +51,4 @@
 | `GPF_AUTO_REPAIR_DEFAULT` | 环境 | `0`/`false` 时，在未传 `auto_repair` 且 **未** 声明代理会话的情况下，默认关闭外层自动修复（CI 常用）。 |
 | `GPF_AGENT_SESSION_DEFAULTS` | 环境 | 为真时，在未传 `auto_repair` 时 **强制** 默认开启 `auto_repair`（压过上一行）。 |
 | `agent_session_defaults` | 工具参数 | 与上一行等效，单次请求级。 |
+| `failure_handling` | 工具参数 | `run_only` / `auto_try_fix`，与用户 AskQuestion 选项一一对应；见 **`docs/design/99-tools/17-basic-flow-failure-handling-contract.md`**。 |

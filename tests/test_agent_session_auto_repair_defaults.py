@@ -42,6 +42,28 @@ class TestAgentSessionAutoRepairDefaults(unittest.TestCase):
             self.assertIsNotNone(prop, msg=name)
             self.assertEqual(prop.get("type"), "boolean")
 
+    @mock.patch.dict(os.environ, {"GPF_AUTO_REPAIR_DEFAULT": "0"}, clear=False)
+    def test_failure_handling_run_only(self) -> None:
+        ar, _, _ = server._parse_auto_repair_params({"failure_handling": "run_only"})
+        self.assertFalse(ar)
+
+    @mock.patch.dict(os.environ, {"GPF_AUTO_REPAIR_DEFAULT": "0"}, clear=False)
+    def test_failure_handling_auto_try_fix(self) -> None:
+        ar, _, _ = server._parse_auto_repair_params({"failure_handling": "auto_try_fix"})
+        self.assertTrue(ar)
+
+    def test_failure_handling_invalid_raises(self) -> None:
+        with self.assertRaises(server.AppError) as ctx:
+            server._parse_auto_repair_params({"failure_handling": "maybe"})
+        self.assertEqual(ctx.exception.code, "INVALID_ARGUMENT")
+
+    def test_tool_specs_include_failure_handling_enum(self) -> None:
+        specs = server._build_tool_specs()
+        for name in ("run_game_basic_test_flow", "run_game_basic_test_flow_by_current_state"):
+            prop = specs[name]["inputSchema"]["properties"].get("failure_handling")
+            self.assertIsNotNone(prop, msg=name)
+            self.assertEqual(prop.get("enum"), ["run_only", "auto_try_fix"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -860,10 +860,23 @@ _NON_REPAIRABLE_FLOW_APP_CODES = frozenset(
 def _parse_auto_repair_params(arguments: dict[str, Any]) -> tuple[bool, int, int]:
     if "auto_repair" in arguments:
         auto_repair = bool(arguments.get("auto_repair"))
-    elif _agent_session_defaults_requested(arguments):
-        auto_repair = True
     else:
-        auto_repair = _env_auto_repair_default()
+        fh_raw = arguments.get("failure_handling")
+        fh = str(fh_raw).strip().lower() if fh_raw is not None else ""
+        if fh and fh not in ("run_only", "auto_try_fix"):
+            raise AppError(
+                "INVALID_ARGUMENT",
+                "failure_handling must be 'run_only' or 'auto_try_fix' when set",
+                {"failure_handling": fh_raw, "fix": "omit failure_handling or use run_only | auto_try_fix"},
+            )
+        if fh == "run_only":
+            auto_repair = False
+        elif fh == "auto_try_fix":
+            auto_repair = True
+        elif _agent_session_defaults_requested(arguments):
+            auto_repair = True
+        else:
+            auto_repair = _env_auto_repair_default()
     raw_mr = arguments.get("max_repair_rounds", 2)
     try:
         max_repair_rounds = int(raw_mr) if raw_mr is not None else 2
@@ -4265,6 +4278,16 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                         "type": "integer",
                         "description": "When auto_repair: max_cycles passed to auto_fix_game_bug each round. Default 3; 0 skips fix.",
                     },
+                    "failure_handling": {
+                        "type": "string",
+                        "enum": ["run_only", "auto_try_fix"],
+                        "description": (
+                            "User-visible intent when auto_repair is omitted: run_only = no outer auto_repair; "
+                            "auto_try_fix = enable repair chain (same strength as agent_session_defaults for CI env). "
+                            "Integrations should set this from AskQuestion UX. Invalid values error. "
+                            "Omit to fall back to agent_session_defaults / GPF_AUTO_REPAIR_DEFAULT."
+                        ),
+                    },
                     "agent_session_defaults": {
                         "type": "boolean",
                         "description": (
@@ -4320,6 +4343,11 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     },
                     "max_repair_rounds": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
                     "auto_fix_max_cycles": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
+                    "failure_handling": {
+                        "type": "string",
+                        "enum": ["run_only", "auto_try_fix"],
+                        "description": "Same as run_game_basic_test_flow.",
+                    },
                     "agent_session_defaults": {
                         "type": "boolean",
                         "description": "Same as run_game_basic_test_flow.",
