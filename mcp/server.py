@@ -802,6 +802,26 @@ def _enrich_project_close_with_runtime_gate_evidence(project_root: Path, close_m
     close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(last)
 
 
+def _annotate_project_close_vs_execution_report(close_meta: dict[str, Any], execution_report: dict[str, Any] | None) -> None:
+    """When execution_report still says play_mode but gate says Play ended, flag misleading fields for integrators."""
+    if not isinstance(close_meta, dict) or not isinstance(execution_report, dict):
+        return
+    rep_mode = str(execution_report.get("runtime_mode", "")).strip()
+    rep_passed = execution_report.get("runtime_gate_passed")
+    playing_after = close_meta.get("play_running_by_runtime_gate")
+    if playing_after is False and rep_mode == "play_mode" and rep_passed is True:
+        close_meta["stale_execution_report_runtime_fields"] = True
+        close_meta["stale_execution_report_note"] = (
+            "execution_report.runtime_mode/runtime_gate_passed are the in-flow snapshot when the runner stopped "
+            "(last step or failure), not post-teardown state. "
+            "runtime_gate_snapshot_immediate is read after the bridge ack for closeProject; the editor may already "
+            "have called EditorInterface.stop_playing_scene() and refreshed runtime_gate.json, so it often already "
+            "shows editor_bridge. "
+            "Use project_close.play_running_by_runtime_gate and runtime_gate_snapshot_after_ack_poll to verify "
+            "Play stopped (A). The Godot editor window may remain open (B)."
+        )
+
+
 def _maybe_request_project_close(
     project_root: Path,
     close_project_on_finish: bool,
@@ -3293,6 +3313,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
                 "max_cycles": 3,
             },
         }
+        _annotate_project_close_vs_execution_report(close_meta, rep)
         _attach_hard_teardown(_to_details, project_root, arguments, close_meta)
         raise AppError("TIMEOUT", str(exc), _to_details) from exc
     except FlowExecutionStepFailed as exc:
@@ -3315,6 +3336,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
                 "max_cycles": 3,
             },
         }
+        _annotate_project_close_vs_execution_report(close_meta, rep)
         _attach_hard_teardown(_sf_details, project_root, arguments, close_meta)
         raise AppError("STEP_FAILED", str(exc), _sf_details) from exc
     except FlowExecutionEngineStalled as exc:
@@ -3343,9 +3365,11 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
                 "max_cycles": 3,
             },
         }
+        _annotate_project_close_vs_execution_report(close_meta, rep)
         _attach_hard_teardown(_es_details, project_root, arguments, close_meta)
         raise AppError("ENGINE_RUNTIME_STALLED", str(exc), _es_details) from exc
     close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
+    _annotate_project_close_vs_execution_report(close_meta, report)
     legacy_hints = _legacy_layout_hints(project_root)
     dual = build_dual_conclusions(report)
     exp_artifact = _write_exp_runtime_artifact(

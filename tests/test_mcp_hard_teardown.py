@@ -21,6 +21,23 @@ class TestHardTeardownHelpers(unittest.TestCase):
             mcp_server._runtime_gate_implies_playing({"runtime_mode": "editor_bridge", "runtime_gate_passed": False})
         )
 
+    def test_annotate_project_close_flags_stale_execution_report(self) -> None:
+        close_meta: dict = {
+            "acknowledged": True,
+            "play_running_by_runtime_gate": False,
+        }
+        rep = {"runtime_mode": "play_mode", "runtime_gate_passed": True}
+        mcp_server._annotate_project_close_vs_execution_report(close_meta, rep)
+        self.assertTrue(close_meta.get("stale_execution_report_runtime_fields"))
+        self.assertIn("execution_report.runtime_mode", str(close_meta.get("stale_execution_report_note", "")))
+
+    def test_annotate_project_close_skips_when_no_mismatch(self) -> None:
+        close_meta: dict = {"play_running_by_runtime_gate": False}
+        mcp_server._annotate_project_close_vs_execution_report(
+            close_meta, {"runtime_mode": "editor_bridge", "runtime_gate_passed": False}
+        )
+        self.assertNotIn("stale_execution_report_runtime_fields", close_meta)
+
     def test_hard_teardown_close_not_acked_default_no_force(self) -> None:
         root = Path("D:/proj/x")
         ht = mcp_server._hard_teardown_for_flow_failure(
