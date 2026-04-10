@@ -24,6 +24,8 @@ from typing import Any
 
 from basic_flow_contracts import build_dual_conclusions
 from bug_fix_loop import run_bug_fix_loop
+import remediation_handlers
+from remediation_trace import RemediationTrace
 from flow_execution import (
     FlowExecutionEngineStalled,
     FlowExecutionStepFailed,
@@ -552,7 +554,9 @@ def _ensure_runtime_play_mode(project_root: Path, arguments: dict[str, Any]) -> 
                 bootstrap["launch_error"] = err
     if launch_allowed and not bootstrap["editor_running_before_launch"] and not candidates:
         bootstrap["launch_error"] = "no_executable_candidates"
-    post_wait_ms = 18_000 if bootstrap["launch_succeeded"] or bootstrap["editor_running_before_launch"] else 1_500
+    base_post_ms = 18_000 if bootstrap["launch_succeeded"] or bootstrap["editor_running_before_launch"] else 1_500
+    agent_session = _agent_session_defaults_requested(arguments)
+    post_wait_ms = int(max(base_post_ms, 24_000 if agent_session else base_post_ms))
     _request_auto_enter_play_mode(project_root)
     runtime_meta = _await_runtime_gate(project_root, timeout_ms=post_wait_ms, poll_ms=120)
     return runtime_meta, bootstrap
@@ -830,13 +834,25 @@ def _env_auto_repair_default() -> bool:
     return raw.strip() not in ("0", "false", "False", "")
 
 
+def _truthy_env(name: str) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return False
+    return raw.strip() in ("1", "true", "True", "yes", "YES")
+
+
+def _agent_session_defaults_requested(arguments: dict[str, Any]) -> bool:
+    if bool(arguments.get("agent_session_defaults")):
+        return True
+    return _truthy_env("GPF_AGENT_SESSION_DEFAULTS")
+
+
 _NON_REPAIRABLE_FLOW_APP_CODES = frozenset(
     {
         "INVALID_ARGUMENT",
         "TEMP_PROJECT_FORBIDDEN",
         "INVALID_GODOT_PROJECT",
         "BROADCAST_ENTRY_REQUIRED",
-        "FLOW_GENERATION_BLOCKED",
     }
 )
 
@@ -844,6 +860,8 @@ _NON_REPAIRABLE_FLOW_APP_CODES = frozenset(
 def _parse_auto_repair_params(arguments: dict[str, Any]) -> tuple[bool, int, int]:
     if "auto_repair" in arguments:
         auto_repair = bool(arguments.get("auto_repair"))
+    elif _agent_session_defaults_requested(arguments):
+        auto_repair = True
     else:
         auto_repair = _env_auto_repair_default()
     raw_mr = arguments.get("max_repair_rounds", 2)
@@ -882,6 +900,96 @@ def _invoke_auto_fix_round_for_flow(
         return {"ok": True, "result": payload}
     except AppError as fix_exc:
         return {"ok": False, "error": fix_exc.as_dict()}
+
+
+def _remediation_class_for_app_error(exc: AppError) -> str:
+    from failure_taxonomy import FailureSignal, classify_failure
+
+    raw = str(exc.code or "").strip()
+    return classify_failure(FailureSignal(raw if raw else None, None, None))
+
+
+def _remediation_class_for_execution_bundle(payload: dict[str, Any]) -> str:
+    from failure_taxonomy import FailureSignal, classify_failure
+
+    ae = payload.get("app_error")
+    code: str | None = None
+    if isinstance(ae, dict):
+        c = ae.get("code")
+        if c is not None and str(c).strip():
+            code = str(c)
+    rep = payload.get("execution_report")
+    step: str | None = None
+    if isinstance(rep, dict):
+        st = str(rep.get("status", "")).strip().lower()
+        if st:
+            step = st
+        ae2 = rep.get("app_error")
+        if isinstance(ae2, dict) and ae2.get("code"):
+            code = str(ae2["code"])
+    if step is None:
+        st2 = str(payload.get("status", "")).strip().lower()
+        step = st2 if st2 else None
+    return classify_failure(FailureSignal(code, step, None))
+
+
+def _auto_repair_round_for_flow_exception(
+    ctx: ServerCtx,
+    fix_base: dict[str, Any],
+    project_root: Path,
+    exc: AppError,
+    issue: str,
+    auto_fix_max_cycles: int,
+) -> dict[str, Any]:
+    rc = _remediation_class_for_app_error(exc)
+    details = exc.details if isinstance(exc.details, dict) else {}
+    hr = remediation_handlers.run_handlers(rc, ctx, project_root, fix_base, details)
+    entry: dict[str, Any] = {
+        "remediation_class": rc,
+        "remediation_handler": hr,
+        "issue_used_for_auto_fix": issue,
+    }
+    if hr.get("handled"):
+        entry["auto_fix"] = {"skipped": True, "reason": "remediation_handler_handled"}
+    else:
+        entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+    return entry
+
+
+def _auto_repair_round_for_flow_failed_payload(
+    ctx: ServerCtx,
+    fix_base: dict[str, Any],
+    project_root: Path,
+    payload: dict[str, Any],
+    issue: str,
+    auto_fix_max_cycles: int,
+) -> dict[str, Any]:
+    rc = _remediation_class_for_execution_bundle(payload)
+    hr = remediation_handlers.run_handlers(rc, ctx, project_root, fix_base, payload)
+    entry: dict[str, Any] = {
+        "remediation_class": rc,
+        "remediation_handler": hr,
+        "issue_used_for_auto_fix": issue,
+    }
+    if hr.get("handled"):
+        entry["auto_fix"] = {"skipped": True, "reason": "remediation_handler_handled"}
+    else:
+        entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+    return entry
+
+
+def _merge_remediation_traces_from_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for entry in rounds:
+        af = entry.get("auto_fix")
+        if not isinstance(af, dict):
+            continue
+        res = af.get("result")
+        if isinstance(res, dict):
+            rt = res.get("remediation_trace")
+            if isinstance(rt, dict):
+                out.append(rt)
+    return out
 
 
 def _legacy_layout_hints(project_root: Path) -> list[dict[str, str]]:
@@ -3051,6 +3159,7 @@ def _tool_run_game_basic_test_flow_with_repair_loop(
     auto_fix_max_cycles: int,
 ) -> dict[str, Any]:
     fix_base = dict(arguments)
+    project_root = _resolve_project_root(arguments)
     rounds: list[dict[str, Any]] = []
     last_out: dict[str, Any] | None = None
     for idx in range(max_repair_rounds):
@@ -3063,8 +3172,11 @@ def _tool_run_game_basic_test_flow_with_repair_loop(
             entry["flow_phase"] = "exception"
             entry["flow_error"] = exc.as_dict()
             issue = _issue_text_from_flow_app_error(exc)
-            entry["issue_used_for_auto_fix"] = issue
-            entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+            entry.update(
+                _auto_repair_round_for_flow_exception(
+                    ctx, fix_base, project_root, exc, issue, auto_fix_max_cycles
+                )
+            )
             rounds.append(entry)
             continue
         entry["flow_phase"] = "returned"
@@ -3080,17 +3192,22 @@ def _tool_run_game_basic_test_flow_with_repair_loop(
                 "enabled": True,
                 "final_status": "passed",
                 "rounds": rounds,
+                "remediation_traces": _merge_remediation_traces_from_rounds(rounds),
             }
             return merged
         issue = _issue_text_from_execution_payload(last_out)
-        entry["issue_used_for_auto_fix"] = issue
-        entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+        entry.update(
+            _auto_repair_round_for_flow_failed_payload(
+                ctx, fix_base, project_root, last_out, issue, auto_fix_max_cycles
+            )
+        )
         rounds.append(entry)
     exhaust: dict[str, Any] = dict(last_out) if last_out else {"status": "failed"}
     exhaust["auto_repair"] = {
         "enabled": True,
         "final_status": "exhausted_rounds",
         "rounds": rounds,
+        "remediation_traces": _merge_remediation_traces_from_rounds(rounds),
     }
     return exhaust
 
@@ -3143,6 +3260,7 @@ def _tool_run_game_basic_test_flow_by_current_state_with_repair(
     auto_fix_max_cycles: int,
 ) -> dict[str, Any]:
     fix_base = dict(arguments)
+    project_root = _resolve_project_root(arguments)
     rounds: list[dict[str, Any]] = []
     last_out: dict[str, Any] | None = None
     for idx in range(max_repair_rounds):
@@ -3155,8 +3273,11 @@ def _tool_run_game_basic_test_flow_by_current_state_with_repair(
             entry["flow_phase"] = "exception"
             entry["flow_error"] = exc.as_dict()
             issue = _issue_text_from_flow_app_error(exc)
-            entry["issue_used_for_auto_fix"] = issue
-            entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+            entry.update(
+                _auto_repair_round_for_flow_exception(
+                    ctx, fix_base, project_root, exc, issue, auto_fix_max_cycles
+                )
+            )
             rounds.append(entry)
             continue
         entry["flow_phase"] = "returned"
@@ -3171,17 +3292,22 @@ def _tool_run_game_basic_test_flow_by_current_state_with_repair(
                 "enabled": True,
                 "final_status": "passed",
                 "rounds": rounds,
+                "remediation_traces": _merge_remediation_traces_from_rounds(rounds),
             }
             return merged
         issue = _issue_text_from_execution_payload(er)
-        entry["issue_used_for_auto_fix"] = issue
-        entry["auto_fix"] = _invoke_auto_fix_round_for_flow(ctx, fix_base, issue, auto_fix_max_cycles)
+        entry.update(
+            _auto_repair_round_for_flow_failed_payload(
+                ctx, fix_base, project_root, er, issue, auto_fix_max_cycles
+            )
+        )
         rounds.append(entry)
     exhaust: dict[str, Any] = dict(last_out) if last_out else {"status": "failed"}
     exhaust["auto_repair"] = {
         "enabled": True,
         "final_status": "exhausted_rounds",
         "rounds": rounds,
+        "remediation_traces": _merge_remediation_traces_from_rounds(rounds),
     }
     return exhaust
 
@@ -3308,6 +3434,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
                 "app_error": exc.as_dict(),
             }
 
+    trace = RemediationTrace(run_id=str(project_root.resolve()))
     loop_result = run_bug_fix_loop(
         project_root=project_root,
         issue=issue,
@@ -3315,6 +3442,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
         timeout_seconds=timeout_seconds,
         run_verification=run_verification,
         l2_try_patch=build_l2_try_patch_from_env(),
+        trace=trace,
     )
     return {
         "final_status": loop_result["final_status"],
@@ -3323,6 +3451,7 @@ def _tool_auto_fix_game_bug(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[s
         "issue": loop_result.get("issue", issue),
         "project_root": loop_result.get("project_root", str(project_root)),
         "initial_verification": loop_result.get("initial_verification"),
+        "remediation_trace": loop_result.get("remediation_trace", {"run_id": "", "events": []}),
     }
 
 
@@ -4129,6 +4258,14 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                         "type": "integer",
                         "description": "When auto_repair: max_cycles passed to auto_fix_game_bug each round. Default 3; 0 skips fix.",
                     },
+                    "agent_session_defaults": {
+                        "type": "boolean",
+                        "description": (
+                            "When true and auto_repair is omitted, force auto_repair default on even if env "
+                            "GPF_AUTO_REPAIR_DEFAULT=0 (AI agent / IDE sessions). CI must not set this. "
+                            "Same effect as env GPF_AGENT_SESSION_DEFAULTS=1."
+                        ),
+                    },
                 },
             },
         },
@@ -4176,6 +4313,10 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     },
                     "max_repair_rounds": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
                     "auto_fix_max_cycles": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
+                    "agent_session_defaults": {
+                        "type": "boolean",
+                        "description": "Same as run_game_basic_test_flow.",
+                    },
                 },
             },
         },
@@ -4559,6 +4700,70 @@ def main() -> int:
     except Exception as exc:  # pylint: disable=broad-except
         print(json.dumps({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(exc)}}, ensure_ascii=False))
         return 1
+
+
+def _remediation_handler_runtime_gate(
+    ctx: ServerCtx, project_root: Path, tool_args: dict[str, Any], details: dict[str, Any]
+) -> dict[str, Any]:
+    _ = details
+    meta, boot = _ensure_runtime_play_mode(project_root, tool_args)
+    ok = bool(meta.get("runtime_gate_passed"))
+    out: dict[str, Any] = {
+        "handled": ok,
+        "actions": [{"kind": "bootstrap_runtime", "runtime_gate_passed": ok}],
+        "notes": "retried play-mode bootstrap via _ensure_runtime_play_mode",
+        "engine_bootstrap": boot,
+    }
+    if ok:
+        out["runtime_meta"] = meta
+    return out
+
+
+def _remediation_handler_flow_generation_blocked(
+    ctx: ServerCtx, project_root: Path, tool_args: dict[str, Any], details: dict[str, Any]
+) -> dict[str, Any]:
+    _ = details
+    rargs = {**tool_args, "project_root": str(project_root)}
+    rargs.setdefault("max_files", 400)
+    try:
+        refresh_out = _tool_refresh_project_context(ctx, rargs)
+    except AppError as exc:
+        return {
+            "handled": False,
+            "actions": [],
+            "notes": str(exc.message),
+            "error": exc.as_dict(),
+        }
+    try:
+        upd = _tool_update_game_basic_design_flow_by_current_state(
+            ctx, {**tool_args, "project_root": str(project_root)}
+        )
+    except AppError as exc:
+        return {
+            "handled": False,
+            "actions": [{"kind": "refresh_project_context", "summary": str(refresh_out.get("status", ""))}],
+            "notes": str(exc.message),
+            "error": exc.as_dict(),
+        }
+    fr = upd.get("flow_result") if isinstance(upd.get("flow_result"), dict) else {}
+    blocked = str(fr.get("status", "")).strip() == "blocked"
+    return {
+        "handled": not blocked,
+        "actions": [
+            {"kind": "refresh_project_context", "summary": str(refresh_out.get("status", ""))},
+            {"kind": "regenerated_flow_probe", "blocked": blocked},
+        ],
+        "notes": "context refreshed; flow gate still blocked" if blocked else "context refreshed; flow gate open",
+        "flow_result": fr,
+    }
+
+
+def _register_default_remediation_handlers() -> None:
+    remediation_handlers.register_handler("runtime_gate", _remediation_handler_runtime_gate)
+    remediation_handlers.register_handler("flow_generation_blocked", _remediation_handler_flow_generation_blocked)
+
+
+_register_default_remediation_handlers()
 
 
 if __name__ == "__main__":

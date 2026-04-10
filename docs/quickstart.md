@@ -148,6 +148,10 @@ python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your
 
 **默认自动修复与可选 L2：** `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` 默认在失败时按 `max_repair_rounds` / `auto_fix_max_cycles` 串联 `auto_fix_game_bug`；脚本或 CI 可设 **`GPF_AUTO_REPAIR_DEFAULT=0`** 或在 `--args` 中传 **`"auto_repair":false`** 关闭。若需外部修复命令，设置 **`GPF_REPAIR_BACKEND_CMD`**（占位符 `{payload_file}`、`{project_root}`；stdout 最后一行 JSON，见 `docs/mcp-basic-test-flow-reference-usage.md`）。
 
+用户向说明（旅程四步、如何读 `remediation_trace` / `remediation_matrix`、如何关自动修）：**`docs/gpf-user-journey-auto-remediation.md`**。
+
+**AI IDE / 代理集成（与 CI 区分）：** 若 shell 继承了 **`GPF_AUTO_REPAIR_DEFAULT=0`**（常见于 CI 配置），代理在跑 `run_game_basic_test_flow*` 且省略 `auto_repair` 时，应设置 **`GPF_AGENT_SESSION_DEFAULTS=1`** 或传 **`agent_session_defaults: true`**，避免自动修复被静默关闭。约定全文见 **`docs/gpf-ai-agent-integration.md`**。
+
 **1) 设计（生成基础测试 flow）**
 
 ```powershell

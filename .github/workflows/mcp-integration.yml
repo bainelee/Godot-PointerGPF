@@ -29,7 +29,7 @@ jobs:
         if: ${{ github.event_name == 'schedule' || github.event.inputs.scope == 'full' }}
         shell: pwsh
         run: |
-          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_mcp_hard_teardown tests.test_repair_backend tests.test_bug_auto_fix_loop -v
+          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_mcp_hard_teardown tests.test_repair_backend tests.test_bug_auto_fix_loop tests.test_failure_taxonomy tests.test_remediation_r001_trace tests.test_bug_fix_loop_trace tests.test_remediation_handlers tests.test_adapter_contract_remediation tests.test_agent_session_auto_repair_defaults -v
 
       - name: Runtime info
         shell: pwsh

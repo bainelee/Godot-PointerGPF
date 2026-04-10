@@ -1,0 +1,13 @@
+---
+description: 在本仓库通过 Cursor 执行 GPF MCP/CLI 时，为子进程声明 AI 代理会话默认行为（自动修复不因 CI 环境变量被静默关闭）
+alwaysApply: false
+---
+
+# GPF 代理会话环境（可选）
+
+当在本仓库内运行 **`python mcp/server.py`** 且意图代表用户执行 **`run_game_basic_test_flow`** / **`run_game_basic_test_flow_by_current_state`**（含自然语言转调）时：
+
+- 在 **Cursor 启动的终端或任务** 中，建议设置 **`GPF_AGENT_SESSION_DEFAULTS=1`**，除非用户明确在「模拟 CI」场景（此时不得设置该变量，与 `docs/gpf-ai-agent-integration.md` 一致）。
+- 等价做法：在 `--args` JSON 中传入 **`"agent_session_defaults": true`**（与未传 `auto_repair` 时组合使用）。
+
+完整约定见 **`docs/gpf-ai-agent-integration.md`**。
