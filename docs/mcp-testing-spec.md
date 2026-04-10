@@ -66,6 +66,7 @@ flowchart TD
 ### L1 Functional Smoke (PR Required)
 
 - `install-mcp.ps1`
+- Python 契约（`mcp-smoke`）：`python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop`
 - `get_mcp_runtime_info`
 - `init_project_context`（最小样本）
 - `generate_flow_seed`（最小样本）

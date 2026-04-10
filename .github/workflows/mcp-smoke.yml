@@ -17,7 +17,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: windows-latest
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -41,15 +41,21 @@ jobs:
         run: |
           python "mcp/server.py" --tool get_mcp_runtime_info --args "{}"
 
+      - name: Python contract tests (NL + flow + bugfix loop)
+        shell: pwsh
+        run: |
+          python -m unittest tests.test_natural_language_basic_flow_commands tests.test_flow_execution_runtime tests.test_bug_auto_fix_loop -v
+
       - name: Stdio MCP protocol smoke
         shell: pwsh
         run: |
           @'
           import json
           import subprocess
+          import sys
 
           p = subprocess.Popen(
-              ["python", "mcp/server.py"],
+              [sys.executable, "mcp/server.py"],
               stdin=subprocess.PIPE,
               stdout=subprocess.PIPE,
           )
@@ -167,6 +173,7 @@ jobs:
           @'
           import json
           import subprocess
+          import sys
           import threading
           import time
           from pathlib import Path
@@ -176,7 +183,7 @@ jobs:
           flow_id = "ci_smoke_execution"
 
           def run_tool(name, args):
-              cmd = ["python", str(repo_root / "mcp" / "server.py"), "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
+              cmd = [sys.executable, str(repo_root / "mcp" / "server.py"), "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
               p = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
               if p.returncode != 0:
                   raise RuntimeError(f"{name} failed: {p.stdout}\n{p.stderr}")
@@ -253,6 +260,7 @@ jobs:
           import base64
           import json
           import subprocess
+          import sys
           from pathlib import Path
 
           repo_root = Path(".").resolve()
@@ -262,7 +270,7 @@ jobs:
           fixture.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2r8lUAAAAASUVORK5CYII="))
 
           def run_tool(name, args):
-              cmd = ["python", "mcp/server.py", "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
+              cmd = [sys.executable, "mcp/server.py", "--tool", name, "--args", json.dumps(args, ensure_ascii=False)]
               p = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, check=False)
               if p.returncode != 0:
                   raise RuntimeError(f"{name} failed: {p.stdout}\n{p.stderr}")
