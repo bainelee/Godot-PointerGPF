@@ -1,7 +1,7 @@
 {
   "contract_version": "v1",
   "name": "GodotAdapter Contract",
-  "description": "Minimum adapter contract for PointerGPF MCP integration.",
+  "description": "Minimum adapter contract for PointerGPF MCP integration. PointerGPF bootstrap: MCP may write pointer_gpf/tmp/mcp_bootstrap_session.json; the editor plugin echoes session_id as bootstrap_session_ack inside pointer_gpf/tmp/runtime_gate.json before play-mode auto-enter (see docs/godot-adapter-contract-v1.md).",
   "transport_modes": [
     {
       "mode": "plugin_adapter",
@@ -68,8 +68,11 @@
     "NOT_IN_PLAY_MODE",
     "INPUT_PATH_BLOCKED",
     "TIMEOUT",
+    "ENGINE_RUNTIME_STALLED",
+    "ENGINE_DIAGNOSTICS_FATAL",
     "RUNTIME_EXCEPTION",
-    "IO_ERROR"
+    "IO_ERROR",
+    "STOP_FLAG_WRITE_FAILED"
   ],
   "runtime_requirements": {
     "runtime_mode_required": "play_mode",
@@ -88,7 +91,19 @@
     "command_file_rel": "pointer_gpf/tmp/command.json",
     "response_file_rel": "pointer_gpf/tmp/response.json",
     "required_response_fields": ["ok", "seq", "run_id"],
-    "timeout_error_code": "TIMEOUT"
+    "timeout_error_code": "TIMEOUT",
+    "auto_stop_play_mode_flag_rel": "pointer_gpf/tmp/auto_stop_play_mode.flag",
+    "auto_stop_play_mode_flag_note": "Written by runtime_bridge when action closeProject is handled; Godot EditorPlugin consumes it to call EditorInterface.stop_playing_scene(). Payload should include issued_at_unix (Unix seconds) for freshness; stale or invalid files must not stop manual Play. Default: stop Play but do not quit the editor executable — stopping Play is required, not optional."
+  },
+  "runtime_diagnostics": {
+    "schema_id": "pointer_gpf.runtime_diagnostics.v1",
+    "file_rel": "pointer_gpf/tmp/runtime_diagnostics.json",
+    "description": "Optional snapshot written by PointerGPF runtime bridge (or external Godot tools) while play mode runs. MCP FlowRunner may poll this file while waiting for response.json.",
+    "severity_rank": ["info", "warning", "error", "fatal"],
+    "mcp_fast_fail_severities": ["error", "fatal"],
+    "recommended_poll_interval_ms": 120,
+    "max_poll_interval_ms": 250,
+    "write_atomic": "write sibling .tmp then rename/replace to reduce torn reads"
   },
   "chat_protocol": {
     "mode": "three_phase",
@@ -98,5 +113,52 @@
     "minimum_required_actions_count": 5,
     "must_emit_structured_error": true,
     "must_include_action_id_in_failures": true
+  },
+  "remediation_matrix": {
+    "version": 1,
+    "rows": [
+      {
+        "remediation_class": "runtime_gate",
+        "handled_by": "handler",
+        "user_visible_summary": "尝试自动拉起并进入可运行测试态",
+        "max_auto_attempts": 2
+      },
+      {
+        "remediation_class": "flow_generation_blocked",
+        "handled_by": "handler",
+        "user_visible_summary": "尝试刷新项目上下文后重试流程生成",
+        "max_auto_attempts": 1
+      },
+      {
+        "remediation_class": "flow_step_failed",
+        "handled_by": "strategy",
+        "user_visible_summary": "按 issue 文本匹配补丁策略并复测",
+        "max_auto_attempts": 8
+      },
+      {
+        "remediation_class": "engine_runtime_error",
+        "handled_by": "strategy_hint",
+        "user_visible_summary": "写入诊断提示文件，需用户对照引擎输出改脚本",
+        "max_auto_attempts": 4
+      },
+      {
+        "remediation_class": "bridge_timeout",
+        "handled_by": "l2_or_none",
+        "user_visible_summary": "可配置 GPF_REPAIR_BACKEND_CMD 由外部命令决策",
+        "max_auto_attempts": 2
+      },
+      {
+        "remediation_class": "invalid_godot_project",
+        "handled_by": "none",
+        "user_visible_summary": "工程路径无效或缺少 project.godot，需用户修正",
+        "max_auto_attempts": 0
+      },
+      {
+        "remediation_class": "unknown_failure",
+        "handled_by": "none",
+        "user_visible_summary": "仅返回证据，不自动改工程",
+        "max_auto_attempts": 0
+      }
+    ]
   }
 }

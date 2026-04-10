@@ -11,6 +11,7 @@ alwaysApply: true
 - 执行过程中必须看到逐步骤 shell 输出（至少包含 started/result/verify 三阶段）。
 - 如果未满足 `play_mode` 门禁，必须立即失败并明确告知原因，不得继续执行测试步骤。
 - 失败返回必须包含可验证证据：`blocking_point`、`next_actions`、`engine_bootstrap` 关键字段。
-- 流程结束（通过/失败/超时）后必须执行收尾关闭动作，语义为“停止 Play 运行态”；默认保留编辑器进程。
+- 流程结束（通过/失败/超时）后必须执行收尾关闭动作，语义为 **“停止 Play 运行态”**（结束当前游戏运行实例，与编辑器内「停止运行」同类能力；工具返回里 `project_close` 可含 `play_running_by_runtime_gate` 等字段以区分 **桥接已 ack** 与 **`runtime_gate.json` 反映的 Play 状态**）。**「默认保留编辑器进程」** 仅指 **不退出 Godot 编辑器可执行文件/IDE 应用**，**不得**理解成允许在收尾后仍保持 **Play 仍在运行**。
 - 禁止误开非目标工程；默认禁止对临时目录项目执行自动拉起，除非测试代码显式放行。
 - 自动触发的验证流程（例如 bug 修复循环中的验证）同样遵守本规则。
+- 执行 `run_game_basic_test_flow`（或等价 CLI）时，**禁止**在无输出跟踪的情况下将子进程转入后台挂起；必须同步等待结束或失败，并在失败/超时时检查 `pointer_gpf/tmp/runtime_diagnostics.json`（若存在）作为证据的一部分。

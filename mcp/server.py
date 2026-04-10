@@ -340,6 +340,7 @@ def _probe_runtime_gate(project_root: Path) -> dict[str, Any]:
         "runtime_gate_passed": False,
         "input_mode": "in_engine_virtual_input",
         "os_input_interference": False,
+        "bootstrap_session_ack": "",
     }
     if not marker.exists() or not marker.is_file():
         return default
@@ -358,7 +359,40 @@ def _probe_runtime_gate(project_root: Path) -> dict[str, Any]:
         "runtime_gate_passed": gate_passed,
         "input_mode": "in_engine_virtual_input",
         "os_input_interference": False,
+        "bootstrap_session_ack": str(payload.get("bootstrap_session_ack", "")).strip(),
     }
+
+
+def _write_mcp_bootstrap_session(project_root: Path) -> tuple[str, float]:
+    bridge_dir = (project_root / "pointer_gpf" / "tmp").resolve()
+    bridge_dir.mkdir(parents=True, exist_ok=True)
+    session_id = uuid.uuid4().hex
+    issued = time.time()
+    path = bridge_dir / "mcp_bootstrap_session.json"
+    path.write_text(
+        json.dumps({"session_id": session_id, "issued_at_unix": issued}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return session_id, issued
+
+
+def _await_bootstrap_session_ack(
+    project_root: Path, session_id: str, *, timeout_ms: int, poll_ms: int = 120
+) -> tuple[bool, dict[str, Any], float]:
+    """Return (ack_seen, last_gate_payload, elapsed_ms)."""
+    timeout_ms = max(1, int(timeout_ms))
+    poll_ms = max(10, int(poll_ms))
+    start = time.monotonic()
+    deadline = start + timeout_ms / 1000.0
+    last: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        last = _probe_runtime_gate(project_root)
+        if str(last.get("bootstrap_session_ack", "")).strip() == session_id:
+            elapsed_ms = int((time.monotonic() - start) * 1000.0)
+            return True, last, float(elapsed_ms)
+        time.sleep(poll_ms / 1000.0)
+    elapsed_ms = int((time.monotonic() - start) * 1000.0)
+    return False, last, float(elapsed_ms)
 
 
 def _request_auto_enter_play_mode(project_root: Path) -> bool:
@@ -424,6 +458,33 @@ def _discover_godot_executable_candidates(arguments: dict[str, Any], project_roo
         seen.add(key)
         deduped.append(raw.strip())
     return deduped
+
+
+def _build_godot_resolution_missing(project_root: Path) -> dict[str, Any]:
+    cfg_abs = (project_root / "tools" / "game-test-runner" / "config" / "godot_executable.json").resolve()
+    return {
+        "status": "missing",
+        "persist_abs": str(cfg_abs),
+        "persist_rel": "tools/game-test-runner/config/godot_executable.json",
+        "example_object": {"godot_executable": "D:/Godot/Godot_v4.2.2-stable_win64.exe"},
+    }
+
+
+def _godot_executable_resolution_for_gate_failure(
+    project_root: Path, engine_bootstrap: dict[str, Any]
+) -> dict[str, Any] | None:
+    launch_err = str(engine_bootstrap.get("launch_error", "")).strip()
+    if launch_err == "no_executable_candidates":
+        return _build_godot_resolution_missing(project_root)
+    if launch_err.startswith("executable_not_found:"):
+        return _build_godot_resolution_missing(project_root)
+    if (
+        str(engine_bootstrap.get("bootstrap_session_ack_skip_reason", "")).strip()
+        == "no_editor_holding_project_for_ack"
+    ):
+        # e.g. temp-project autostart blocked or autostart disabled: user still needs a persistent godot path for real runs
+        return _build_godot_resolution_missing(project_root)
+    return None
 
 
 def _is_godot_editor_running_for_project(project_root: Path) -> bool:
@@ -522,14 +583,16 @@ def _ensure_runtime_play_mode(project_root: Path, arguments: dict[str, Any]) -> 
         "launched_executable": "",
         "launch_error": "",
         "candidate_count": 0,
+        "bootstrap_session_id": "",
+        "bootstrap_session_ack_seen": False,
+        "bootstrap_session_ack_elapsed_ms": 0.0,
+        "bootstrap_session_ack_skip_reason": "",
     }
     if bool(runtime_meta.get("runtime_gate_passed", False)):
         return runtime_meta, bootstrap
 
-    bootstrap["auto_enter_play_mode_requested"] = _request_auto_enter_play_mode(project_root)
-    runtime_meta = _await_runtime_gate(project_root, timeout_ms=2_500, poll_ms=120)
-    if bool(runtime_meta.get("runtime_gate_passed", False)):
-        return runtime_meta, bootstrap
+    session_id, _issued = _write_mcp_bootstrap_session(project_root)
+    bootstrap["bootstrap_session_id"] = session_id
 
     bootstrap["editor_running_before_launch"] = _is_godot_editor_running_for_project(project_root)
     candidates = _discover_godot_executable_candidates(arguments, project_root)
@@ -554,15 +617,45 @@ def _ensure_runtime_play_mode(project_root: Path, arguments: dict[str, Any]) -> 
                 bootstrap["launch_error"] = err
     if launch_allowed and not bootstrap["editor_running_before_launch"] and not candidates:
         bootstrap["launch_error"] = "no_executable_candidates"
+
+    editor_expects_ack = bool(
+        bootstrap["editor_running_before_launch"] or bootstrap.get("launch_succeeded", False)
+    )
+    if not editor_expects_ack:
+        bootstrap["bootstrap_session_ack_seen"] = False
+        bootstrap["bootstrap_session_ack_elapsed_ms"] = 0.0
+        bootstrap["bootstrap_session_ack_skip_reason"] = "no_editor_holding_project_for_ack"
+        runtime_meta = _probe_runtime_gate(project_root)
+        return runtime_meta, bootstrap
+
+    ack_timeout_ms = int(
+        max(5_000, min(120_000, int(arguments.get("editor_plugin_ack_timeout_ms", 60_000))))
+    )
+    ack_ok, gate_after_ack, ack_elapsed_ms = _await_bootstrap_session_ack(
+        project_root, session_id, timeout_ms=ack_timeout_ms, poll_ms=120
+    )
+    bootstrap["bootstrap_session_ack_seen"] = ack_ok
+    bootstrap["bootstrap_session_ack_elapsed_ms"] = ack_elapsed_ms
+    runtime_meta = gate_after_ack
+    if not ack_ok:
+        return runtime_meta, bootstrap
+
+    bootstrap["auto_enter_play_mode_requested"] = _request_auto_enter_play_mode(project_root)
     base_post_ms = 18_000 if bootstrap["launch_succeeded"] or bootstrap["editor_running_before_launch"] else 1_500
     agent_session = _agent_session_defaults_requested(arguments)
     post_wait_ms = int(max(base_post_ms, 24_000 if agent_session else base_post_ms))
-    _request_auto_enter_play_mode(project_root)
     runtime_meta = _await_runtime_gate(project_root, timeout_ms=post_wait_ms, poll_ms=120)
     return runtime_meta, bootstrap
 
 
-def _request_project_close(project_root: Path, *, timeout_ms: int = 1_500) -> dict[str, Any]:
+def _request_project_close_once(project_root: Path, *, timeout_ms: int) -> dict[str, Any]:
+    """Write one closeProject command and wait up to timeout_ms for matching response.
+
+    "Keep editor" means the Godot **editor application** process typically stays running;
+    the **Play session** must still be stopped via the bridge (stop flag → EditorPlugin
+    → EditorInterface.stop_playing_scene()). Do not read "keep editor" as permission
+    to leave Play running.
+    """
     bridge_dir = (project_root / "pointer_gpf" / "tmp").resolve()
     cmd_path = bridge_dir / "command.json"
     rsp_path = bridge_dir / "response.json"
@@ -628,6 +721,29 @@ def _request_project_close(project_root: Path, *, timeout_ms: int = 1_500) -> di
     }
 
 
+def _request_project_close(
+    project_root: Path,
+    *,
+    timeout_ms_per_attempt: int = 5_500,
+    max_attempts: int = 3,
+) -> dict[str, Any]:
+    """Request editor plugin to stop Play mode; retry a few times so agents reliably exit run before user feedback."""
+    last: dict[str, Any] = {}
+    n = max(1, min(8, int(max_attempts)))
+    for attempt in range(n):
+        last = _request_project_close_once(project_root, timeout_ms=timeout_ms_per_attempt)
+        last["close_attempt"] = attempt + 1
+        last["close_max_attempts"] = n
+        last["timeout_ms_per_attempt"] = timeout_ms_per_attempt
+        if last.get("acknowledged"):
+            return last
+        if not last.get("requested"):
+            return last
+        time.sleep(0.15)
+    last["reason"] = str(last.get("reason") or "close_exhausted_attempts")
+    return last
+
+
 def _project_close_skipped_meta() -> dict[str, Any]:
     return {
         "requested": False,
@@ -637,10 +753,82 @@ def _project_close_skipped_meta() -> dict[str, Any]:
     }
 
 
-def _maybe_request_project_close(project_root: Path, close_project_on_finish: bool) -> dict[str, Any]:
+def _read_runtime_gate_marker(project_root: Path) -> dict[str, Any]:
+    path = project_root / "pointer_gpf" / "tmp" / "runtime_gate.json"
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _runtime_gate_implies_playing(marker: dict[str, Any]) -> bool | None:
+    if not marker:
+        return None
+    mode = str(marker.get("runtime_mode", "")).strip()
+    if mode == "play_mode" and bool(marker.get("runtime_gate_passed")):
+        return True
+    if mode == "editor_bridge" or marker.get("runtime_gate_passed") is False:
+        return False
+    return None
+
+
+def _enrich_project_close_with_runtime_gate_evidence(project_root: Path, close_meta: dict[str, Any]) -> None:
+    """Distinguish bridge closeProject ack from Play actually stopped (runtime_gate.json)."""
+    snap0 = _read_runtime_gate_marker(project_root)
+    close_meta["runtime_gate_snapshot_immediate"] = {
+        "runtime_mode": snap0.get("runtime_mode"),
+        "runtime_gate_passed": snap0.get("runtime_gate_passed"),
+    }
+    if not close_meta.get("requested"):
+        close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(snap0)
+        return
+    if not close_meta.get("acknowledged"):
+        close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(snap0)
+        return
+    last = snap0
+    for _ in range(4):
+        playing = _runtime_gate_implies_playing(last)
+        if playing is not True:
+            break
+        time.sleep(0.03)
+        last = _read_runtime_gate_marker(project_root)
+    close_meta["runtime_gate_snapshot_after_ack_poll"] = {
+        "runtime_mode": last.get("runtime_mode"),
+        "runtime_gate_passed": last.get("runtime_gate_passed"),
+    }
+    close_meta["play_running_by_runtime_gate"] = _runtime_gate_implies_playing(last)
+
+
+def _maybe_request_project_close(
+    project_root: Path,
+    close_project_on_finish: bool,
+    flow_arguments: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not close_project_on_finish:
-        return _project_close_skipped_meta()
-    return _request_project_close(project_root)
+        meta = _project_close_skipped_meta()
+        _enrich_project_close_with_runtime_gate_evidence(project_root, meta)
+        return meta
+    fa = flow_arguments or {}
+    per = 5_500
+    raw_tm = fa.get("project_close_timeout_ms")
+    try:
+        if raw_tm is not None:
+            per = max(800, int(raw_tm))
+    except (TypeError, ValueError):
+        pass
+    max_att = 3
+    raw_ma = fa.get("project_close_max_attempts")
+    try:
+        if raw_ma is not None:
+            max_att = max(1, min(8, int(raw_ma)))
+    except (TypeError, ValueError):
+        pass
+    meta = _request_project_close(project_root, timeout_ms_per_attempt=per, max_attempts=max_att)
+    _enrich_project_close_with_runtime_gate_evidence(project_root, meta)
+    return meta
 
 
 def _windows_find_godot_pids_holding_path(project_root: Path) -> list[int]:
@@ -1505,6 +1693,23 @@ def _tool_check_plugin_status(ctx: ServerCtx, arguments: dict[str, Any]) -> dict
         "config_sources": cfg.config_sources,
         "status": "ready" if plugin_cfg.exists() and enabled else "not_ready",
     }
+
+
+def _tool_configure_godot_executable(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
+    _ = ctx
+    project_root = _resolve_project_root(arguments)
+    raw = str(arguments.get("godot_executable", "")).strip()
+    if not raw:
+        raise AppError("INVALID_ARGUMENT", "godot_executable is required", {})
+    p = Path(raw).expanduser()
+    if not p.is_file():
+        raise AppError("INVALID_ARGUMENT", f"godot_executable not a file: {p}", {"path": str(p)})
+    cfg_dir = (project_root / "tools" / "game-test-runner" / "config").resolve()
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path = cfg_dir / "godot_executable.json"
+    payload = {"godot_executable": str(p)}
+    cfg_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"status": "written", "path": str(cfg_path), "godot_executable": str(p)}
 
 
 def _scan_files(project_root: Path, scan_roots: list[str], limit: int = 2500) -> list[FileEntry]:
@@ -2977,6 +3182,7 @@ def _diagnostics_to_issue_text(d: dict[str, Any]) -> str:
 def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, Any]) -> dict[str, Any]:
     project_root = _resolve_project_root(arguments)
     cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
+    close_project_on_finish = bool(arguments.get("close_project_on_finish", True))
     flow_file_raw = str(arguments.get("flow_file", "")).strip()
     if flow_file_raw:
         flow_file = Path(flow_file_raw)
@@ -2989,7 +3195,14 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
         flow_slug = _slugify(flow_id)
         flow_file = (project_root / cfg.seed_flow_dir_rel / f"{flow_slug}.json").resolve()
     if not flow_file.exists() or not flow_file.is_file():
-        raise AppError("INVALID_ARGUMENT", f"flow file not found: {flow_file}")
+        pcm = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
+        inv: dict[str, Any] = {
+            "project_close": pcm,
+            "blocking_point": "flow_file_missing_after_agent_run",
+            "next_actions": ["regenerate or pass flow_file / flow_id", "confirm pointer_gpf/generated_flows contains the flow JSON"],
+        }
+        _attach_hard_teardown(inv, project_root, arguments, pcm)
+        raise AppError("INVALID_ARGUMENT", f"flow file not found: {flow_file}", inv)
     flow_data = _read_json_file(flow_file)
     raw_timeout = arguments.get("step_timeout_ms", 30_000)
     try:
@@ -3005,14 +3218,13 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
     # 2) emit step-level shell-visible progress
     require_play_mode = True
     shell_report = True
-    close_project_on_finish = bool(arguments.get("close_project_on_finish", True))
     auto_enter_requested = False
     engine_bootstrap: dict[str, Any] = {}
     if not bool(runtime_meta.get("runtime_gate_passed", False)):
         runtime_meta, engine_bootstrap = _ensure_runtime_play_mode(project_root, arguments)
         auto_enter_requested = bool(engine_bootstrap.get("auto_enter_play_mode_requested", False))
     if not bool(runtime_meta.get("runtime_gate_passed", False)):
-        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
         _rgf_details: dict[str, Any] = {
             "runtime_mode": runtime_meta.get("runtime_mode", "editor_bridge"),
             "runtime_entry": runtime_meta.get("runtime_entry", "unknown"),
@@ -3024,9 +3236,14 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
                 "check project_root points to intended project",
                 "set godot_executable or tools/game-test-runner/config/godot_executable.json",
                 "re-run run_game_basic_test_flow after engine starts and enters play mode",
+                "if engine_bootstrap.bootstrap_session_ack_seen is false but launch succeeded: confirm addons/pointer_gpf is enabled for this project",
+                "若尚未配置 Godot：用 AskQuestion 取得用户编辑器 .exe 绝对路径，写入 godot_executable_resolution.persist_abs 所指 JSON，或调用 configure_godot_executable；勿使用整盘递归 Shell 自行发现 Godot（见 AGENTS.md 永久工程原则与 docs/gpf-godot-executable-ask-and-persist.md）。",
             ],
             "project_close": close_meta,
         }
+        _gres = _godot_executable_resolution_for_gate_failure(project_root, engine_bootstrap)
+        if _gres is not None:
+            _rgf_details["godot_executable_resolution"] = _gres
         _attach_hard_teardown(_rgf_details, project_root, arguments, close_meta)
         raise AppError(
             "RUNTIME_GATE_FAILED",
@@ -3049,7 +3266,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
     try:
         report = runner.run(flow_data)
     except FlowExecutionTimeout as exc:
-        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
         _to_details: dict[str, Any] = {
@@ -3079,7 +3296,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
         _attach_hard_teardown(_to_details, project_root, arguments, close_meta)
         raise AppError("TIMEOUT", str(exc), _to_details) from exc
     except FlowExecutionStepFailed as exc:
-        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
         _sf_details: dict[str, Any] = {
@@ -3101,7 +3318,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
         _attach_hard_teardown(_sf_details, project_root, arguments, close_meta)
         raise AppError("STEP_FAILED", str(exc), _sf_details) from exc
     except FlowExecutionEngineStalled as exc:
-        close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+        close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
         rep = exc.report or {}
         dual = build_dual_conclusions(rep)
         _es_details: dict[str, Any] = {
@@ -3128,7 +3345,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
         }
         _attach_hard_teardown(_es_details, project_root, arguments, close_meta)
         raise AppError("ENGINE_RUNTIME_STALLED", str(exc), _es_details) from exc
-    close_meta = _maybe_request_project_close(project_root, close_project_on_finish)
+    close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
     legacy_hints = _legacy_layout_hints(project_root)
     dual = build_dual_conclusions(report)
     exp_artifact = _write_exp_runtime_artifact(
@@ -3241,13 +3458,23 @@ def _tool_run_game_basic_test_flow_by_current_state_once(ctx: ServerCtx, argumen
     if not isinstance(flow_result, dict):
         flow_result = {}
     if str(flow_result.get("status", "")).strip() == "blocked":
+        close_on = bool(arguments.get("close_project_on_finish", True))
+        pcm = _maybe_request_project_close(project_root, close_on, arguments)
+        blk: dict[str, Any] = {
+            "flow_result": flow_result,
+            "context_refresh": refreshed.get("context_refresh", {}),
+            "project_close": pcm,
+            "blocking_point": "flow_generation_blocked_stop_play_before_user_feedback",
+            "next_actions": [
+                "provide executable evidence per operational profile",
+                "or run from an environment where design flow generation is not blocked",
+            ],
+        }
+        _attach_hard_teardown(blk, project_root, arguments, pcm)
         raise AppError(
             "FLOW_GENERATION_BLOCKED",
             "cannot run basic flow because generation is blocked by missing executable evidence",
-            {
-                "flow_result": flow_result,
-                "context_refresh": refreshed.get("context_refresh", {}),
-            },
+            blk,
         )
     run_args = {
         **arguments,
@@ -3942,6 +4169,7 @@ def _tool_get_mcp_runtime_info(ctx: ServerCtx, arguments: dict[str, Any]) -> dic
             "enable_godot_plugin",
             "update_godot_plugin",
             "check_plugin_status",
+            "configure_godot_executable",
             "init_project_context",
             "refresh_project_context",
             "generate_flow_seed",
@@ -4045,6 +4273,7 @@ def _build_tool_map() -> dict[str, Any]:
         "enable_godot_plugin": _tool_enable_godot_plugin,
         "update_godot_plugin": _tool_update_godot_plugin,
         "check_plugin_status": _tool_check_plugin_status,
+        "configure_godot_executable": _tool_configure_godot_executable,
         "init_project_context": _tool_init_project_context,
         "refresh_project_context": _tool_refresh_project_context,
         "generate_flow_seed": _tool_generate_flow_seed,
@@ -4138,6 +4367,23 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                 "type": "object",
                 "required": ["project_root"],
                 "properties": dict(base_props),
+            },
+        },
+        "configure_godot_executable": {
+            "description": (
+                "Write tools/game-test-runner/config/godot_executable.json after validating that "
+                "godot_executable points to an existing file (persistent path for MCP auto-launch)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_root", "godot_executable"],
+                "properties": {
+                    **base_props,
+                    "godot_executable": {
+                        "type": "string",
+                        "description": "Absolute path to Godot editor executable (must exist).",
+                    },
+                },
             },
         },
         "init_project_context": {
@@ -4250,7 +4496,21 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     },
                     "close_project_on_finish": {
                         "type": "boolean",
-                        "description": "If true (default), request closeProject after the run (stop Play, keep editor).",
+                        "description": (
+                            "If true (default), after the tool returns (success or failure) request closeProject via the "
+                            "file bridge so Play mode stops and the editor application process stays open. Retries a few times with "
+                            "project_close_timeout_ms per attempt. "
+                            "project_close in responses may include play_running_by_runtime_gate and runtime_gate_snapshot_* "
+                            "so callers can distinguish bridge ack from runtime_gate.json Play state."
+                        ),
+                    },
+                    "project_close_timeout_ms": {
+                        "type": "integer",
+                        "description": "Per-attempt wait for closeProject acknowledgment (default 5500). Only when close_project_on_finish is true.",
+                    },
+                    "project_close_max_attempts": {
+                        "type": "integer",
+                        "description": "Max closeProject attempts if not acknowledged (1–8, default 3). Only when close_project_on_finish is true.",
                     },
                     "force_terminate_godot_on_flow_failure": {
                         "type": "boolean",
@@ -4263,6 +4523,13 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "godot_executable": {"type": "string", "description": "Optional path to Godot editor binary for auto-launch."},
                     "godot_editor_executable": {"type": "string", "description": "Alias for godot_executable."},
                     "godot_path": {"type": "string", "description": "Alias for godot_executable."},
+                    "editor_plugin_ack_timeout_ms": {
+                        "type": "integer",
+                        "description": (
+                            "Max wait ms for editor plugin to echo bootstrap_session_ack in runtime_gate.json after an "
+                            "editor instance for project_root exists or was launched (default 60000, clamped 5000–120000)."
+                        ),
+                    },
                     "auto_repair": {
                         "type": "boolean",
                         "description": (
@@ -4328,6 +4595,17 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     },
                     "close_project_on_finish": {
                         "type": "boolean",
+                        "description": (
+                            "Forwarded to run_game_basic_test_flow (stop Play before returning; keep editor application). "
+                            "See run_game_basic_test_flow project_close enrichment fields."
+                        ),
+                    },
+                    "project_close_timeout_ms": {
+                        "type": "integer",
+                        "description": "Forwarded to run_game_basic_test_flow.",
+                    },
+                    "project_close_max_attempts": {
+                        "type": "integer",
                         "description": "Forwarded to run_game_basic_test_flow.",
                     },
                     "force_terminate_godot_on_flow_failure": {
@@ -4337,6 +4615,7 @@ def _build_tool_specs() -> dict[str, dict[str, Any]]:
                     "godot_executable": {"type": "string"},
                     "godot_editor_executable": {"type": "string"},
                     "godot_path": {"type": "string"},
+                    "editor_plugin_ack_timeout_ms": {"type": "integer", "description": "Same as run_game_basic_test_flow."},
                     "auto_repair": {
                         "type": "boolean",
                         "description": "Same as run_game_basic_test_flow; forwarded to inner run after refresh.",
