@@ -1,0 +1,23 @@
+---
+description: Auto 模式机械门闩：技能、证据、失败格式、上下文卫生
+alwaysApply: true
+---
+
+# Agent Auto 模式门闩（与 AGENTS.md 同步）
+
+## 执行顺序（不可跳过）
+
+1. 若任务可能适用 superpowers 技能：必须先读取对应 `SKILL.md` 再使用工具或改代码。
+2. 若声称完成/通过验证：必须先运行 `superpowers:verification-before-completion` 所要求的验证命令（或等价项目命令），再写结论。
+3. 若用户要求 GPF 流程：必须遵守 `gpf-runtime-test-mandatory-play-mode` 规则全文。
+
+## 回复中必须遵守
+
+- **证据先于结论**：结论中引用已运行的命令与结果摘要（或日志路径）。
+- **失败格式**：含 `blocking_point`、`next_actions`、已执行排查（与 `AGENTS.md` 一致）。
+- **禁止推卸**：不得在无证据时把失败主因归于用户；说明自动化已尝试的步骤上限。
+- **上下文卫生**：少贴大段代码；长内容写入仓库文件并给路径。
+
+## 锚点（供契约测试检索）
+
+先读取并遵循 verification-before-completion；blocking_point；next_actions。
