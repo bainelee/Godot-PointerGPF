@@ -7,17 +7,17 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/ui_demo_panel_3.tscn" id="5_ui3"]
 [ext_resource type="Script" uid="uid://hs15ae123hau" path="res://scripts/main_menu_flow.gd" id="6_flow"]
 
-[node name="MainSceneExample" type="Node3D" unique_id=1621273095]
+[node name="MainSceneExample" type="Node3D" unique_id=1733279781]
 
-[node name="UI" type="CanvasLayer" parent="." unique_id=1062490018]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1338451848]
 script = ExtResource("6_flow")
 
-[node name="Dashboard" parent="UI" unique_id=182589965 instance=ExtResource("1_dash")]
+[node name="Dashboard" parent="UI" unique_id=22417001 instance=ExtResource("1_dash")]
 
-[node name="StartScreen" parent="UI" unique_id=2067659010 instance=ExtResource("2_start")]
+[node name="StartScreen" parent="UI" unique_id=711671931 instance=ExtResource("2_start")]
 
-[node name="UI1" parent="UI" unique_id=875646147 instance=ExtResource("3_ui1")]
+[node name="UI1" parent="UI" unique_id=1143089307 instance=ExtResource("3_ui1")]
 
-[node name="UI2Popup" parent="UI" unique_id=1517849088 instance=ExtResource("4_ui2")]
+[node name="UI2Popup" parent="UI" unique_id=389061684 instance=ExtResource("4_ui2")]
 
-[node name="UI3" parent="UI" unique_id=1539968273 instance=ExtResource("5_ui3")]
+[node name="UI3" parent="UI" unique_id=763082995 instance=ExtResource("5_ui3")]

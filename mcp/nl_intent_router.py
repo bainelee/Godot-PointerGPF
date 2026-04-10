@@ -57,6 +57,24 @@ def route_nl_intent(text: str) -> IntentRoute:
     if ha("设计", "生成", "创建", "做一个") and ("基础流程" in norm) and not ha("跑", "执行", "运行", "验证", "检查", "走一遍"):
         return IntentRoute("design_game_basic_test_flow", "basic_flow_alt_design_fuzzy")
 
+    # --- Basic flow reference: usage + game-type doc pointers (before auto_fix / figma) ---
+    if ha("流程预期", "游戏类型流程预期", "类型参照", "类型测试参照") and ha(
+        "说明", "文档", "查看", "告诉", "哪里", "在哪", "参照", "怎么"
+    ):
+        return IntentRoute("get_basic_test_flow_reference_guide", "basic_flow_ref_doc_fuzzy")
+    if ("基础测试流程" in norm or "基础流程" in norm) and ha(
+        "怎么用",
+        "如何使用",
+        "使用说明",
+        "说明文档",
+        "文档在哪",
+        "在哪看",
+        "查看说明",
+        "参照说明",
+        "说明",
+    ) and not ha("设计", "生成", "创建", "跑", "执行", "运行", "验证", "检查", "走一遍", "测一下", "试一下"):
+        return IntentRoute("get_basic_test_flow_reference_guide", "basic_flow_ref_usage_fuzzy")
+
     # --- Auto fix (avoid matching unrelated "debug" via bare "bug") ---
     if ha("自动修复", "自动修", "帮我修", "修一下") and ha("点不了", "无法点击", "没反应", "按不了", "不可点击"):
         return IntentRoute("auto_fix_game_bug", "auto_fix_fuzzy")

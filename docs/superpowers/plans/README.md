@@ -16,7 +16,10 @@
 
 - `docs/design/99-tools/`：长期设计、运行规则、不变量（偏稳定）。
 - `docs/superpowers/plans/`：阶段计划与实施路线（会迭代）。
+- `docs/superpowers/notes/`：复盘与意义说明类短文（非实现规范唯一来源）。
 - `docs/authoritative-requirements/`：需求基线（权威来源）。
+
+复盘记录示例：`docs/superpowers/notes/2026-04-10-mcp-test-flow-meaning-retrospective.md`（MCP 基础测试流的意义与验收对照）。
 
 ## 使用建议
 

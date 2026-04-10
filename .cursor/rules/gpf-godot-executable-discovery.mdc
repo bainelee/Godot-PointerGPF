@@ -1,0 +1,31 @@
+---
+description: Godot 未配置时：按 MCP 返回字段 AskQuestion 并写入 godot_executable.json；不自行扫盘。本规则不替代仓库内错误代码的删除（见 AGENTS.md「永久工程原则」）。
+alwaysApply: false
+---
+
+# Godot 可执行路径（代理侧）
+
+## 前置说明
+
+`pointer_gpf` 仓库经 Task 0 审计：**MCP 主路径不包含**对 `C:\`/`D:\` 根目录递归搜索 Godot 的实现。代理在收到「未找到 Godot」类失败时，**不得**自行编写对整盘递归、`where.exe /R` 等扫盘式 PowerShell 来「找 Godot」；应走下面流程。根因修复优先于叠规则：见 **`AGENTS.md`** 中「永久工程原则」。
+
+## 触发条件
+
+工具返回 `RUNTIME_GATE_FAILED`，且满足其一：
+
+- `error.details.engine_bootstrap.launch_error == "no_executable_candidates"`
+- `error.details.godot_executable_resolution.status == "missing"`
+
+## 必须执行
+
+1. 使用 **AskQuestion**，`question id`：`godot_editor_executable_path`；`prompt` 的语义与 **`docs/gpf-godot-executable-ask-and-persist.md`** 中「何时必须询问用户」一致（简体中文）。
+2. 选项（两档即可）：**A**「我将在下一条消息发送 Godot 的 `.exe` 绝对路径」；**B**「取消本次流程」。用户选 A 后，在下一条用户消息中读取路径。
+3. 将路径写入 `{project_root}/tools/game-test-runner/config/godot_executable.json`（格式见该文档），或调用 MCP **`configure_godot_executable`**。
+
+## 不要执行
+
+在 PowerShell 中对 `C:\`、`D:\`（或任意整盘根）使用 `-Recurse` 搜索 `Godot*.exe`；不要使用 `where.exe /R` 作为主要策略。若曾用此类脚本排障，应删除脚本并改用上述持久化路径。
+
+## 用户拒绝或未提供路径
+
+复述 MCP `details.next_actions` 中与 Godot 配置相关的条目，并停止自行扫盘。

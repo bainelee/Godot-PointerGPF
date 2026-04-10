@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-09T18:56:16.586252+00:00",
+  "generated_at_utc": "2026-04-10T17:24:18.411062+00:00",
   "source_directory": "docs/authoritative-requirements",
   "source_files": {
     "product_requirements": "docs/authoritative-requirements/01-actual-product-requirements.md",
@@ -28,7 +28,8 @@
             "对于给定问题描述，系统能自动生成并执行至少 1 条可运行测试流程。",
             "过程日志中包含“验证、定位、修复、复测”四类记录，且至少完成 1 个完整循环。",
             "最终状态必须明确为：`修复成功` 或 `超时/无法完成并已通知用户`。",
-            "若修复成功，必须有至少 1 次复测通过证据。"
+            "若修复成功，必须有至少 1 次复测通过证据。",
+            "自动修复的**覆盖范围与上限**以仓库内 `mcp/adapter_contract_v1.json` 的 `remediation_matrix` 为机器可读准绳；未列入 `handled_by: none` 以外的类时，系统仍必须完成「验证→定位→修复尝试→复测」循环并输出证据，但若无法修复须返回明确失败态而非成功态。"
           ],
           "优先级（P0/P1/P2）": "P0",
           "备注": "该需求是产品核心能力，后续开发与验证默认优先满足此条。"

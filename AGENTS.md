@@ -37,6 +37,17 @@
 - `.cursor/rules/` 下文件为 Cursor 注入的常驻规则；本文件为显式最高优先级补充。
 - 若 Auto 模式未显示某条规则，仍以本文件与技能全文为准。
 
+## 永久工程原则（根因优先于禁令补丁）
+
+适用于本仓库内一切「流程或功能明显不合理」的排障与方案制定（与 `docs/superpowers/plans/2026-04-11-godot-path-ask-persist-no-full-disk-search.md` 中表述一致）：
+
+1. **优先判定为代码或契约写错了**，而不是默认归咎用户环境或代理「不够聪明」。
+2. **修复顺序**：定位根因（具体文件/函数/契约）→ 修改代码或契约使主路径正确 → **删除或停用**错误分支 → 全局检索受影响调用点并**一并修正与清理**。禁止把「新增一条禁止某某行为的 Cursor 规则或文档禁令」当作**首选手段**，去掩盖尚未删除或尚未修正的错误逻辑。
+3. **`.cursor/rules` 与文档中的「禁止」清单**：用于记录**正确流程**与验收对照；代码层根因消除后，规则中应能陈述该事实，避免「规则禁止」与「代码仍在做错事」长期并存。
+4. **若禁令式规则已存在而错误代码仍在**：先删/改代码，再**收紧或删除**仅为压制症状而堆叠的规则条目，避免「越禁越多」。
+
+排障示例（Godot 路径）：见 `docs/gpf-godot-executable-ask-and-persist.md`；不得在仓库问题未查清时，用对整盘递归搜索可执行文件的方式「代替」用户配置。
+
 ## Superpowers 引用名（便于检索）
 
 执行计划类任务时优先使用：`superpowers:subagent-driven-development`、`superpowers:executing-plans`、`superpowers:verification-before-completion`、`superpowers:systematic-debugging`、`superpowers:test-driven-development`、`superpowers:writing-plans`。

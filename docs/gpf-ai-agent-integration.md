@@ -11,7 +11,7 @@
 - 已在目标 Godot 工程中 **安装并启用** GPF 插件（`addons/` + `project.godot` 插件段）。
 - 已执行 **`init_project_context`** 或 **`refresh_project_context`**，上下文目录可用。
 - 调用工具时传入 **正确且非临时禁行** 的 **`project_root`**（临时目录仍受仓库既有安全策略约束）。
-- 本机存在 **可发现的 Godot 编辑器**（或按文档配置 `godot_executable` / 项目内 `tools/game-test-runner/config/godot_executable.json`）。
+- 本机存在 **可发现的 Godot 编辑器**（或按文档配置 `godot_executable` / 项目内 `tools/game-test-runner/config/godot_executable.json`）。路径缺失时的交互与持久化见 **`docs/gpf-godot-executable-ask-and-persist.md`**（须 AskQuestion 或 `configure_godot_executable`，不得依赖全盘搜索）。
 
 以上不满足时，返回体中的 **`blocking_point`**、`engine_bootstrap`、`next_actions` 为**硬失败依据**，不是「请用户去按 F5」的软性提示。
 

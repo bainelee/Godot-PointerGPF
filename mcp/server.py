@@ -721,13 +721,13 @@ def _request_project_close_once(project_root: Path, *, timeout_ms: int) -> dict[
     }
 
 
-def _request_project_close(
+def _request_project_close_round(
     project_root: Path,
     *,
     timeout_ms_per_attempt: int = 5_500,
     max_attempts: int = 3,
 ) -> dict[str, Any]:
-    """Request editor plugin to stop Play mode; retry a few times so agents reliably exit run before user feedback."""
+    """One wave of closeProject commands (retry a few times per wave) until ack or I/O failure."""
     last: dict[str, Any] = {}
     n = max(1, min(8, int(max_attempts)))
     for attempt in range(n):
@@ -742,6 +742,110 @@ def _request_project_close(
         time.sleep(0.15)
     last["reason"] = str(last.get("reason") or "close_exhausted_attempts")
     return last
+
+
+def _request_project_close_until_gate_quiescent(
+    project_root: Path,
+    *,
+    timeout_ms_per_attempt: int = 5_500,
+    max_attempts: int = 3,
+    post_ack_gate_deadline_s: float = 2.0,
+    post_ack_poll_interval_s: float = 0.08,
+    post_ack_max_extra_close_rounds: int = 2,
+) -> dict[str, Any]:
+    """Stop Play via bridge; if ack but runtime_gate still implies playing, issue extra close waves."""
+    last = _request_project_close_round(
+        project_root,
+        timeout_ms_per_attempt=timeout_ms_per_attempt,
+        max_attempts=max_attempts,
+    )
+    if not last.get("acknowledged"):
+        return last
+
+    extra_done = 0
+    max_extra = max(0, int(post_ack_max_extra_close_rounds))
+    quiesce = max(0.0, float(post_ack_gate_deadline_s))
+    poll_iv = max(0.001, float(post_ack_poll_interval_s))
+
+    while True:
+
+        def _gate_not_playing() -> bool:
+            return _runtime_gate_implies_playing(_read_runtime_gate_marker(project_root)) is not True
+
+        if quiesce <= 0.0:
+            if _gate_not_playing():
+                last["post_ack_resync"] = {
+                    "extra_close_rounds": extra_done,
+                    "final_play_running": False,
+                }
+                return last
+        else:
+            deadline = time.monotonic() + quiesce
+            while time.monotonic() < deadline:
+                if _gate_not_playing():
+                    last["post_ack_resync"] = {
+                        "extra_close_rounds": extra_done,
+                        "final_play_running": False,
+                    }
+                    return last
+                time.sleep(poll_iv)
+
+        if extra_done >= max_extra:
+            playing = _runtime_gate_implies_playing(_read_runtime_gate_marker(project_root))
+            last["post_ack_gate_still_playing"] = playing is True
+            last["post_ack_resync"] = {
+                "extra_close_rounds": extra_done,
+                "final_play_running": bool(playing) if playing is not None else None,
+            }
+            return last
+
+        resync = _request_project_close_round(
+            project_root,
+            timeout_ms_per_attempt=timeout_ms_per_attempt,
+            max_attempts=max_attempts,
+        )
+        last[f"resync_close_round_{extra_done}"] = resync
+        extra_done += 1
+
+
+def _request_project_close(
+    project_root: Path,
+    *,
+    timeout_ms_per_attempt: int = 5_500,
+    max_attempts: int = 3,
+    flow_arguments: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Request editor plugin to stop Play; delegates to gate-quiescent helper."""
+    fa = flow_arguments or {}
+    raw_deadline = fa.get("project_close_post_ack_gate_deadline_s")
+    raw_poll = fa.get("project_close_post_ack_poll_interval_s")
+    raw_extra = fa.get("project_close_post_ack_max_extra_rounds")
+    deadline_s = 2.0
+    poll_s = 0.08
+    extra_rounds = 2
+    try:
+        if raw_deadline is not None:
+            deadline_s = max(0.0, float(raw_deadline))
+    except (TypeError, ValueError):
+        pass
+    try:
+        if raw_poll is not None:
+            poll_s = max(0.001, float(raw_poll))
+    except (TypeError, ValueError):
+        pass
+    try:
+        if raw_extra is not None:
+            extra_rounds = max(0, int(raw_extra))
+    except (TypeError, ValueError):
+        pass
+    return _request_project_close_until_gate_quiescent(
+        project_root,
+        timeout_ms_per_attempt=timeout_ms_per_attempt,
+        max_attempts=max_attempts,
+        post_ack_gate_deadline_s=deadline_s,
+        post_ack_poll_interval_s=poll_s,
+        post_ack_max_extra_close_rounds=extra_rounds,
+    )
 
 
 def _project_close_skipped_meta() -> dict[str, Any]:
@@ -788,7 +892,13 @@ def _read_teardown_debug_game_artifact(project_root: Path) -> dict[str, Any]:
 
 def _attach_teardown_debug_game_artifact_to_close_meta(project_root: Path, close_meta: dict[str, Any]) -> None:
     td = _read_teardown_debug_game_artifact(project_root)
-    if isinstance(td, dict) and td.get("ok") is False:
+    if not isinstance(td, dict):
+        return
+    if td.get("ok") is True:
+        close_meta["debug_game_teardown_ok"] = True
+        close_meta["debug_game_teardown_schema"] = str(td.get("schema", ""))
+        return
+    if td.get("ok") is False:
         close_meta["debug_game_teardown_ok"] = False
         close_meta["debug_game_teardown_reason"] = str(td.get("reason", ""))
         close_meta["debug_game_teardown_schema"] = str(td.get("schema", ""))
@@ -868,7 +978,7 @@ def _maybe_request_project_close(
             max_att = max(1, min(8, int(raw_ma)))
     except (TypeError, ValueError):
         pass
-    meta = _request_project_close(project_root, timeout_ms_per_attempt=per, max_attempts=max_att)
+    meta = _request_project_close(project_root, timeout_ms_per_attempt=per, max_attempts=max_att, flow_arguments=fa)
     _enrich_project_close_with_runtime_gate_evidence(project_root, meta)
     return meta
 
@@ -1010,16 +1120,29 @@ def _hard_teardown_for_flow_failure(
         ft["detail"] = "close_project_on_finish was false; no bridge close was sent"
         return block
     if acknowledged:
-        ft["outcome"] = "skipped_close_acknowledged"
-        ft["detail"] = "closeProject was acknowledged; engine should be back in editor idle"
-        return block
+        playing = close_meta.get("play_running_by_runtime_gate")
+        teardown_ok = close_meta.get("debug_game_teardown_ok")
+        if playing is not True and teardown_ok is not False:
+            ft["outcome"] = "skipped_close_acknowledged"
+            ft["detail"] = "closeProject was acknowledged; engine should be back in editor idle"
+            return block
     if not force:
         ft["outcome"] = "disabled_by_default"
-        ft["detail"] = (
-            "closeProject was not acknowledged within timeout; Play mode may still be running. "
-            "Pass force_terminate_godot_on_flow_failure=true only if you accept terminating Godot processes "
-            "whose command line contains this project_root (may close the editor holding the project)."
-        )
+        if acknowledged and (
+            close_meta.get("play_running_by_runtime_gate") is True
+            or close_meta.get("debug_game_teardown_ok") is False
+        ):
+            ft["detail"] = (
+                "closeProject was acknowledged but runtime_gate or teardown evidence suggests Play may still run. "
+                "Pass force_terminate_godot_on_flow_failure=true only if you accept terminating Godot processes "
+                "whose command line contains this project_root (may close the editor holding the project)."
+            )
+        else:
+            ft["detail"] = (
+                "closeProject was not acknowledged within timeout; Play mode may still be running. "
+                "Pass force_terminate_godot_on_flow_failure=true only if you accept terminating Godot processes "
+                "whose command line contains this project_root (may close the editor holding the project)."
+            )
         return block
     ft["attempted"] = True
     res = _force_terminate_godot_processes_holding_project(project_root)

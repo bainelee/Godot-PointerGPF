@@ -41,6 +41,18 @@ class FlowExecutionStepFailed(Exception):
         self.report: dict[str, Any] | None = None
 
 
+class FlowExecutionEngineStalled(Exception):
+    """runtime_diagnostics.json reports error/fatal while waiting for file bridge response."""
+
+    def __init__(self, message: str, *, diagnostics: dict[str, Any], run_id: str) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics
+        self.run_id = run_id
+        self.step_index = -1
+        self.step_id = ""
+        self.report: dict[str, Any] | None = None
+
+
 @dataclass
 class FlowRunOptions:
     project_root: Path
@@ -51,6 +63,7 @@ class FlowRunOptions:
     fail_fast: bool = True
     shell_report: bool = False
     runtime_meta: dict[str, Any] | None = None
+    observe_engine_errors: bool = True
 
 
 class FlowRunner:
@@ -69,6 +82,27 @@ class FlowRunner:
 
     def _response_path(self) -> Path:
         return self._bridge_dir() / "response.json"
+
+    def _runtime_diagnostics_path(self) -> Path:
+        return self._bridge_dir() / "runtime_diagnostics.json"
+
+    def _read_blocking_diagnostics(self) -> dict[str, Any] | None:
+        if not bool(self.options.observe_engine_errors):
+            return None
+        path = self._runtime_diagnostics_path()
+        if not path.is_file():
+            return None
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+            data = json.loads(raw)
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        sev = str(data.get("severity", "")).strip().lower()
+        if sev in ("error", "fatal"):
+            return data
+        return None
 
     def _append_ndjson(self, path: Path, obj: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +182,13 @@ class FlowRunner:
     def _wait_for_response(self, seq: int, deadline: float) -> dict[str, Any]:
         rsp = self._response_path()
         while time.monotonic() < deadline:
+            blocking = self._read_blocking_diagnostics()
+            if blocking is not None:
+                raise FlowExecutionEngineStalled(
+                    "runtime diagnostics reported error/fatal while waiting for bridge response",
+                    diagnostics=blocking,
+                    run_id=self._run_id,
+                )
             if rsp.is_file():
                 try:
                     payload = json.loads(rsp.read_text(encoding="utf-8"))
@@ -208,6 +249,10 @@ class FlowRunner:
         deadline = time.monotonic() + timeout_ms / 1000.0
         try:
             response = self._wait_for_response(seq, deadline)
+        except FlowExecutionEngineStalled as exc:
+            exc.step_index = step_index
+            exc.step_id = step_id
+            raise
         except FlowExecutionTimeout as exc:
             exc.step_index = step_index
             exc.step_id = step_id
@@ -264,11 +309,14 @@ class FlowRunner:
                 ok = self._run_step(idx, raw, events_path)
                 if not ok:
                     has_step_failure = True
-        except FlowExecutionTimeout as exc:
-            status = "timeout"
-            reraise = exc
         except FlowExecutionStepFailed as exc:
             status = "failed"
+            reraise = exc
+        except FlowExecutionEngineStalled as exc:
+            status = "engine_stalled"
+            reraise = exc
+        except FlowExecutionTimeout as exc:
+            status = "timeout"
             reraise = exc
         else:
             if has_step_failure:
@@ -312,9 +360,11 @@ class FlowRunner:
                 },
             }
         )
+        if isinstance(reraise, FlowExecutionEngineStalled):
+            report["runtime_diagnostics"] = reraise.diagnostics
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if reraise is not None:
-            if isinstance(reraise, (FlowExecutionTimeout, FlowExecutionStepFailed)):
+            if isinstance(reraise, (FlowExecutionTimeout, FlowExecutionStepFailed, FlowExecutionEngineStalled)):
                 reraise.report = report
             raise reraise
         return report

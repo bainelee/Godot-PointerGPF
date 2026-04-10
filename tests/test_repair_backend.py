@@ -52,6 +52,8 @@ class TestBugFixLoopL2(unittest.TestCase):
             l2_try_patch=l2,
         )
         self.assertEqual(out["final_status"], "fixed")
+        self.assertIn("remediation_trace", out)
+        self.assertIsInstance(out["remediation_trace"], dict)
 
 
 if __name__ == "__main__":

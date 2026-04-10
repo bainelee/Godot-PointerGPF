@@ -12,6 +12,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "mcp"))
 
 from bug_fix_strategies import (  # noqa: E402
+    GdScriptParseErrorHintStrategy,
+    RuntimeBridgeAutoloadStrategy,
     SceneButtonDisabledFalseStrategy,
     SceneMouseFilterPassStrategy,
     SignalDisconnectedHintStrategy,
@@ -101,6 +103,34 @@ class BugFixStrategiesExtraTests(unittest.TestCase):
             diagnosis = run_diagnosis(issue, verification)
             patch = run_apply_patch(root, issue, diagnosis)
             self.assertTrue(patch.get("applied"))
+
+    def test_parse_hint_writes_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "project.godot").write_text('[application]\nconfig/name="t"\n', encoding="utf-8")
+            strat = GdScriptParseErrorHintStrategy()
+            issue = "Parse Error at res://scripts/a.gd:12 - Expected indented block"
+            self.assertTrue(strat.matches(issue))
+            diag = strat.diagnose(issue, {})
+            res = strat.apply_patch(root, diag)
+            self.assertTrue(res.get("applied"))
+            hint_path = root / "pointer_gpf" / "reports" / "gpf_parse_error_hint.json"
+            self.assertTrue(hint_path.is_file())
+
+    def test_runtime_autoload_patches_project_godot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "project.godot").write_text("[application]\n", encoding="utf-8")
+            strat = RuntimeBridgeAutoloadStrategy()
+            issue = "PointerGPFRuntimeBridge timeout"
+            self.assertTrue(strat.matches(issue))
+            diag = strat.diagnose(issue, {})
+            res = strat.apply_patch(root, diag)
+            self.assertTrue(res.get("applied"))
+            text = (root / "project.godot").read_text(encoding="utf-8")
+            self.assertIn("PointerGPFRuntimeBridge", text)
 
 
 if __name__ == "__main__":

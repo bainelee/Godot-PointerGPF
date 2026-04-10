@@ -123,6 +123,9 @@ class FlowExecutionToolRegistrationTests(unittest.TestCase):
         self.assertIn("STOP_FLAG_WRITE_FAILED", contract.get("error_codes", []))
         rb = contract.get("runtime_bridge") or {}
         self.assertEqual(rb.get("auto_stop_play_mode_flag_rel"), "pointer_gpf/tmp/auto_stop_play_mode.flag")
+        matrix = contract.get("remediation_matrix") or {}
+        self.assertEqual(matrix.get("version"), 1)
+        self.assertIsInstance(matrix.get("rows"), list)
 
     def test_cli_run_game_basic_test_flow_missing_flow_returns_expected_error(self) -> None:
         code, payload = _run_tool_cli_raw(
@@ -627,6 +630,15 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         self.assertEqual(str(engine_bootstrap.get("target_project_root", "")), str(self.project_root))
         self.assertIn("selected_executable", engine_bootstrap)
         self.assertIn("launch_process_id", engine_bootstrap)
+        self.assertTrue(str(engine_bootstrap.get("bootstrap_session_id", "")).strip())
+        self.assertIn("bootstrap_session_ack_skip_reason", engine_bootstrap)
+        gres = details.get("godot_executable_resolution") or {}
+        self.assertEqual(gres.get("status"), "missing")
+        self.assertIn("persist_abs", gres)
+        self.assertEqual(
+            gres.get("persist_rel"),
+            "tools/game-test-runner/config/godot_executable.json",
+        )
 
     def test_temp_project_autostart_is_blocked_by_default(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"
@@ -662,6 +674,12 @@ class FlowExecutionRuntimeTests(unittest.TestCase):
         engine_bootstrap = details.get("engine_bootstrap") or {}
         self.assertFalse(engine_bootstrap.get("launch_attempted", True))
         self.assertEqual(engine_bootstrap.get("launch_block_reason"), "temp_project_autostart_blocked")
+        self.assertEqual(
+            engine_bootstrap.get("bootstrap_session_ack_skip_reason"),
+            "no_editor_holding_project_for_ack",
+        )
+        gres = details.get("godot_executable_resolution") or {}
+        self.assertEqual(gres.get("status"), "missing")
 
     def test_run_flow_times_out_when_bridge_no_response(self) -> None:
         flow_dir = self.project_root / "pointer_gpf" / "generated_flows"

@@ -17,6 +17,61 @@ _GD_PASS_ONLY_PRESSED_HANDLER = re.compile(
 _TSCN_DISABLED_TRUE = re.compile(r"(^[ \t]*)disabled[ \t]*=[ \t]*true[ \t]*$", re.MULTILINE)
 _TSCN_MOUSE_FILTER_ZERO = re.compile(r"(^[ \t]*)mouse_filter[ \t]*=[ \t]*0[ \t]*$", re.MULTILINE)
 
+_DEFAULT_PLUGIN_ID = "pointer_gpf"
+_BRIDGE_AUTOLOAD_NAME = "PointerGPFRuntimeBridge"
+_BRIDGE_AUTOLOAD_PATH = f"*res://addons/{_DEFAULT_PLUGIN_ID}/runtime_bridge.gd"
+
+
+def _verification_augmented_issue(issue: str, verification: dict[str, Any] | None) -> str:
+    parts = [str(issue or "").strip()]
+    if verification:
+        ae = verification.get("app_error")
+        if isinstance(ae, dict):
+            parts.append(str(ae.get("message", "")))
+            parts.append(str(ae.get("code", "")))
+        parts.append(str(verification.get("status", "")))
+    return " ".join(p for p in parts if p)
+
+
+def _ensure_pointer_gpf_runtime_autoload(project_root: Path) -> dict[str, Any]:
+    project_cfg = project_root / "project.godot"
+    if not project_cfg.exists():
+        return {"ok": False, "reason": "missing project.godot", "changed_files": []}
+    text = project_cfg.read_text(encoding="utf-8")
+    if "[autoload]" not in text:
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "\n[autoload]\n"
+        text += f'{_BRIDGE_AUTOLOAD_NAME}="{_BRIDGE_AUTOLOAD_PATH}"\n'
+        project_cfg.write_text(text, encoding="utf-8")
+        return {"ok": True, "mode": "section_created", "changed_files": [str(project_cfg.resolve())]}
+    lines = text.splitlines()
+    section_idx = -1
+    for i, line in enumerate(lines):
+        if line.strip() == "[autoload]":
+            section_idx = i
+            break
+    if section_idx < 0:
+        return {"ok": False, "reason": "no autoload section", "changed_files": []}
+    key_idx = -1
+    for i in range(section_idx + 1, len(lines)):
+        stripped = lines[i].strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            break
+        if stripped.startswith(f"{_BRIDGE_AUTOLOAD_NAME}="):
+            key_idx = i
+            break
+    desired = f'{_BRIDGE_AUTOLOAD_NAME}="{_BRIDGE_AUTOLOAD_PATH}"'
+    if key_idx < 0:
+        lines.insert(section_idx + 1, desired)
+        project_cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return {"ok": True, "mode": "key_created", "changed_files": [str(project_cfg.resolve())]}
+    if lines[key_idx].strip() == desired:
+        return {"ok": True, "mode": "already_enabled", "changed_files": []}
+    lines[key_idx] = desired
+    project_cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"ok": True, "mode": "key_updated", "changed_files": [str(project_cfg.resolve())]}
+
 
 class BugFixStrategy(Protocol):
     strategy_id: str
@@ -270,18 +325,126 @@ class SceneMouseFilterPassStrategy:
         return {"applied": False, "reason": "未找到含 mouse_filter = 0 的 .tscn。", "changed_files": []}
 
 
+@dataclass
+class GdScriptParseErrorHintStrategy:
+    strategy_id: str = "gdscript_parse_hint"
+
+    def matches(self, issue: str) -> bool:
+        raw = str(issue or "").strip()
+        if not raw:
+            return False
+        low = raw.lower()
+        if "parse error" in low or "解析错误" in raw:
+            return True
+        if "gdscript" in low and "error" in low:
+            return True
+        return bool(re.search(r"\(.*\d+,\s*\d+\)", raw))
+
+    def diagnose(self, issue: str, verification: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "strategy_id": self.strategy_id,
+            "summary": "疑似 GDScript 解析错误：请对照引擎报错行号修复语法；本策略仅写入提示文件，不自动改 .gd。",
+            "checks": ["打开 Godot 输出/调试器查看首条 Parse Error 行号", "检查未闭合括号、缩进、拼写"],
+            "issue_excerpt": str(issue or "").strip()[:500],
+            "verification_hint": (verification.get("app_error") or {}).get("message")
+            or verification.get("status")
+            or "",
+        }
+
+    def apply_patch(self, project_root: Path, diagnosis: dict[str, Any]) -> dict[str, Any]:
+        _ = diagnosis
+        root = project_root.resolve()
+        reports = root / "pointer_gpf" / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        out = reports / "gpf_parse_error_hint.json"
+        payload = {
+            "strategy_id": self.strategy_id,
+            "hint": "请根据引擎 Parse Error 定位 .gd 行号后手动修复语法；自动改写脚本风险过高。",
+        }
+        try:
+            out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            return {"applied": False, "reason": f"写入失败: {out}: {exc}", "changed_files": []}
+        return {
+            "applied": True,
+            "changed_files": [str(out.resolve())],
+            "notes": "已写入解析错误排查提示（未修改脚本）。",
+        }
+
+
+@dataclass
+class RuntimeBridgeAutoloadStrategy:
+    strategy_id: str = "runtime_bridge_autoload"
+
+    def matches(self, issue: str) -> bool:
+        raw = str(issue or "").strip()
+        if not raw:
+            return False
+        low = raw.lower().replace("_", "")
+        if "pointergpfruntimebridge" in low or "runtimebridge" in low:
+            return True
+        if "runtime_bridge" in raw.lower():
+            return True
+        if "autoload" in low and "bridge" in low:
+            return True
+        if "timeout" in low and "bridge" in low:
+            return True
+        return False
+
+    def diagnose(self, issue: str, verification: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "strategy_id": self.strategy_id,
+            "summary": "疑似缺少 PointerGPF runtime bridge 自动加载项：尝试在 project.godot 写入 autoload 条目。",
+            "checks": ["确认 addons/pointer_gpf/runtime_bridge.gd 存在", "确认 autoload 名称与路径与插件一致"],
+            "issue_excerpt": str(issue or "").strip()[:500],
+            "verification_hint": (verification.get("app_error") or {}).get("message")
+            or verification.get("status")
+            or "",
+        }
+
+    def apply_patch(self, project_root: Path, diagnosis: dict[str, Any]) -> dict[str, Any]:
+        _ = diagnosis
+        res = _ensure_pointer_gpf_runtime_autoload(project_root.resolve())
+        if not res.get("ok"):
+            return {
+                "applied": False,
+                "reason": str(res.get("reason", "autoload patch failed")),
+                "changed_files": [],
+            }
+        changed = list(res.get("changed_files") or [])
+        if not changed:
+            return {
+                "applied": False,
+                "reason": "autoload 已存在且正确，未做修改。",
+                "changed_files": [],
+            }
+        return {
+            "applied": True,
+            "changed_files": changed,
+            "notes": f"已更新 project.godot autoload（{res.get('mode', '')}）。",
+        }
+
+
 DEFAULT_STRATEGIES: tuple[BugFixStrategy, ...] = (
     SignalDisconnectedHintStrategy(),
     SceneButtonDisabledFalseStrategy(),
     SceneMouseFilterPassStrategy(),
+    GdScriptParseErrorHintStrategy(),
+    RuntimeBridgeAutoloadStrategy(),
     ButtonNotClickableStrategy(),
 )
 
 
-def select_strategy(issue: str, strategies: tuple[BugFixStrategy, ...] | None = None) -> BugFixStrategy | None:
+def select_strategy(
+    issue: str,
+    strategies: tuple[BugFixStrategy, ...] | None = None,
+    *,
+    verification: dict[str, Any] | None = None,
+) -> BugFixStrategy | None:
+    haystack = _verification_augmented_issue(issue, verification)
     pool = strategies if strategies is not None else DEFAULT_STRATEGIES
     for s in pool:
-        if s.matches(issue):
+        if s.matches(haystack):
             return s
     return None
 
@@ -297,7 +460,7 @@ def default_diagnosis(issue: str, verification: dict[str, Any]) -> dict[str, Any
 
 
 def run_diagnosis(issue: str, verification: dict[str, Any]) -> dict[str, Any]:
-    picked = select_strategy(issue)
+    picked = select_strategy(issue, verification=verification)
     if picked is None:
         return default_diagnosis(issue, verification)
     return picked.diagnose(issue, verification)
@@ -308,13 +471,15 @@ def run_apply_patch(
     issue: str,
     diagnosis: dict[str, Any],
     strategies: tuple[BugFixStrategy, ...] | None = None,
+    *,
+    verification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     sid = str(diagnosis.get("strategy_id", "")).strip()
     pool = strategies if strategies is not None else DEFAULT_STRATEGIES
     for s in pool:
         if s.strategy_id == sid:
             return s.apply_patch(project_root, diagnosis)
-    picked = select_strategy(issue, pool)
+    picked = select_strategy(issue, pool, verification=verification)
     if picked is None:
         return {
             "applied": False,

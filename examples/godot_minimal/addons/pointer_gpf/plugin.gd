@@ -120,6 +120,7 @@ func _handle_auto_stop_play_request() -> void:
 func _deferred_chain_stop_debug_game_session() -> void:
     if not bool(EditorInterface.is_playing_scene()):
         _clear_teardown_debug_game_failure_file()
+        _write_teardown_debug_game_success_file()
         _pending_debug_stop_retries = 0
         return
     if _pending_debug_stop_retries <= 0:
@@ -135,6 +136,26 @@ func _clear_teardown_debug_game_failure_file() -> void:
     var p := ProjectSettings.globalize_path(_TEARDOWN_DEBUG_GAME_LAST_REL)
     if FileAccess.file_exists(p):
         var _e := DirAccess.remove_absolute(p)
+
+
+func _write_teardown_debug_game_success_file() -> void:
+    var p := ProjectSettings.globalize_path(_TEARDOWN_DEBUG_GAME_LAST_REL)
+    var dir := p.get_base_dir()
+    DirAccess.make_dir_recursive_absolute(dir)
+    var out := FileAccess.open(p, FileAccess.WRITE)
+    if out == null:
+        return
+    out.store_string(
+        JSON.stringify(
+            {
+                "schema": "pointer_gpf.teardown_debug_game.v1",
+                "ok": true,
+                "reason": "stop_playing_scene_completed",
+                "stopped_at_unix": Time.get_unix_time_from_system(),
+            }
+        )
+    )
+    out.close()
 
 
 func _write_teardown_debug_game_failure_file(reason: String) -> void:

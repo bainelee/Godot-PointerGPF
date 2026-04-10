@@ -3,6 +3,8 @@ extends CharacterBody3D
 ## 第一人称相机控制器（无模型）
 ## 可复用：将场景实例化到任意关卡中即可
 
+signal pointer_ui_mode_changed(active: bool)
+
 @export var move_speed: float = 5.0
 @export var sprint_speed: float = 8.0
 @export var jump_velocity: float = 4.5
@@ -15,6 +17,19 @@ extends CharacterBody3D
 ## 镜头抖动衰减速度
 @export var hit_shake_decay: float = 3.0
 
+var _pointer_ui_mode: bool = false
+
+## true：显示系统指针，鼠标用于 UI，不转视角、不开火
+var pointer_ui_mode: bool:
+	get:
+		return _pointer_ui_mode
+	set(v):
+		if _pointer_ui_mode == v:
+			return
+		_pointer_ui_mode = v
+		_apply_pointer_ui_mouse_mode()
+		pointer_ui_mode_changed.emit(_pointer_ui_mode)
+
 var _camera: Camera3D
 var _bullet_spawn: Node3D  # 子弹发射点（可编辑器中调整 BulletSpawnPoint）
 var _pitch: float = 0.0  # 上下视角（俯仰角）
@@ -25,46 +40,69 @@ const BULLET_SCENE := preload("res://scenes/projectiles/bullet.tscn")
 
 
 func _ready() -> void:
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_camera = get_node_or_null("Camera3D")
 	_bullet_spawn = get_node_or_null("Camera3D/WeaponViewmodel/BulletSpawnPoint")
 	if not _camera:
 		push_error("FPSController: 未找到 Camera3D 子节点")
+	_apply_pointer_ui_mouse_mode()
+
+
+func _apply_pointer_ui_mouse_mode() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _pointer_ui_mode else Input.MOUSE_MODE_CAPTURED
+
+
+func toggle_pointer_ui_mode() -> void:
+	pointer_ui_mode = not _pointer_ui_mode
 
 
 func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		toggle_pointer_ui_mode()
+		get_viewport().set_input_as_handled()
+		return
+
+	if event is InputEventKey and event.pressed and not event.echo:
+		if _is_alt_toggle_key(event):
+			toggle_pointer_ui_mode()
+			get_viewport().set_input_as_handled()
+			return
+
+	if _pointer_ui_mode:
+		return
+
 	if event is InputEventMouseMotion:
 		# 左右旋转身体
 		rotate_y(-event.relative.x * mouse_sensitivity)
 		# 上下旋转相机（限制俯仰角）
 		_pitch -= event.relative.y * mouse_sensitivity
 		_pitch = clampf(_pitch, -deg_to_rad(89), deg_to_rad(89))
-	
-	if event.is_action_pressed("ui_cancel"):  # ESC 切换鼠标
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
-	
+
 	# 鼠标左键发射子弹
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			_shoot()
 
 
+func _is_alt_toggle_key(e: InputEventKey) -> bool:
+	return e.keycode == KEY_ALT or e.physical_keycode == KEY_ALT
+
+
 func _physics_process(delta: float) -> void:
 	# 重力（get_gravity().y 为负值，加上后 velocity.y 递减）
 	if not is_on_floor():
 		velocity.y += get_gravity().y * gravity_multiplier * delta
-	
+
 	# 跳跃
 	if Input.is_action_just_pressed("ui_accept") and is_on_floor():
 		velocity.y = jump_velocity
-	
+
 	# 移动输入（WASD：W前 S后 A左 D右）
 	var input_dir := Vector2(
 		float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)),
 		float(Input.is_key_pressed(KEY_S)) - float(Input.is_key_pressed(KEY_W))
 	)
 	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-	
+
 	if direction:
 		var speed := sprint_speed if Input.is_key_pressed(KEY_SHIFT) else move_speed
 		velocity.x = direction.x * speed
@@ -72,7 +110,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.x = move_toward(velocity.x, 0, 10.0)
 		velocity.z = move_toward(velocity.z, 0, 10.0)
-	
+
 	move_and_slide()
 
 
@@ -80,6 +118,8 @@ const RAY_MAX_LENGTH := 5000.0
 
 
 func _shoot() -> void:
+	if _pointer_ui_mode:
+		return
 	if not _camera:
 		return
 	var viewport := _camera.get_viewport()
@@ -87,7 +127,7 @@ func _shoot() -> void:
 	var origin := _camera.project_ray_origin(center)
 	var direction := _camera.project_ray_normal(center).normalized()
 	var ray_end := origin + direction * RAY_MAX_LENGTH
-	
+
 	# 物理射线：用于检测地面等非敌人碰撞体
 	var space_state := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(origin, ray_end)
@@ -104,7 +144,7 @@ func _shoot() -> void:
 		if result.collider is CharacterBody3D and result.collider.is_in_group("player"):
 			phys_dist = INF
 			phys_hit = ray_end
-	
+
 	# 遍历敌人：射线与精灵平面相交，仅按纹理不透明区域判定受击（无 3D 碰撞）
 	var best_enemy: Node = null
 	var best_dist := INF
@@ -117,7 +157,7 @@ func _shoot() -> void:
 			best_dist = res["distance"]
 			best_enemy = enemy
 			best_pos = res["position"]
-	
+
 	var hit_position: Vector3
 	if best_enemy:
 		hit_position = best_pos
@@ -127,7 +167,7 @@ func _shoot() -> void:
 		hit_position = phys_hit
 	else:
 		hit_position = ray_end
-	
+
 	var spawn_pos := _bullet_spawn.global_position if _bullet_spawn else origin
 	var bullet := BULLET_SCENE.instantiate() as Area3D
 	get_parent().add_child(bullet)
