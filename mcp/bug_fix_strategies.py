@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,9 @@ _GD_PASS_ONLY_PRESSED_HANDLER = re.compile(
     r"([ \t]*)pass[ \t]*(?:#.*)?(\r?\n|\Z)",
     re.MULTILINE,
 )
+
+_TSCN_DISABLED_TRUE = re.compile(r"(^[ \t]*)disabled[ \t]*=[ \t]*true[ \t]*$", re.MULTILINE)
+_TSCN_MOUSE_FILTER_ZERO = re.compile(r"(^[ \t]*)mouse_filter[ \t]*=[ \t]*0[ \t]*$", re.MULTILINE)
 
 
 class BugFixStrategy(Protocol):
@@ -112,7 +116,166 @@ class ButtonNotClickableStrategy:
         }
 
 
-DEFAULT_STRATEGIES: tuple[BugFixStrategy, ...] = (ButtonNotClickableStrategy(),)
+@dataclass
+class SignalDisconnectedHintStrategy:
+    strategy_id: str = "signal_disconnected_hint"
+
+    def matches(self, issue: str) -> bool:
+        raw = str(issue or "").strip()
+        if not raw:
+            return False
+        low = raw.lower()
+        sig = "信号" in raw or "signal" in low
+        disc = any(
+            k in raw for k in ("未连接", "没连线", "没接上", "断开")
+        ) or "not connected" in low or "disconnect" in low
+        return sig and disc
+
+    def diagnose(self, issue: str, verification: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "strategy_id": self.strategy_id,
+            "summary": "疑似 UI 信号未连接到脚本：请在检查器中确认 pressed/pressed 等信号是否已绑定。",
+            "checks": [
+                "在场景树选中按钮，检查「节点」面板信号页是否为空连接",
+                "确认目标脚本路径与函数名是否存在拼写错误",
+            ],
+            "issue_excerpt": str(issue or "").strip()[:500],
+            "verification_hint": (verification.get("app_error") or {}).get("message")
+            or verification.get("status")
+            or "",
+        }
+
+    def apply_patch(self, project_root: Path, diagnosis: dict[str, Any]) -> dict[str, Any]:
+        _ = diagnosis
+        root = project_root.resolve()
+        reports = root / "pointer_gpf" / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        out = reports / "gpf_signal_hint.json"
+        payload = {
+            "strategy_id": self.strategy_id,
+            "hint": "请手动在 Godot 检查器中为按钮连接 pressed 等信号到目标函数。",
+        }
+        try:
+            out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            return {"applied": False, "reason": f"写入失败: {out}: {exc}", "changed_files": []}
+        return {
+            "applied": True,
+            "changed_files": [str(out.resolve())],
+            "notes": "已写入信号排查提示文件（未自动改场景，以免误连）。",
+        }
+
+
+@dataclass
+class SceneButtonDisabledFalseStrategy:
+    strategy_id: str = "scene_button_disabled_false"
+
+    def matches(self, issue: str) -> bool:
+        raw = str(issue or "").strip()
+        if not raw:
+            return False
+        low = raw.lower()
+        disabled_kw = any(k in raw for k in ("禁用", "灰掉", "灰色", "不可点")) or "disabled" in low
+        button_kw = "按钮" in raw or "button" in low
+        return disabled_kw and button_kw
+
+    def diagnose(self, issue: str, verification: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "strategy_id": self.strategy_id,
+            "summary": "疑似场景里 Button/TextureButton 的 disabled 为 true。",
+            "checks": ["在 .tscn 或检查器中确认 disabled 属性"],
+            "issue_excerpt": str(issue or "").strip()[:500],
+            "verification_hint": (verification.get("app_error") or {}).get("message")
+            or verification.get("status")
+            or "",
+        }
+
+    def apply_patch(self, project_root: Path, diagnosis: dict[str, Any]) -> dict[str, Any]:
+        _ = diagnosis
+        root = project_root.resolve()
+        for tscn in sorted(root.rglob("*.tscn")):
+            if ".godot" in tscn.parts:
+                continue
+            try:
+                text = tscn.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if "disabled = true" not in text:
+                continue
+            new_text, n = _TSCN_DISABLED_TRUE.subn(r"\1disabled = false", text, count=1)
+            if n != 1:
+                continue
+            try:
+                tscn.write_text(new_text, encoding="utf-8")
+            except OSError as exc:
+                return {"applied": False, "reason": f"写入失败: {tscn}: {exc}", "changed_files": []}
+            return {
+                "applied": True,
+                "changed_files": [str(tscn.resolve())],
+                "notes": "已将首个 disabled = true 改为 false（请确认目标节点正确）。",
+            }
+        return {"applied": False, "reason": "未找到含 disabled = true 的 .tscn。", "changed_files": []}
+
+
+@dataclass
+class SceneMouseFilterPassStrategy:
+    strategy_id: str = "scene_mouse_filter_pass"
+
+    def matches(self, issue: str) -> bool:
+        raw = str(issue or "").strip()
+        if not raw:
+            return False
+        low = raw.lower()
+        if "mouse_filter" in low:
+            return True
+        if "鼠标" in raw and "过滤" in raw:
+            return True
+        return "挡住" in raw and "点击" in raw
+
+    def diagnose(self, issue: str, verification: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "strategy_id": self.strategy_id,
+            "summary": "疑似 Control.mouse_filter=STOP(0) 吞掉事件：尝试改为 PASS(2) 放行到子节点。",
+            "checks": ["确认父节点 mouse_filter 是否误设为 STOP", "遮挡用的 ColorRect 是否 mouse_filter=IGNORE"],
+            "issue_excerpt": str(issue or "").strip()[:500],
+            "verification_hint": (verification.get("app_error") or {}).get("message")
+            or verification.get("status")
+            or "",
+        }
+
+    def apply_patch(self, project_root: Path, diagnosis: dict[str, Any]) -> dict[str, Any]:
+        _ = diagnosis
+        root = project_root.resolve()
+        for tscn in sorted(root.rglob("*.tscn")):
+            if ".godot" in tscn.parts:
+                continue
+            try:
+                text = tscn.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if "mouse_filter = 0" not in text:
+                continue
+            new_text, n = _TSCN_MOUSE_FILTER_ZERO.subn(r"\1mouse_filter = 2", text, count=1)
+            if n != 1:
+                continue
+            try:
+                tscn.write_text(new_text, encoding="utf-8")
+            except OSError as exc:
+                return {"applied": False, "reason": f"写入失败: {tscn}: {exc}", "changed_files": []}
+            return {
+                "applied": True,
+                "changed_files": [str(tscn.resolve())],
+                "notes": "已将首个 mouse_filter = 0 改为 2（Godot 4：PASS）。",
+            }
+        return {"applied": False, "reason": "未找到含 mouse_filter = 0 的 .tscn。", "changed_files": []}
+
+
+DEFAULT_STRATEGIES: tuple[BugFixStrategy, ...] = (
+    SignalDisconnectedHintStrategy(),
+    SceneButtonDisabledFalseStrategy(),
+    SceneMouseFilterPassStrategy(),
+    ButtonNotClickableStrategy(),
+)
 
 
 def select_strategy(issue: str, strategies: tuple[BugFixStrategy, ...] | None = None) -> BugFixStrategy | None:
