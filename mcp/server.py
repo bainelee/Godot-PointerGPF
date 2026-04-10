@@ -28,7 +28,7 @@ from nl_intent_router import route_nl_intent
 
 
 DEFAULT_SERVER_NAME = "pointer-gpf-mcp"
-DEFAULT_SERVER_VERSION = "0.2.4.3"
+DEFAULT_SERVER_VERSION = "0.3.0.0"
 DEFAULT_PLUGIN_ID = "pointer_gpf"
 DEFAULT_PLUGIN_CFG_REL = f"addons/{DEFAULT_PLUGIN_ID}/plugin.cfg"
 DEFAULT_RUNTIME_BRIDGE_AUTOLOAD_NAME = "PointerGPFRuntimeBridge"

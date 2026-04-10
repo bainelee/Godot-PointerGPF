@@ -5,24 +5,19 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/ui_demo_panel_1.tscn" id="3_ui1"]
 [ext_resource type="PackedScene" path="res://scenes/ui/ui_demo_popup_2.tscn" id="4_ui2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/ui_demo_panel_3.tscn" id="5_ui3"]
-[ext_resource type="Script" path="res://scripts/main_menu_flow.gd" id="6_flow"]
+[ext_resource type="Script" uid="uid://hs15ae123hau" path="res://scripts/main_menu_flow.gd" id="6_flow"]
 
-[node name="MainSceneExample" type="Node3D"]
+[node name="MainSceneExample" type="Node3D" unique_id=1621273095]
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1062490018]
 script = ExtResource("6_flow")
 
-[node name="Dashboard" parent="UI" instance=ExtResource("1_dash")]
+[node name="Dashboard" parent="UI" unique_id=182589965 instance=ExtResource("1_dash")]
 
-[node name="StartScreen" parent="UI" instance=ExtResource("2_start")]
+[node name="StartScreen" parent="UI" unique_id=2067659010 instance=ExtResource("2_start")]
 
-[node name="UI1" parent="UI" instance=ExtResource("3_ui1")]
+[node name="UI1" parent="UI" unique_id=875646147 instance=ExtResource("3_ui1")]
 
-[node name="UI2Popup" parent="UI" instance=ExtResource("4_ui2")]
+[node name="UI2Popup" parent="UI" unique_id=1517849088 instance=ExtResource("4_ui2")]
 
-[node name="UI3" parent="UI" instance=ExtResource("5_ui3")]
-
-[connection signal="pressed" from="UI/StartScreen/StartButton" to="UI" method="_on_start_button_pressed"]
-[connection signal="pressed" from="UI/UI1/OpenUI2Button" to="UI" method="_on_ui1_open_ui2_button_pressed"]
-[connection signal="pressed" from="UI/UI2Popup/NextButton" to="UI" method="_on_ui2_next_button_pressed"]
-[connection signal="pressed" from="UI/UI3/CloseButton" to="UI" method="_on_ui3_close_button_pressed"]
+[node name="UI3" parent="UI" unique_id=1539968273 instance=ExtResource("5_ui3")]

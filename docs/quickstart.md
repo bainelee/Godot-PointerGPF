@@ -52,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File "pointer_gpf/install/update-mcp.ps1" -F
 
 - 仍可使用根目录 `pointer-gpf.cmd`，它会优先转发到 `pointer_gpf/install/pointer-gpf.ps1`。
 
-更新行为说明（v0.2.4.3+）：
+更新行为说明（v0.3.0.0+）：
 
 - `-ForceRemote` 优先级最高：即使本地 `mcp/version_manifest.json` 存在 `artifact.url`，也会优先解析 GitHub release 资产。
 - 默认执行“仓库级关键同步”：`mcp/` + `gtr.config.json` + `godot_plugin_template/`。
