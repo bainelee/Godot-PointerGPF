@@ -10,7 +10,24 @@ When continuing V2 work in a new conversation, read these files first:
 4. [v2-basic-flow-contract.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-contract.md)
 5. [v2-basic-flow-asset-model.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-asset-model.md)
 6. [v2-basic-flow-staleness-and-generation.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-staleness-and-generation.md)
-7. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
+7. [v2-plugin-runtime-map.md](/D:/AI/pointer_gpf/docs/v2-plugin-runtime-map.md)
+8. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
+
+## Current Repository Shape
+
+`main` is now intentionally V2-only.
+
+Current top-level tracked shape is:
+
+- `.cursor`
+- `.github`
+- `docs`
+- `scripts`
+- `v2`
+- root metadata files such as `README.md`, `README.zh-CN.md`, `AGENTS.md`, `LICENSE`
+
+The old MCP system is no longer present on `main`.
+Use `legacy/mcp` only when historical reference is required.
 
 ## Current State
 
@@ -121,6 +138,34 @@ Continue with the `basicflow` productization work:
 2. keep regression coverage aligned when `basicflow` generation logic changes
 3. preserve serial execution for flow runs and generation sessions against one shared project
 
+## Plugin Summary For Colleagues
+
+The V2 Godot plugin source is stored under:
+
+- [v2/godot_plugin/addons/pointer_gpf](/D:/AI/pointer_gpf/v2/godot_plugin/addons/pointer_gpf)
+
+It is synced into a target project as:
+
+- `目标工程/addons/pointer_gpf/...`
+
+The runtime state used by V2 is stored inside the target project as:
+
+- `目标工程/pointer_gpf/tmp/runtime_gate.json`
+- `目标工程/pointer_gpf/tmp/command.json`
+- `目标工程/pointer_gpf/tmp/response.json`
+- `目标工程/pointer_gpf/tmp/runtime_diagnostics.json`
+
+Responsibility split:
+
+- `plugin.gd`
+  - editor-side play-mode gate sync and auto enter/stop handling
+- `runtime_bridge.gd`
+  - runtime-side command polling and flow action execution
+- `runtime_diagnostics_logger.gd`
+  - captures Godot engine errors
+- `runtime_diagnostics_writer.gd`
+  - writes aggregated runtime diagnostics to disk
+
 ## What Not To Do
 
 Do not re-expand V2 with:
@@ -146,10 +191,10 @@ Check in this order:
 5. `pointer_gpf/tmp/runtime_diagnostics.json`
 6. external project resource UID consistency
 
-## One-Line Prompt For New Conversation
+## Prompt For New Conversation
 
 Use this starter:
 
 ```text
-继续 pointer_gpf 的 V2 重建。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-handoff.md，然后先验证 V2 的 unittest、preflight_project 和 run_basic_flow，再继续做最小可交互闭环。
+继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出，再继续做 basicflow 的项目特定目标推断扩展，并同步补测试与文档。
 ```
