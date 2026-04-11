@@ -1,0 +1,42 @@
+{
+  "flowId": "basic_interactive_flow",
+  "name": "Basic Interactive Flow",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "wait_start",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "click_start",
+      "action": "click",
+      "target": {
+        "hint": "node_name:StartButton"
+      }
+    },
+    {
+      "id": "wait_game_level",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:GameLevel"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "check_hud",
+      "action": "check",
+      "hint": "node_exists:GamePointerHud"
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}

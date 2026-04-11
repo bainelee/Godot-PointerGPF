@@ -13,6 +13,8 @@
 | 脚本 | 作用 | 主要输入 | 主要输出 | 对应文档 |
 | --- | --- | --- | --- | --- |
 | `scripts/assert-mcp-artifacts.ps1` | 校验 MCP 运行产物契约（含可选 Figma/执行层校验） | `ProjectRoot`, `FlowId` | 校验结果（命令退出码与错误信息） | `docs/mcp-testing-spec.md`, `docs/quickstart.md` |
+| `scripts/verify-v2-regression.py` | 统一执行 V2 固定回归：单测、预检查、交互 flow、basicflow 问题契约、session 生成链、默认 basicflow 运行、stale 分析、stale override、运行保护验证 | `--project-root` | JSON 结果（`ok` + 各回归项详情） | `docs/v2-status.md`, `docs/v2-handoff.md` |
+| `scripts/verify-v2-runtime-guards.py` | 验证 V2 的运行态保护：同工程并发拒绝、多开编辑器拒绝；Windows 下以隐藏辅助窗口方式启动验证进程 | `--project-root`，可选 `--check conflict|multi-editor|all` | JSON 结果（`ok` + 每项保护验证详情） | `docs/v2-status.md`, `docs/v2-handoff.md` |
 | `scripts/verify-cross-project.ps1` | 执行示例项目 + 目标项目的跨项目矩阵验证 | `TargetProjectRoot`（必填），可选 `ExampleProjectRoot` | 验证日志与调用结果 | `docs/quickstart.md`, `docs/adoption-overview.md` |
 | `scripts/migrate-legacy-layout.ps1` | 将旧布局 `gameplayflow/*` / `gpf-exp` 迁移到 `pointer_gpf/*` | `ProjectRoot`，可选 `DryRun`, `Overwrite` | `pointer_gpf/reports/legacy_layout_migration_report.json` | `docs/migration-checklist.md`, `docs/quickstart.md` |
 | `scripts/update-version-manifest.ps1` | 回填/更新 `mcp/version_manifest.json` 的稳定通道信息 | `Version`, `ArtifactUrl`, `Sha256` | 更新后的 `mcp/version_manifest.json` | `docs/quickstart.md` |

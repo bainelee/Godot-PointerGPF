@@ -1,0 +1,15 @@
+{
+  "flowId": "basic_minimal_flow",
+  "name": "Basic Minimal Flow",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}
+
