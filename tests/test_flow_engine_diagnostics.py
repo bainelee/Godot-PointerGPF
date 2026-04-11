@@ -42,7 +42,7 @@ class TestFlowEngineDiagnostics(unittest.TestCase):
                         "schema": "pointer_gpf.runtime_diagnostics.v1",
                         "severity": "error",
                         "summary": "script failed",
-                        "items": [{"kind": "push_error", "message": "boom", "file": "", "line": 0}],
+                        "items": [{"kind": "engine_log_error", "message": "boom", "file": "", "line": 0}],
                     },
                     ensure_ascii=False,
                 ),

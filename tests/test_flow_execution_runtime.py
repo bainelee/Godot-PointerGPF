@@ -908,7 +908,7 @@ class PluginBridgePackagingTests(unittest.TestCase):
         self.assertIn("func _show_virtual_cursor", src)
         self.assertIn("func _hide_virtual_cursor", src)
         self.assertIn("\"INPUT_PATH_BLOCKED\"", src)
-        self.assertIn("\"closeproject\":", src)
+        self.assertIn("\"closeproject\", \"stopgametestsession\":", src)
         self.assertIn("_request_stop_play_mode()", src)
         self.assertIn("const _AUTO_STOP_PLAY_MODE_FLAG_REL", src)
         # Duplicate delivery: respond then remove command.json to avoid a stuck poll loop.

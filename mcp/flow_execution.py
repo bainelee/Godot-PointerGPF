@@ -100,8 +100,26 @@ class FlowRunner:
         if not isinstance(data, dict):
             return None
         sev = str(data.get("severity", "")).strip().lower()
-        if sev in ("error", "fatal"):
-            return data
+        if sev not in ("error", "fatal"):
+            return None
+        items = data.get("items")
+        if not isinstance(items, list):
+            return None
+        blocking_items: list[dict[str, Any]] = []
+        for raw_item in items:
+            if not isinstance(raw_item, dict):
+                continue
+            kind = str(raw_item.get("kind", "")).strip().lower()
+            msg = str(raw_item.get("message", "")).strip().lower()
+            if kind == "engine_log_error":
+                blocking_items.append(raw_item)
+                continue
+            if kind == "bridge_error" and "acknowledged" not in msg:
+                blocking_items.append(raw_item)
+        if blocking_items:
+            out = dict(data)
+            out["blocking_items"] = blocking_items
+            return out
         return None
 
     def _append_ndjson(self, path: Path, obj: dict[str, Any]) -> None:
@@ -275,12 +293,22 @@ class FlowRunner:
             {**semantic_base, "verified": verified},
         )
         if self.options.fail_fast and not ok:
+            details: list[str] = []
+            for key in ("message", "hint", "reason", "elapsedMs", "conditionMet"):
+                if key in response:
+                    details.append(f"{key}={response.get(key)!r}")
             raise FlowExecutionStepFailed(
-                f"bridge reported failure for step {step_id!r}",
+                (
+                    f"bridge reported failure for step {step_id!r}"
+                    + (f" ({', '.join(details)})" if details else "")
+                ),
                 step_index=step_index,
                 step_id=step_id,
                 run_id=self._run_id,
             )
+        # Let scene changes / UI instantiation settle before the next command.
+        if ok and step_action.lower() == "click":
+            time.sleep(1.5)
         return ok
 
     def run(self, flow_payload: dict[str, Any]) -> dict[str, Any]:

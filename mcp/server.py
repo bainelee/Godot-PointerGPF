@@ -406,6 +406,24 @@ def _request_auto_enter_play_mode(project_root: Path) -> bool:
         return False
 
 
+def _cleanup_stale_bridge_exchange_files(project_root: Path) -> None:
+    bridge_dir = (project_root / "pointer_gpf" / "tmp").resolve()
+    for name in (
+        "command.json",
+        "response.json",
+        "auto_stop_play_mode.flag",
+        "auto_enter_play_mode.flag",
+        "runtime_bridge_ready.json",
+        "runtime_diagnostics.json",
+    ):
+        path = bridge_dir / name
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            continue
+
+
 def _await_runtime_gate(project_root: Path, *, timeout_ms: int = 8_000, poll_ms: int = 120) -> dict[str, Any]:
     timeout_ms = max(1, int(timeout_ms))
     poll_ms = max(10, int(poll_ms))
@@ -589,7 +607,12 @@ def _ensure_runtime_play_mode(project_root: Path, arguments: dict[str, Any]) -> 
         "bootstrap_session_ack_skip_reason": "",
     }
     if bool(runtime_meta.get("runtime_gate_passed", False)):
-        return runtime_meta, bootstrap
+        editor_running = _is_godot_editor_running_for_project(project_root)
+        bootstrap["editor_running_before_launch"] = editor_running
+        if editor_running:
+            return runtime_meta, bootstrap
+        bootstrap["stale_initial_runtime_gate"] = True
+        bootstrap["stale_initial_runtime_gate_reason"] = "runtime_gate_passed_but_no_editor_process"
 
     session_id, _issued = _write_mcp_bootstrap_session(project_root)
     bootstrap["bootstrap_session_id"] = session_id
@@ -2369,6 +2392,35 @@ def _rank_click_actions_by_static_interaction(
     return non_none if non_none else sorted_a
 
 
+def _select_post_entry_feature_actions(
+    actions: list[dict[str, Any]],
+    *,
+    max_feature_checks: int,
+    allow_low_likelihood: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ordered = _rank_click_actions_by_static_interaction(
+        actions, allow_low_likelihood=allow_low_likelihood
+    )
+    if allow_low_likelihood:
+        return ordered[:max_feature_checks], {
+            "policy": "allow_low_likelihood",
+            "input_count": len(actions),
+            "selected_count": min(len(ordered), max_feature_checks),
+            "dropped_ids": [],
+        }
+
+    stable = [x for x in ordered if _interaction_static_rank(x) >= 2]
+    dropped = [x for x in ordered if _interaction_static_rank(x) < 2]
+    return stable[:max_feature_checks], {
+        "policy": "require_medium_or_higher_for_post_entry_feature_actions",
+        "input_count": len(actions),
+        "stable_count": len(stable),
+        "dropped_count": len(dropped),
+        "selected_count": min(len(stable), max_feature_checks),
+        "dropped_ids": [str(x.get("id", "")) for x in dropped if str(x.get("id", "")).strip()],
+    }
+
+
 def _enrich_flow_candidates_static_interaction(
     project_root: Path,
     flow_candidates: dict[str, Any],
@@ -2684,6 +2736,20 @@ def _candidate_assert_step(step_id: str, candidate: dict[str, Any]) -> dict[str,
     if target_hint:
         step["target"] = {"hint": target_hint}
     return step
+
+
+def _candidate_wait_for_assert_step(step_id: str, candidate: dict[str, Any], timeout_ms: int = 4000) -> dict[str, Any] | None:
+    target_hint = str(candidate.get("target_hint", "")).strip()
+    if not target_hint:
+        return None
+    return {
+        "id": step_id,
+        "action": "wait",
+        "kind": str(candidate.get("kind", "logic_state")),
+        "hint": str(candidate.get("hint", "")),
+        "until": {"hint": target_hint},
+        "timeoutMs": max(250, timeout_ms),
+    }
 
 
 def _derive_followup_assert(step_id: str, action_candidate: dict[str, Any]) -> dict[str, Any]:
@@ -3067,7 +3133,13 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
                 "generation_evidence": generation_evidence,
                 "exp_runtime": exp_artifact,
             }
-        selected_actions = [entry_action] + level_a[:max_feature_checks]
+        selected_level_actions, level_selection_evidence = _select_post_entry_feature_actions(
+            level_a,
+            max_feature_checks=max_feature_checks,
+            allow_low_likelihood=allow_low_likelihood,
+        )
+        generation_evidence["post_entry_feature_action_selection"] = level_selection_evidence
+        selected_actions = [entry_action] + selected_level_actions
         assertion_candidates = level_ast
         candidate_reasons = [x for x in level_only_reasons if x]
         generation_evidence["blocked_reasons"] = list(candidate_reasons)
@@ -3115,6 +3187,18 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
         steps.append({"id": "load_game_smoke", "action": "click", "target": {"hint": save_load["load_target_hint"]}})
         steps.append({"id": "assert_load_success", "action": "check", "kind": "logic_state", "hint": "load completed"})
 
+    def _append_wait_before_assert(wait_id: str, assertion_candidate: dict[str, Any]) -> None:
+        if not use_phased:
+            return
+        wait_step = _candidate_wait_for_assert_step(wait_id, assertion_candidate)
+        if wait_step is None:
+            return
+        steps.append(wait_step)
+        generation_evidence["selected_steps"][wait_id] = {
+            "candidate_id": str(assertion_candidate.get("id", "")),
+            "evidence": assertion_candidate.get("evidence", []),
+        }
+
     for idx, candidate in enumerate(selected_actions[1:], start=1):
         steps.append(_candidate_action_step(f"feature_action_{idx}", candidate, "click"))
         generation_evidence["selected_steps"][f"feature_action_{idx}"] = {
@@ -3128,6 +3212,7 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
                 steps.append(_derive_followup_assert(f"feature_assert_{idx}", candidate))
                 generation_evidence["selected_steps"][f"feature_assert_{idx}"] = {"candidate_id": "", "evidence": []}
             else:
+                _append_wait_before_assert(f"feature_wait_{idx}", selected_assertion)
                 steps.append(_candidate_assert_step(f"feature_assert_{idx}", selected_assertion))
                 generation_evidence["selected_steps"][f"feature_assert_{idx}"] = {
                     "candidate_id": str(selected_assertion.get("id", "")),
@@ -3144,6 +3229,7 @@ def _tool_design_game_basic_test_flow(ctx: ServerCtx, arguments: dict[str, Any])
                 steps.append(_derive_followup_assert("feature_assert_1", entry_action))
                 generation_evidence["selected_steps"]["feature_assert_1"] = {"candidate_id": "", "evidence": []}
             else:
+                _append_wait_before_assert("feature_wait_1", first_assertion)
                 steps.append(_candidate_assert_step("feature_assert_1", first_assertion))
                 generation_evidence["selected_steps"]["feature_assert_1"] = {
                     "candidate_id": str(first_assertion.get("id", "")),
@@ -3348,6 +3434,7 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
     project_root = _resolve_project_root(arguments)
     cfg = _resolve_runtime_config(ctx, arguments, project_root=project_root)
     close_project_on_finish = bool(arguments.get("close_project_on_finish", True))
+    _cleanup_stale_bridge_exchange_files(project_root)
     flow_file_raw = str(arguments.get("flow_file", "")).strip()
     if flow_file_raw:
         flow_file = Path(flow_file_raw)
@@ -3377,17 +3464,13 @@ def _tool_run_game_basic_test_flow_execute(ctx: ServerCtx, arguments: dict[str, 
     if step_timeout_ms <= 0:
         step_timeout_ms = 30_000
     run_id_opt = str(arguments.get("run_id", "")).strip() or None
-    runtime_meta = _probe_runtime_gate(project_root)
     # Non-negotiable execution policy:
     # 1) run in real play mode runtime gate
     # 2) emit step-level shell-visible progress
     require_play_mode = True
     shell_report = True
-    auto_enter_requested = False
-    engine_bootstrap: dict[str, Any] = {}
-    if not bool(runtime_meta.get("runtime_gate_passed", False)):
-        runtime_meta, engine_bootstrap = _ensure_runtime_play_mode(project_root, arguments)
-        auto_enter_requested = bool(engine_bootstrap.get("auto_enter_play_mode_requested", False))
+    runtime_meta, engine_bootstrap = _ensure_runtime_play_mode(project_root, arguments)
+    auto_enter_requested = bool(engine_bootstrap.get("auto_enter_play_mode_requested", False))
     if not bool(runtime_meta.get("runtime_gate_passed", False)):
         close_meta = _maybe_request_project_close(project_root, close_project_on_finish, arguments)
         _rgf_details: dict[str, Any] = {

@@ -4,6 +4,7 @@ extends Node
 const _CMD_REL := "res://pointer_gpf/tmp/command.json"
 const _RSP_REL := "res://pointer_gpf/tmp/response.json"
 const _TMP_DIR_REL := "res://pointer_gpf/tmp"
+const _READY_REL := "res://pointer_gpf/tmp/runtime_bridge_ready.json"
 const _AUTO_STOP_PLAY_MODE_FLAG_REL := "res://pointer_gpf/tmp/auto_stop_play_mode.flag"
 const _RuntimeDiagnosticsWriter := preload("res://addons/pointer_gpf/runtime_diagnostics_writer.gd")
 const _RuntimeDiagnosticsLogger := preload("res://addons/pointer_gpf/runtime_diagnostics_logger.gd")
@@ -21,6 +22,7 @@ var _cursor_visible_until_msec: int = 0
 func _ready() -> void:
     var tmp_global := ProjectSettings.globalize_path(_TMP_DIR_REL)
     DirAccess.make_dir_recursive_absolute(tmp_global)
+    _write_ready_marker()
     _setup_virtual_cursor_overlay()
     if not Engine.is_editor_hint():
         _install_os_error_logger()
@@ -176,6 +178,7 @@ func _dispatch_action(action: String, seq: int, run_id: String, command: Diction
                 "elapsedMs": int(wait_result.get("elapsedMs", timeout_ms)),
                 "conditionMet": bool(wait_result.get("conditionMet", false)),
                 "hint": wait_hint,
+                "reason": str(wait_result.get("reason", "")),
             }
         "check":
             var check_result := _evaluate_check(command, step)
@@ -245,16 +248,13 @@ func _evaluate_check(command: Dictionary, step: Dictionary) -> Dictionary:
 
 
 func _perform_click(target: Variant, fallback_pos: Vector2) -> Dictionary:
-    var node := _resolve_target_node(target)
+    var node := _resolve_target_node_with_retry(target, 1200)
     if node != null:
         if node is BaseButton:
             var btn := node as BaseButton
             var reported_path := str(btn.get_path()) if btn.is_inside_tree() else ""
             var click_pos := _control_center(btn)
-            if btn.has_signal("pressed"):
-                btn.pressed.emit()
-            btn.emit_signal("pressed")
-            _dispatch_click_virtual(click_pos)
+            _activate_button(btn, click_pos)
             return {"ok": true, "node_path": reported_path}
         if node is Control:
             var ctrl := node as Control
@@ -269,6 +269,30 @@ func _perform_click(target: Variant, fallback_pos: Vector2) -> Dictionary:
         _dispatch_click_virtual(fallback_pos)
         return {"ok": true, "node_path": ""}
     return {"ok": false, "message": "cannot resolve clickable target"}
+
+
+func _activate_button(btn: BaseButton, click_pos: Vector2) -> void:
+    _show_virtual_cursor(click_pos)
+    if btn == null:
+        return
+    if btn.has_method("grab_focus"):
+        btn.grab_focus()
+    # BaseButton targets are more reliable when we trigger a single deferred pressed signal
+    # instead of relying purely on synthetic mouse input or double-firing the handler.
+    btn.call_deferred("emit_signal", "pressed")
+
+
+func _resolve_target_node_with_retry(target: Variant, timeout_ms: int = 1200) -> Node:
+    var timeout_safe := max(0, timeout_ms)
+    var start := Time.get_ticks_msec()
+    while true:
+        var node := _resolve_target_node(target)
+        if node != null:
+            return node
+        if Time.get_ticks_msec() - start >= timeout_safe:
+            return null
+        OS.delay_msec(16)
+    return null
 
 
 func _resolve_target_node(target: Variant) -> Node:
@@ -370,13 +394,15 @@ func _evaluate_until_hint(hint: String, timeout_ms: int) -> Dictionary:
     var start := Time.get_ticks_msec()
     var timeout_safe := max(50, timeout_ms)
     var elapsed := 0
+    var last_reason := "timeout"
     while elapsed <= timeout_safe:
         var result := _evaluate_hint_once(hint)
         if bool(result.get("matched", false)):
             return {"conditionMet": true, "elapsedMs": elapsed, "reason": str(result.get("reason", "matched"))}
+        last_reason = str(result.get("reason", "timeout"))
         OS.delay_msec(16)
         elapsed = Time.get_ticks_msec() - start
-    return {"conditionMet": false, "elapsedMs": timeout_safe, "reason": "timeout"}
+    return {"conditionMet": false, "elapsedMs": timeout_safe, "reason": last_reason}
 
 
 func _evaluate_hint_once(hint: String) -> Dictionary:
@@ -552,3 +578,20 @@ func _request_stop_play_mode() -> bool:
     )
     out.close()
     return true
+
+
+func _write_ready_marker() -> void:
+    var ready_path := ProjectSettings.globalize_path(_READY_REL)
+    var out := FileAccess.open(ready_path, FileAccess.WRITE)
+    if out == null:
+        return
+    out.store_string(
+        JSON.stringify(
+            {
+                "schema": "pointer_gpf.runtime_bridge_ready.v1",
+                "ts_unix": Time.get_unix_time_from_system(),
+                "engine_is_editor_hint": Engine.is_editor_hint(),
+            }
+        )
+    )
+    out.close()

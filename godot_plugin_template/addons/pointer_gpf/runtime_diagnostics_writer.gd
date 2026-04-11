@@ -62,6 +62,13 @@ func note_bridge_dispatch(action: String, response: Dictionary) -> void:
     var ok: bool = bool(response.get("ok", false))
     var msg: String = str(response.get("message", ""))
     var code: String = str(response.get("code", ""))
+    var err_obj: Variant = response.get("error", null)
+    if typeof(err_obj) == TYPE_DICTIONARY:
+        var err_dict: Dictionary = err_obj
+        if code == "":
+            code = str(err_dict.get("code", ""))
+        if msg == "":
+            msg = str(err_dict.get("message", ""))
     var kind: String = "bridge_ok" if ok else "bridge_error"
     if not ok and code != "":
         msg = "%s: %s" % [code, msg]
