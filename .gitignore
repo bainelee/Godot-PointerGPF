@@ -7,6 +7,7 @@ pointer_gpf/project_context/
 pointer_gpf/generated_flows/
 pointer_gpf/reports/
 pointer_gpf/gpf-exp/
+pointer_gpf/tmp/
 # Legacy output layout (migration compatibility)
 gameplayflow/project_context/
 gameplayflow/generated_flows/

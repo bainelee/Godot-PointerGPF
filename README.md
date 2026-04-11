@@ -1,225 +1,38 @@
-# Godot-PointerGPF
+# Pointer GPF V2
 
-<p align="center">
-  <img src="./pointer_gpf_logo.png" alt="PointerGPF cover" width="780" />
-</p>
+This repository now treats `main` as the clean V2 branch.
 
-**Open-source MCP toolkit for Godot gray-box automation workflows.**  
-Install and manage the Godot plugin, build project context, generate flow seeds, and run Figma-to-UI validation loops from one MCP server.
+## What `main` contains
 
-[简体中文](./README.zh-CN.md) | **English** | [Quick Start](./docs/quickstart.md) | [Changelog](./CHANGELOG.md)
+- the V2 Godot MCP rebuild under [v2](/D:/AI/pointer_gpf/v2)
+- V2 documentation under [docs](/D:/AI/pointer_gpf/docs)
+- V2 regression scripts under [scripts](/D:/AI/pointer_gpf/scripts)
 
----
+V2 scope is intentionally narrow:
 
-## Automation boundary (Windows)
+- configure Godot executable
+- sync plugin into a target Godot project
+- run preflight
+- generate project-local `basicflow.json` + `basicflow.meta.json`
+- run minimal and interactive file-bridge flows
+- support `click`, `wait`, `check`, `closeProject`
+- verify teardown after `closeProject`
+- reject overlapping flow runs and multiple editor processes for one project
 
-**One-time manual setup (cannot be skipped before tools work)**
+## Recommended entry points
 
-- Configure your MCP client (for example Cursor) with the `python -u …/mcp/server.py --stdio` command from `install/start-mcp.ps1`.
-- In the target Godot project, enable the PointerGPF plugin when a tool requires it.
-- When the file bridge is used, something must bring the editor/game into a state that can respond to `pointer_gpf/tmp` (see runtime gate docs).
+- status: [docs/v2-status.md](/D:/AI/pointer_gpf/docs/v2-status.md)
+- architecture: [docs/v2-architecture.md](/D:/AI/pointer_gpf/docs/v2-architecture.md)
+- handoff: [docs/v2-handoff.md](/D:/AI/pointer_gpf/docs/v2-handoff.md)
+- V2 package root: [v2/README.md](/D:/AI/pointer_gpf/v2/README.md)
 
-**After setup, agents can drive**
-
-- Context init/refresh, flow seed generation, basic test flow design/run, NL routing, and the bundled verify→auto-fix→retest loop on flow failures (default `auto_repair`; disable with `auto_repair: false` or `GPF_AUTO_REPAIR_DEFAULT=0`), without extra clicks for each of those steps.
-
-**Still human decisions**
-
-- Approving UI fix plans (`approve_ui_fix_plan`) and any product-level choice not encoded as a tool.
-
-## Why PointerGPF
-
-Most automation setups for Godot are fragmented across scripts, ad-hoc notes, and editor actions. PointerGPF gives coding agents a stable MCP interface to:
-
-- install/enable/update the plugin in target projects
-- derive structured project context (`project_context/index.json`)
-- generate first-pass flow seeds from real code/scene/data signals
-- run gated Figma baseline comparison and fix suggestion loops
-
-The result is a repeatable agent workflow that stays grounded in project files and explicit runtime artifacts.
-
-## What's Included (v0.3.0.0)
-
-- Plugin lifecycle tools: `install_godot_plugin`, `enable_godot_plugin`, `update_godot_plugin`, `check_plugin_status`
-- Context pipeline: `init_project_context`, `refresh_project_context`, `generate_flow_seed`
-- Figma validation loop: `figma_design_to_baseline`, `compare_figma_game_ui`, `annotate_ui_mismatch`, `approve_ui_fix_plan`, `suggest_ui_fix_patch`
-- Contract + runtime diagnostics: `get_adapter_contract`, `get_mcp_runtime_info`
-- Executable basic flow: `design_game_basic_test_flow` → `run_game_basic_test_flow` / `run_game_basic_test_flow_by_current_state` (strict policy: real `play_mode` runtime + step-by-step shell output; file bridge `pointer_gpf/tmp/command.json` ↔ `response.json`; auto bootstrap when engine is not open; **default** chained `auto_fix_game_bug` within limits; optional `GPF_REPAIR_BACKEND_CMD` for L2) → optional `scripts/assert-mcp-artifacts.ps1 -ValidateExecutionPipeline`
-  - Per-phase shell broadcast format:
-    - `[GPF-FLOW-TS] YYYY-MM-DD T HH:MM:SS` (local system time)
-    - User-facing Chinese semantic line (`开始执行` / `执行结果` / `验证结论`)
-  - No technical field lines in user-facing broadcast (`run=` / `phase=` / `id=` / `action=` / `bridge_ok=` / `verified=`).
-  - Each test run must issue close action (`closeProject`) and expose `project_close` evidence. `closeProject` ends the **(DEBUG) game test session** (same class as editor **Stop**); the Godot **editor** process stays open by default. The bundled addon for `examples/godot_minimal` is **tracked in git** (synced from `godot_plugin_template/addons/pointer_gpf/`) so template fixes reach the sample project.
-- Natural-language routing and auto-fix loop: `route_nl_intent`, `auto_fix_game_bug`
-- Basic flow result fields: `tool_usability`, `gameplay_runnability`, `step_broadcast_summary`
-- Runtime outputs under `pointer_gpf/gpf-exp/runtime/` for traceability
-
-## Supported MCP Clients
-
-PointerGPF uses stdio MCP and works with clients that can launch a local command, including:
-
-- Cursor
-- Claude Code
-- Codex CLI
-- Windsurf / Gemini CLI (stdio-compatible mode)
-
-## Quick Start
-
-### 1) Give this to your coding agent
-
-Tell the agent to read these files first:
-
-- `docs/quickstart.md` (setup and update commands)
-- `docs/configuration.md` (config options and output paths)
-
-Then ask the agent to do these actions in order:
-
-1. Run local check:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File "install/start-mcp.ps1"
-   ```
-2. Verify MCP runtime info:
-   ```powershell
-   python "mcp/server.py" --tool get_mcp_runtime_info --args "{}"
-   ```
-3. If you have a Godot project, run plugin install:
-   ```powershell
-   python "mcp/server.py" --tool install_godot_plugin --project-root "D:/path/to/your/godot/project"
-   ```
-
-### 2) You must do this manually (human-only)
-
-These steps require your own click/confirmation in the IDE:
-
-1. Open Cursor MCP settings and add/edit server config.
-2. Paste config:
-
-   ```json
-   {
-     "mcpServers": {
-       "pointer-gpf": {
-         "command": "C:/Users/your-user/AppData/Local/Programs/Python/Python311/python.exe",
-         "args": [
-           "-u",
-           "D:/AI/pointer_gpf/mcp/server.py",
-           "--stdio"
-         ]
-       }
-     }
-   }
-   ```
-
-3. Turn on the server switch in MCP panel.
-4. Confirm status dot is green and tools are visible.
-
-If the status dot is red, restart Cursor and run `install/start-mcp.ps1` again.
-
-## Updating
-
-Use this command-style update flow:
+## Fixed regression command
 
 ```powershell
-.\pointer-gpf.cmd update
+python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame
 ```
 
-Check updates only:
+## Legacy branch
 
-```powershell
-.\pointer-gpf.cmd check
-```
-
-Maintainer one-command release entry (`VERSION` is the single source of truth):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "scripts/release.ps1" -DryRun
-powershell -ExecutionPolicy Bypass -File "scripts/release.ps1"
-```
-
-Notes:
-
-- `update` uses remote release by default.
-- `-ForceRemote` now has highest priority and always resolves GitHub release assets first.
-- Default update scope now syncs `mcp/`, `gtr.config.json`, and `godot_plugin_template/` together to avoid version drift.
-- Successful update logs now report installed versions (`installed_manifest_version`, `installed_runtime_version`) instead of only pre-update manifest targets.
-- To update from a local package directory:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "install/pointer-gpf.ps1" update -PackageDir "D:/path/to/pointer_gpf_package"
-```
-
-## Core Workflows
-
-### 1) Plugin setup for a target Godot project
-
-**Give this to your coding agent:**
-
-```powershell
-python "mcp/server.py" --tool install_godot_plugin --project-root "D:/path/to/your/godot/project"
-```
-
-**You must do this manually (human-only):**
-
-- Open Godot editor and verify plugin is enabled in Project Settings.
-- Confirm `addons/pointer_gpf` exists in the target project.
-
-### 2) Build project context + flow seed
-
-**Give this to your coding agent:**
-
-```powershell
-python "mcp/server.py" --tool init_project_context --project-root "D:/path/to/your/godot/project" --max-files 2500
-python "mcp/server.py" --tool generate_flow_seed --project-root "D:/path/to/your/godot/project" --flow-id "smoke_seed" --strategy "auto"
-```
-
-**You must do this manually (human-only):**
-
-- Review generated files under `pointer_gpf/project_context/`.
-- Check whether generated flow seed matches your project intent before running real tests.
-
-### 3) Figma-to-game UI compare loop
-
-**Give this to your coding agent:**
-
-`figma_design_to_baseline -> compare_figma_game_ui -> annotate_ui_mismatch -> approve_ui_fix_plan -> suggest_ui_fix_patch`
-
-**You must do this manually (human-only):**
-
-- Decide whether to approve UI fix plan (human approval gate).
-- Verify screenshot/baseline inputs are the correct design version before approval.
-
-### 4) Executable basic test flow (file bridge)
-
-**Give this to your coding agent:**
-
-```powershell
-python "mcp/server.py" --tool design_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""strategy"":""auto""}"
-python "mcp/server.py" --tool run_game_basic_test_flow --project-root "D:/path/to/your/godot/project" --flow-id "basic_exec" --args "{""step_timeout_ms"":30000,""fail_fast"":true,""shell_report"":true,""require_play_mode"":true}"
-powershell -ExecutionPolicy Bypass -File "scripts/assert-mcp-artifacts.ps1" -ProjectRoot "D:/path/to/your/godot/project" -FlowId "basic_exec" -ValidateExecutionPipeline
-```
-
-**You must do this manually (human-only):**
-
-- Ensure your target project has a valid Godot executable path configured (`tools/game-test-runner/config/godot_executable.json`, tool args, or `GODOT_EXE`/`GODOT_EDITOR_PATH`/`GODOT_PATH`).
-
-## Documentation
-
-- Quick start: [`docs/quickstart.md`](./docs/quickstart.md)
-- Configuration: [`docs/configuration.md`](./docs/configuration.md)
-- Adapter contract: [`docs/godot-adapter-contract-v1.md`](./docs/godot-adapter-contract-v1.md)
-- Adoption guides: [`docs/adoption-overview.md`](./docs/adoption-overview.md), [`docs/migration-checklist.md`](./docs/migration-checklist.md)
-- Testing spec: [`docs/mcp-testing-spec.md`](./docs/mcp-testing-spec.md)
-
-## Development & CI
-
-- Workflows:
-  - `.github/workflows/mcp-smoke.yml`
-  - `.github/workflows/mcp-integration.yml`
-  - `.github/workflows/release-package.yml`
-- Validation scripts:
-  - `scripts/assert-mcp-artifacts.ps1`
-  - `scripts/verify-cross-project.ps1`
-  - `scripts/update-version-manifest.ps1`
-
-## License
-
-See [`LICENSE`](./LICENSE).
+The old MCP system is preserved on the `legacy/mcp` branch for reference only.
+`main` should be treated as the only actively maintained branch.
