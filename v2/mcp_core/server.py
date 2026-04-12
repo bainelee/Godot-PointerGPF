@@ -50,6 +50,13 @@ from .flow_runner import (
 from .godot_locator import configure_godot_executable, load_godot_executable
 from .plugin_sync import sync_plugin
 from .preflight import run_preflight
+from .windows_isolated_runtime import (
+    close_isolated_runtime_session,
+    launch_isolated_runtime,
+    verify_isolated_runtime_stopped,
+)
+
+_SUPPORTED_EXECUTION_MODES = {"play_mode", "isolated_runtime"}
 
 
 def _parse_args() -> argparse.Namespace:
@@ -65,6 +72,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--tested-features")
     parser.add_argument("--include-screenshot-evidence")
     parser.add_argument("--entry-scene-path")
+    parser.add_argument("--execution-mode", default="play_mode")
     parser.add_argument("--session-id")
     parser.add_argument("--question-id")
     parser.add_argument("--answer")
@@ -87,8 +95,24 @@ def _runtime_gate_path(project_root: Path) -> Path:
     return _bridge_dir(project_root) / "runtime_gate.json"
 
 
+def _default_plugin_source() -> Path:
+    return Path(__file__).resolve().parents[1] / "godot_plugin" / "addons" / "pointer_gpf"
+
+
+def _sync_project_plugin(project_root: Path) -> Path:
+    return sync_plugin(_default_plugin_source(), project_root)
+
+
 def _flow_lock_path(project_root: Path) -> Path:
     return _bridge_dir(project_root) / "flow_run.lock"
+
+
+def _normalize_execution_mode(raw: str | None) -> str:
+    mode = str(raw or "play_mode").strip().lower()
+    if mode not in _SUPPORTED_EXECUTION_MODES:
+        supported = ", ".join(sorted(_SUPPORTED_EXECUTION_MODES))
+        raise ValueError(f"unsupported execution mode: {raw!r}; supported values: {supported}")
+    return mode
 
 
 def _read_runtime_gate(project_root: Path) -> dict[str, Any]:
@@ -148,7 +172,16 @@ def _is_pid_running(pid: int) -> bool:
 
 
 def _is_editor_process_running(project_root: Path) -> bool:
-    return bool(_list_project_processes(project_root))
+    return bool(_list_project_editor_processes(project_root))
+
+
+def _list_project_editor_processes(project_root: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in _list_project_processes(project_root):
+        command_line = str(item.get("CommandLine", ""))
+        if " -e " in f" {command_line} ":
+            out.append(item)
+    return out
 
 
 def _request_auto_enter_play(project_root: Path) -> Path:
@@ -223,21 +256,35 @@ def _flow_requests_close(flow_payload: dict[str, Any]) -> bool:
     return False
 
 
-def _verify_teardown(project_root: Path, timeout_ms: int = 10000) -> dict[str, Any]:
+def _verify_teardown(project_root: Path, timeout_ms: int = 10000, *, stable_ms: int = 500) -> dict[str, Any]:
     deadline = time.monotonic() + max(1, timeout_ms) / 1000.0
     last_gate = _read_runtime_gate(project_root)
-    last_processes = _list_project_processes(project_root)
+    last_processes = _list_project_editor_processes(project_root)
+    stopped_since: float | None = None
+    stable_seconds = max(0, stable_ms) / 1000.0
+    last_now = time.monotonic()
     while time.monotonic() < deadline:
+        now = time.monotonic()
+        last_now = now
         last_gate = _read_runtime_gate(project_root)
-        last_processes = _list_project_processes(project_root)
+        last_processes = _list_project_editor_processes(project_root)
         play_stopped = not bool(last_gate.get("runtime_gate_passed", False))
         process_count_ok = len(last_processes) <= 1
         if play_stopped and process_count_ok:
+            if stopped_since is None:
+                stopped_since = now
+            stable_stop_ms = int(max(0.0, now - stopped_since) * 1000)
+        else:
+            stopped_since = None
+            stable_stop_ms = 0
+        if play_stopped and process_count_ok and stable_stop_ms >= stable_ms:
             return {
                 "status": "verified",
                 "runtime_gate": last_gate,
                 "project_process_count": len(last_processes),
                 "project_processes": last_processes,
+                "stable_stop_ms": stable_stop_ms,
+                "required_stable_stop_ms": stable_ms,
             }
         time.sleep(0.1)
     return {
@@ -245,6 +292,8 @@ def _verify_teardown(project_root: Path, timeout_ms: int = 10000) -> dict[str, A
         "runtime_gate": last_gate,
         "project_process_count": len(last_processes),
         "project_processes": last_processes,
+        "stable_stop_ms": int(max(0.0, (last_now - stopped_since) * 1000)) if stopped_since is not None else 0,
+        "required_stable_stop_ms": stable_ms,
     }
 
 
@@ -260,7 +309,7 @@ def _read_flow_lock(project_root: Path) -> dict[str, Any]:
 
 
 def _detect_multiple_project_processes(project_root: Path) -> dict[str, Any] | None:
-    processes = _list_project_processes(project_root)
+    processes = _list_project_editor_processes(project_root)
     if len(processes) <= 1:
         return None
     return {
@@ -313,13 +362,17 @@ def _run_basic_flow_tool(
     flow_file: Path,
     *,
     basicflow_context: dict[str, Any] | None = None,
+    execution_mode: str = "play_mode",
 ) -> tuple[int, dict[str, Any], bool]:
+    execution_mode = _normalize_execution_mode(execution_mode)
     flow_payload = load_flow(flow_file)
     flow_lock: dict[str, Any] | None = None
+    isolated_session = None
+    plugin_destination = _sync_project_plugin(project_root)
     result = run_preflight(project_root)
     if not result.ok:
         return 2, build_error_payload(ERR_PREFLIGHT_FAILED, "project preflight failed", result.to_dict()), False
-    multi_editor = _detect_multiple_project_processes(project_root)
+    multi_editor = _detect_multiple_project_processes(project_root) if execution_mode == "play_mode" else None
     if multi_editor is not None:
         return (
             2,
@@ -344,7 +397,20 @@ def _run_basic_flow_tool(
         )
 
     try:
-        play_meta = _ensure_play_mode(project_root)
+        if execution_mode == "isolated_runtime":
+            isolated_session = launch_isolated_runtime(project_root, load_godot_executable(project_root))
+            play_meta = {
+                "status": "launched_isolated_runtime",
+                "execution_mode": execution_mode,
+                "runtime_process": {
+                    "pid": isolated_session.pid,
+                    "desktop_name": isolated_session.desktop_name,
+                    "host_desktop_name": isolated_session.host_desktop_name,
+                },
+            }
+        else:
+            play_meta = _ensure_play_mode(project_root)
+            play_meta["execution_mode"] = execution_mode
         try:
             run_result = run_basic_flow(project_root, flow_file)
         except FlowExecutionStepFailed as exc:
@@ -385,7 +451,11 @@ def _run_basic_flow_tool(
             )
         teardown_meta: dict[str, Any] | None = None
         if _flow_requests_close(flow_payload):
-            teardown_meta = _verify_teardown(project_root)
+            teardown_meta = (
+                verify_isolated_runtime_stopped(isolated_session)
+                if execution_mode == "isolated_runtime" and isolated_session is not None
+                else _verify_teardown(project_root)
+            )
             if teardown_meta["status"] != "verified":
                 return (
                     2,
@@ -396,7 +466,27 @@ def _run_basic_flow_tool(
                     ),
                     False,
                 )
-        payload = {"play_mode": play_meta, "execution": run_result}
+        isolation_meta: dict[str, Any] = {
+            "isolated": execution_mode == "isolated_runtime",
+            "surface": "windows_desktop" if execution_mode == "isolated_runtime" else "editor_play_mode",
+            "status": "isolated_desktop" if execution_mode == "isolated_runtime" else "shared_desktop",
+        }
+        if execution_mode == "isolated_runtime" and isolated_session is not None:
+            isolation_meta["desktop_name"] = isolated_session.desktop_name
+            isolation_meta["host_desktop_name"] = isolated_session.host_desktop_name
+            isolation_meta["runtime_pid"] = isolated_session.pid
+            isolation_meta["separate_desktop"] = bool(
+                isolated_session.desktop_name
+                and isolated_session.host_desktop_name
+                and isolated_session.desktop_name != isolated_session.host_desktop_name
+            )
+        payload = {
+            "play_mode": play_meta,
+            "execution": run_result,
+            "execution_mode": execution_mode,
+            "isolation": isolation_meta,
+            "plugin_sync": {"destination": str(plugin_destination)},
+        }
         if teardown_meta is not None:
             payload["project_close"] = teardown_meta
         if flow_lock is not None:
@@ -419,6 +509,8 @@ def _run_basic_flow_tool(
                 payload["basicflow"]["last_successful_run_at"] = updated_meta.get("last_successful_run_at")
         return 0, build_ok_payload(payload), True
     finally:
+        if isolated_session is not None:
+            close_isolated_runtime_session(isolated_session)
         if flow_lock is not None:
             _release_flow_lock(project_root, str(flow_lock.get("token", "")))
 
@@ -547,6 +639,7 @@ def main() -> int:
                 project_root,
                 requested_flow_file,
                 basicflow_context=basicflow_context,
+                execution_mode=_normalize_execution_mode(getattr(args, "execution_mode", "play_mode")),
             )
             print(json.dumps(response, ensure_ascii=False))
             return exit_code

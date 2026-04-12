@@ -16,7 +16,7 @@ The sync logic is implemented in:
 
 ## What Gets Synced Into A Target Godot Project
 
-When V2 runs `sync_godot_plugin`, `preflight_project`, or any `run_basic_flow` path that requires plugin sync, these plugin files are copied into the target project here:
+When V2 runs `sync_godot_plugin`, these plugin files are copied into the target project here:
 
 - `目标工程/addons/pointer_gpf/plugin.cfg`
 - `目标工程/addons/pointer_gpf/plugin.gd`
@@ -51,10 +51,15 @@ Important files:
 - `runtime_diagnostics.json`
   - written by `runtime_diagnostics_writer.gd`
   - contains recent bridge errors and runtime engine errors
+- `runtime_session.json`
+  - written by `runtime_bridge.gd`
+  - identifies the runtime process under test for `isolated_runtime`
 - `auto_enter_play_mode.flag`
   - written by the Python side when it wants the editor plugin to enter play mode
 - `auto_stop_play_mode.flag`
   - written by the bridge when `closeProject` asks the editor plugin to stop play mode
+
+`run_basic_flow` now also syncs the repository plugin source into the target project before preflight and launch, so runtime mode changes in this repository are applied to the next flow run without requiring a separate manual `sync_godot_plugin` step.
 
 ## File Responsibilities
 
@@ -78,6 +83,12 @@ Runs as the autoload bridge inside the target project runtime. It is responsible
 - dispatching `launchGame`, `click`, `wait`, `check`, `snapshot`, `closeProject`
 - writing `response.json`
 - requesting play-mode stop for `closeProject`
+- writing `runtime_session.json` so Python can verify the isolated runtime instance it launched
+- applying runtime-side input guards that reduce captured-mouse symptoms during automation runs
+
+Those input guards are a mitigation layer, not a complete isolation guarantee by themselves. The stronger isolation requirement is tracked separately in:
+
+- [v2-input-isolation-requirements.md](/D:/AI/pointer_gpf/docs/v2-input-isolation-requirements.md)
 
 ### `runtime_diagnostics_logger.gd`
 
@@ -104,3 +115,10 @@ When debugging V2 behavior, always distinguish between:
 - source plugin files in this repository
 - synced plugin files inside the external Godot project
 - runtime state files under `目标工程/pointer_gpf/tmp/`
+
+Tool payload note:
+
+- `run_basic_flow` result payloads now include an `isolation` object
+- `play_mode` runs report `isolation.status: shared_desktop`
+- `isolated_runtime` runs report `isolation.status: isolated_desktop`
+- `isolated_runtime` runs also report `host_desktop_name` and `separate_desktop`

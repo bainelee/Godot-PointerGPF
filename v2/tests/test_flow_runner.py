@@ -50,6 +50,56 @@ class FlowRunnerContractTests(unittest.TestCase):
         self.assertEqual(payload["steps"][2]["action"], "wait")
         self.assertEqual(payload["steps"][3]["action"], "check")
 
+    def test_load_flow_accepts_delay_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            flow_file = Path(tmp) / "delay_flow.json"
+            flow_file.write_text(
+                json.dumps(
+                    {
+                        "flowId": "delay_flow",
+                        "steps": [
+                            {"id": "launch", "action": "launchGame"},
+                            {"id": "pause", "action": "delay", "timeoutMs": 5000},
+                            {"id": "close", "action": "closeProject"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = load_flow(flow_file)
+
+        self.assertEqual(payload["steps"][1]["action"], "delay")
+        self.assertEqual(payload["steps"][1]["timeoutMs"], 5000)
+
+    def test_load_flow_accepts_capture_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            flow_file = Path(tmp) / "capture_flow.json"
+            flow_file.write_text(
+                json.dumps(
+                    {
+                        "flowId": "capture_flow",
+                        "steps": [
+                            {"id": "launch", "action": "launchGame"},
+                            {
+                                "id": "capture_yaw",
+                                "action": "capture",
+                                "captureKey": "player_yaw",
+                                "metric": "rotation_y",
+                                "target": {"hint": "node_name:FPSController"},
+                            },
+                            {"id": "close", "action": "closeProject"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = load_flow(flow_file)
+
+        self.assertEqual(payload["steps"][1]["action"], "capture")
+        self.assertEqual(payload["steps"][1]["captureKey"], "player_yaw")
+
     def test_load_flow_accepts_utf8_bom(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             flow_file = Path(tmp) / "bom_flow.json"

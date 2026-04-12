@@ -23,6 +23,8 @@ ERR_BASICFLOW_GENERATION_SESSION_INCOMPLETE = "BASICFLOW_GENERATION_SESSION_INCO
 ALLOWED_FLOW_ACTIONS = frozenset(
     {
         "launchGame",
+        "delay",
+        "capture",
         "click",
         "wait",
         "check",

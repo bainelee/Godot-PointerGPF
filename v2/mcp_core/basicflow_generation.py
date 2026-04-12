@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -174,27 +175,37 @@ def _build_basicflow_payload(
     include_screenshot_evidence: bool,
     detected_targets: dict[str, Any],
 ) -> dict[str, Any]:
-    if detected_targets.get("mode") == "start_button_to_game_level":
+    mode = detected_targets.get("mode")
+    start_button = str(detected_targets.get("start_button_name", "")).strip()
+    target_root = str(detected_targets.get("target_scene_root_name", "")).strip()
+    runtime_anchor = str(detected_targets.get("runtime_anchor_name", "")).strip()
+    if mode in {"button_to_scene_with_runtime_anchor", "button_to_scene_root"} and start_button and target_root:
+        check_hint = runtime_anchor or target_root
+        check_step_id = (
+            f"check_{_normalize_step_token(runtime_anchor)}"
+            if runtime_anchor
+            else f"check_{_normalize_step_token(target_root)}"
+        )
         steps: list[dict[str, Any]] = [
             {"id": "launch_game", "action": "launchGame"},
             {
-                "id": "wait_start_button",
+                "id": f"wait_{_normalize_step_token(start_button)}",
                 "action": "wait",
-                "until": {"hint": "node_exists:StartButton"},
+                "until": {"hint": f"node_exists:{start_button}"},
                 "timeoutMs": 5000,
             },
             {
-                "id": "click_start",
+                "id": f"click_{_normalize_step_token(start_button)}",
                 "action": "click",
-                "target": {"hint": "node_name:StartButton"},
+                "target": {"hint": f"node_name:{start_button}"},
             },
             {
-                "id": "wait_game_level",
+                "id": f"wait_{_normalize_step_token(target_root)}",
                 "action": "wait",
-                "until": {"hint": "node_exists:GameLevel"},
+                "until": {"hint": f"node_exists:{target_root}"},
                 "timeoutMs": 5000,
             },
-            {"id": "check_game_pointer_hud", "action": "check", "hint": "node_exists:GamePointerHud"},
+            {"id": check_step_id, "action": "check", "hint": f"node_exists:{check_hint}"},
         ]
     else:
         steps = [
@@ -242,32 +253,177 @@ def _build_generation_summary(
 def _detect_project_specific_targets(project_root: Path, startup_scene: str) -> dict[str, Any]:
     related_files: list[str] = []
     startup_scene_path = _resolve_res_path(project_root, startup_scene)
-    if startup_scene_path and startup_scene_path.is_file():
+    startup_text = _read_text_if_file(startup_scene_path)
+    if startup_scene and startup_text:
         related_files.append(startup_scene)
-        startup_text = startup_scene_path.read_text(encoding="utf-8", errors="ignore")
-    else:
-        startup_text = ""
-    start_screen_path = project_root / "scenes" / "ui" / "ui_start_screen.tscn"
-    game_level_path = project_root / "scenes" / "game_level.tscn"
-    hud_path = project_root / "scenes" / "ui" / "game_pointer_hud.tscn"
-    start_screen_has_button = start_screen_path.is_file() and "StartButton" in start_screen_path.read_text(
-        encoding="utf-8", errors="ignore"
-    )
-    startup_mentions_start = "ui_start_screen.tscn" in startup_text or "main_menu_flow.gd" in startup_text
-    game_level_has_root = game_level_path.is_file() and 'node name="GameLevel"' in game_level_path.read_text(
-        encoding="utf-8", errors="ignore"
-    )
-    hud_exists = hud_path.is_file()
-    if start_screen_has_button and startup_mentions_start and game_level_has_root and hud_exists:
-        related_files.extend(
-            [
-                "res://scenes/ui/ui_start_screen.tscn",
-                "res://scenes/game_level.tscn",
-                "res://scenes/ui/game_pointer_hud.tscn",
-            ]
-        )
-        return {"mode": "start_button_to_game_level", "related_files": related_files}
-    return {"mode": "generic_runtime_probe", "related_files": related_files}
+    startup_resources = _parse_ext_resources(startup_text)
+    start_scene_path = _detect_start_scene_path(project_root, startup_resources)
+    start_button_name = ""
+    if start_scene_path:
+        start_button_name = _detect_preferred_button_name(project_root, start_scene_path)
+        if start_scene_path not in related_files:
+            related_files.append(start_scene_path)
+    startup_script_path = _first_resource_path(startup_resources, resource_type="Script")
+    target_scene_path = ""
+    if startup_script_path:
+        if startup_script_path not in related_files:
+            related_files.append(startup_script_path)
+        target_scene_path = _detect_scene_transition_target(project_root, startup_script_path)
+    if not (start_button_name and target_scene_path):
+        return {"mode": "generic_runtime_probe", "related_files": related_files}
+    target_scene_text = _read_text_if_file(_resolve_res_path(project_root, target_scene_path))
+    target_root_name = _parse_scene_root_name(target_scene_text)
+    if not target_root_name:
+        return {"mode": "generic_runtime_probe", "related_files": related_files}
+    if target_scene_path not in related_files:
+        related_files.append(target_scene_path)
+    runtime_anchor_name = ""
+    runtime_anchor_path = ""
+    target_resources = _parse_ext_resources(target_scene_text)
+    target_script_path = _first_resource_path(target_resources, resource_type="Script")
+    if target_script_path:
+        if target_script_path not in related_files:
+            related_files.append(target_script_path)
+        runtime_anchor_path = _detect_runtime_anchor_scene_path(project_root, target_scene_path, target_script_path)
+    if not runtime_anchor_path:
+        runtime_anchor_path = _detect_runtime_anchor_scene_path(project_root, target_scene_path, "")
+    if runtime_anchor_path:
+        runtime_anchor_text = _read_text_if_file(_resolve_res_path(project_root, runtime_anchor_path))
+        runtime_anchor_name = _parse_scene_root_name(runtime_anchor_text)
+        if runtime_anchor_name and runtime_anchor_path not in related_files:
+            related_files.append(runtime_anchor_path)
+    if runtime_anchor_name:
+        return {
+            "mode": "button_to_scene_with_runtime_anchor",
+            "related_files": related_files,
+            "start_button_name": start_button_name,
+            "target_scene_path": target_scene_path,
+            "target_scene_root_name": target_root_name,
+            "runtime_anchor_name": runtime_anchor_name,
+        }
+    return {
+        "mode": "button_to_scene_root",
+        "related_files": related_files,
+        "start_button_name": start_button_name,
+        "target_scene_path": target_scene_path,
+        "target_scene_root_name": target_root_name,
+    }
+    
+    
+def _normalize_step_token(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", value.strip().lower())
+    return normalized.strip("_") or "target"
+
+
+def _read_text_if_file(path: Path | None) -> str:
+    if path is None or not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+
+
+def _parse_ext_resources(scene_text: str) -> list[dict[str, str]]:
+    resources: list[dict[str, str]] = []
+    for attrs in re.findall(r"\[ext_resource\s+([^\]]+)\]", scene_text):
+        type_match = re.search(r'type="(?P<type>[^"]+)"', attrs)
+        path_match = re.search(r'path="(?P<path>res://[^"]+)"', attrs)
+        if type_match and path_match:
+            resources.append({"type": type_match.group("type"), "path": path_match.group("path")})
+    return resources
+
+
+def _first_resource_path(resources: list[dict[str, str]], *, resource_type: str) -> str:
+    for item in resources:
+        if item.get("type") == resource_type:
+            return str(item.get("path", "")).strip()
+    return ""
+
+
+def _detect_start_scene_path(project_root: Path, resources: list[dict[str, str]]) -> str:
+    candidates = [item.get("path", "") for item in resources if item.get("type") == "PackedScene"]
+    preferred_keywords = ("start", "menu", "title", "intro")
+    for path in candidates:
+        lowered = str(path).lower()
+        if not any(keyword in lowered for keyword in preferred_keywords):
+            continue
+        if _detect_preferred_button_name(project_root, str(path)):
+            return str(path)
+    for path in candidates:
+        if _detect_preferred_button_name(project_root, str(path)):
+            return str(path)
+    return ""
+
+
+def _detect_preferred_button_name(project_root: Path, scene_path: str) -> str:
+    scene_text = _read_text_if_file(_resolve_res_path(project_root, scene_path))
+    if not scene_text:
+        return ""
+    buttons = re.findall(r'\[node name="([^"]+)" type="Button"', scene_text)
+    if not buttons:
+        return ""
+    preferred_keywords = ("start", "play", "begin", "enter", "continue")
+    for name in buttons:
+        lowered = name.lower()
+        if any(keyword in lowered for keyword in preferred_keywords):
+            return name
+    return buttons[0]
+
+
+def _detect_scene_transition_target(project_root: Path, script_path: str) -> str:
+    script_text = _read_text_if_file(_resolve_res_path(project_root, script_path))
+    if not script_text:
+        return ""
+    direct_match = re.search(r'change_scene_to_file\(\s*"(?P<path>res://[^"]+\.tscn)"\s*\)', script_text)
+    if direct_match:
+        return direct_match.group("path")
+    constants = {
+        match.group("name"): match.group("path")
+        for match in re.finditer(r'const\s+(?P<name>[A-Z0-9_]+)\s*[:=][^"\n]*"(?P<path>res://[^"]+\.tscn)"', script_text)
+    }
+    named_match = re.search(r"change_scene_to_file\(\s*(?P<name>[A-Z0-9_]+)\s*\)", script_text)
+    if named_match:
+        return str(constants.get(named_match.group("name"), ""))
+    return ""
+
+
+def _detect_runtime_anchor_scene_path(project_root: Path, target_scene_path: str, script_path: str) -> str:
+    candidate_paths: list[str] = []
+    for path in _list_scene_paths_from_file(project_root, target_scene_path):
+        if path not in candidate_paths:
+            candidate_paths.append(path)
+    if script_path:
+        for path in _list_scene_paths_from_file(project_root, script_path):
+            if path not in candidate_paths:
+                candidate_paths.append(path)
+    preferred_keywords = ("hud", "overlay", "ui", "crosshair")
+    for path in candidate_paths:
+        lowered = path.lower()
+        if any(keyword in lowered for keyword in preferred_keywords):
+            root_name = _parse_scene_root_name(_read_text_if_file(_resolve_res_path(project_root, path)))
+            if root_name:
+                return path
+    return ""
+
+
+def _list_scene_paths_from_file(project_root: Path, raw_path: str) -> list[str]:
+    file_text = _read_text_if_file(_resolve_res_path(project_root, raw_path))
+    if not file_text:
+        return []
+    paths: list[str] = []
+    for match in re.finditer(r'"(?P<path>res://[^"]+\.tscn)"', file_text):
+        path = match.group("path")
+        if path != raw_path and _resolve_res_path(project_root, path).is_file() and path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _parse_scene_root_name(scene_text: str) -> str:
+    match = re.search(r'\[node name="([^"]+)" type="[^"]+"\]', scene_text)
+    if match:
+        return match.group(1)
+    return ""
 
 
 def _resolve_res_path(project_root: Path, raw_path: str) -> Path | None:

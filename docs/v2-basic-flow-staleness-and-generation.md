@@ -150,3 +150,31 @@ Before implementing auto-regeneration, V2 should first add:
 1. a stale-check function that returns explainable reasons
 2. a first-time asset-missing path that enters question-first generation
 3. a user-choice contract for "warn, then choose" rather than silent replacement
+
+## Current Conservative Generation Heuristics
+
+Current V2 generation keeps the project-specific inference intentionally narrow and explainable.
+
+When the startup scene provides enough signals, generation now prefers:
+
+1. a startup UI scene that contains a likely start/play button
+2. a startup script that clearly switches to another scene
+3. the root node of that target scene
+4. an optional runtime anchor scene such as a HUD loaded by the target scene or its script
+
+Current generated modes are:
+
+- `button_to_scene_with_runtime_anchor`
+  - wait for the detected button
+  - click it
+  - wait for the detected target scene root
+  - check the detected runtime anchor node
+- `button_to_scene_root`
+  - wait for the detected button
+  - click it
+  - wait for the detected target scene root
+  - re-check the target scene root as the final assertion
+- `generic_runtime_probe`
+  - fall back to the generic visible-click probe when the conservative signals above are missing
+
+This keeps the inference broad enough to cover obvious menu-to-scene projects, while still staying simple enough to explain from the recorded `related_files`.

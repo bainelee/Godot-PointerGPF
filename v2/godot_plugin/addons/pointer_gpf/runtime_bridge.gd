@@ -4,6 +4,7 @@ const _CMD_REL := "res://pointer_gpf/tmp/command.json"
 const _RSP_REL := "res://pointer_gpf/tmp/response.json"
 const _TMP_DIR_REL := "res://pointer_gpf/tmp"
 const _AUTO_STOP_PLAY_MODE_FLAG_REL := "res://pointer_gpf/tmp/auto_stop_play_mode.flag"
+const _RUNTIME_SESSION_REL := "res://pointer_gpf/tmp/runtime_session.json"
 const _RuntimeDiagnosticsWriter := preload("res://addons/pointer_gpf/runtime_diagnostics_writer.gd")
 const _RuntimeDiagnosticsLogger := preload("res://addons/pointer_gpf/runtime_diagnostics_logger.gd")
 
@@ -12,19 +13,27 @@ var _diag_os_logger = null
 var _last_run_id: String = ""
 var _last_seq: int = -1
 var _poll_accum: float = 0.0
+var _automation_input_guard_active: bool = false
+var _run_captures: Dictionary = {}
 
 
 func _ready() -> void:
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_TMP_DIR_REL))
     if not Engine.is_editor_hint():
         _install_os_error_logger()
+    _write_runtime_session()
+    var tree := get_tree()
+    if tree != null and not tree.scene_changed.is_connected(_on_scene_changed):
+        tree.scene_changed.connect(_on_scene_changed)
     set_process(true)
+    set_process_input(true)
 
 
 func _exit_tree() -> void:
     if _diag_os_logger != null:
         OS.remove_logger(_diag_os_logger)
         _diag_os_logger = null
+    _delete_runtime_session()
 
 
 func _install_os_error_logger() -> void:
@@ -36,11 +45,19 @@ func _install_os_error_logger() -> void:
 
 func _process(delta: float) -> void:
     _diag_writer.tick_flush(delta)
+    _apply_automation_input_guard()
     _poll_accum += delta
     if _poll_accum < 0.05:
         return
     _poll_accum = 0.0
     _poll_bridge()
+
+
+func _input(event: InputEvent) -> void:
+    if not _should_consume_user_input():
+        return
+    if event is InputEventMouseMotion or event is InputEventMouseButton:
+        get_viewport().set_input_as_handled()
 
 
 func _poll_bridge() -> void:
@@ -58,6 +75,10 @@ func _poll_bridge() -> void:
         return
     var d: Dictionary = data
     var run_id := str(d.get("run_id", ""))
+    if run_id != "":
+        _automation_input_guard_active = true
+    if run_id != _last_run_id:
+        _run_captures.clear()
     _diag_writer.reset_for_run(run_id)
     var seq := _coerce_int(d.get("seq", null))
     if seq < 0:
@@ -87,7 +108,20 @@ func _poll_bridge() -> void:
 func _dispatch_action(action: String, seq: int, run_id: String, command: Dictionary, step: Dictionary) -> Dictionary:
     match action.to_lower():
         "launchgame":
+            _enforce_visible_mouse_mode()
             return {"ok": true, "seq": seq, "run_id": run_id, "message": "launchGame acknowledged"}
+        "delay":
+            var delay_ms := max(0, _coerce_int(step.get("timeoutMs", command.get("timeoutMs", 0))))
+            OS.delay_msec(delay_ms)
+            return {
+                "ok": true,
+                "seq": seq,
+                "run_id": run_id,
+                "message": "delay acknowledged",
+                "elapsedMs": delay_ms,
+            }
+        "capture":
+            return _capture_runtime_value(command, step, seq, run_id)
         "click":
             var click_result := _perform_click(_extract_target(command, step), _extract_position(command, step))
             if not bool(click_result.get("ok", false)):
@@ -113,7 +147,9 @@ func _dispatch_action(action: String, seq: int, run_id: String, command: Diction
         "snapshot":
             return {"ok": true, "seq": seq, "run_id": run_id, "message": "snapshot acknowledged"}
         "closeproject":
-            if not _request_stop_play_mode():
+            if _execution_mode() == "isolated_runtime":
+                call_deferred("_quit_runtime_process")
+            elif not _request_stop_play_mode():
                 return _error_payload("STOP_FLAG_WRITE_FAILED", "could not write auto_stop_play_mode.flag", seq, run_id)
             return {"ok": true, "seq": seq, "run_id": run_id, "message": "closeProject acknowledged"}
         _:
@@ -145,6 +181,10 @@ func _extract_wait_hint(command: Dictionary, step: Dictionary) -> String:
 func _evaluate_check(command: Dictionary, step: Dictionary) -> Dictionary:
     var hint := str(step.get("hint", command.get("hint", ""))).strip_edges()
     var target := _extract_target(command, step)
+    var capture_key := str(step.get("captureKey", command.get("captureKey", ""))).strip_edges()
+    var metric := str(step.get("metric", command.get("metric", "rotation_y"))).strip_edges()
+    if capture_key != "":
+        return _evaluate_capture_check(target, capture_key, metric, _coerce_tolerance(step.get("tolerance", command.get("tolerance", 0.001))))
     var passed := true
     var reason := "ok"
     if hint != "" and _is_machine_hint(hint):
@@ -161,13 +201,100 @@ func _evaluate_check(command: Dictionary, step: Dictionary) -> Dictionary:
     return {"status": "ok" if passed else "failed", "hint": hint, "passed": passed, "reason": reason}
 
 
+func _capture_runtime_value(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
+    var capture_key := str(step.get("captureKey", command.get("captureKey", ""))).strip_edges()
+    if capture_key == "":
+        return _error_payload("INVALID_ARGUMENT", "captureKey is required for capture action", seq, run_id)
+    var target := _extract_target(command, step)
+    var metric := str(step.get("metric", command.get("metric", "rotation_y"))).strip_edges()
+    var node := _resolve_target_node_with_retry(target, 1200)
+    if node == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve capture target", seq, run_id)
+    var metric_result := _read_metric_from_node(node, metric)
+    if not bool(metric_result.get("ok", false)):
+        return _error_payload("METRIC_NOT_SUPPORTED", str(metric_result.get("message", "metric not supported")), seq, run_id)
+    _run_captures[capture_key] = {
+        "metric": metric,
+        "value": metric_result.get("value", 0.0),
+        "node_path": str(node.get_path()) if node.is_inside_tree() else "",
+    }
+    return {
+        "ok": true,
+        "seq": seq,
+        "run_id": run_id,
+        "message": "capture acknowledged",
+        "captureKey": capture_key,
+        "metric": metric,
+        "value": metric_result.get("value", 0.0),
+    }
+
+
+func _evaluate_capture_check(target: Variant, capture_key: String, metric: String, tolerance: float) -> Dictionary:
+    if not _run_captures.has(capture_key):
+        return {
+            "status": "failed",
+            "hint": "",
+            "passed": false,
+            "reason": "capture key not found",
+            "captureKey": capture_key,
+        }
+    var node := _resolve_target_node_with_retry(target, 1200)
+    if node == null:
+        return {
+            "status": "failed",
+            "hint": "",
+            "passed": false,
+            "reason": "capture target not found",
+            "captureKey": capture_key,
+        }
+    var metric_result := _read_metric_from_node(node, metric)
+    if not bool(metric_result.get("ok", false)):
+        return {
+            "status": "failed",
+            "hint": "",
+            "passed": false,
+            "reason": str(metric_result.get("message", "metric not supported")),
+            "captureKey": capture_key,
+        }
+    var baseline := _run_captures.get(capture_key, {})
+    var baseline_value := float((baseline as Dictionary).get("value", 0.0))
+    var current_value := float(metric_result.get("value", 0.0))
+    var delta := absf(current_value - baseline_value)
+    var passed := delta <= tolerance
+    return {
+        "status": "ok" if passed else "failed",
+        "hint": "",
+        "passed": passed,
+        "reason": "capture comparison",
+        "captureKey": capture_key,
+        "metric": metric,
+        "baselineValue": baseline_value,
+        "currentValue": current_value,
+        "delta": delta,
+        "tolerance": tolerance,
+    }
+
+
+func _read_metric_from_node(node: Node, metric: String) -> Dictionary:
+    match metric:
+        "rotation_y":
+            if node is Node3D:
+                return {"ok": true, "value": float((node as Node3D).rotation.y)}
+            return {"ok": false, "message": "rotation_y requires a Node3D target"}
+        "global_rotation_y":
+            if node is Node3D:
+                return {"ok": true, "value": float((node as Node3D).global_rotation.y)}
+            return {"ok": false, "message": "global_rotation_y requires a Node3D target"}
+        _:
+            return {"ok": false, "message": "unsupported metric: %s" % metric}
+
+
 func _perform_click(target: Variant, fallback_pos: Vector2) -> Dictionary:
+    _enforce_visible_mouse_mode()
     var node := _resolve_target_node_with_retry(target, 1200)
     if node != null:
         if node is BaseButton:
             var btn := node as BaseButton
-            if btn.has_method("grab_focus"):
-                btn.grab_focus()
             btn.call_deferred("emit_signal", "pressed")
             return {"ok": true, "node_path": str(btn.get_path()) if btn.is_inside_tree() else ""}
         if node is Control:
@@ -308,6 +435,45 @@ func _dispatch_click_virtual(pos: Vector2, button_index: int = MOUSE_BUTTON_LEFT
     Input.parse_input_event(up)
 
 
+func _apply_automation_input_guard() -> void:
+    if not _automation_input_guard_active:
+        return
+    _enforce_visible_mouse_mode()
+    _force_pointer_ui_mode_on_players()
+
+
+func _should_consume_user_input() -> bool:
+    return _automation_input_guard_active and _execution_mode() == "isolated_runtime"
+
+
+func _on_scene_changed() -> void:
+    if not _automation_input_guard_active:
+        return
+    _enforce_visible_mouse_mode()
+    _force_pointer_ui_mode_on_players()
+    call_deferred("_enforce_visible_mouse_mode")
+    call_deferred("_force_pointer_ui_mode_on_players")
+
+
+func _enforce_visible_mouse_mode() -> void:
+    # Automated runs should not seize the user's mouse through captured-mode gameplay scripts.
+    if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _force_pointer_ui_mode_on_players() -> void:
+    if not _automation_input_guard_active:
+        return
+    var tree := get_tree()
+    if tree == null:
+        return
+    for node in tree.get_nodes_in_group("player"):
+        if node == null:
+            continue
+        if "pointer_ui_mode" in node:
+            node.pointer_ui_mode = true
+
+
 func _request_stop_play_mode() -> bool:
     var request_path := ProjectSettings.globalize_path(_AUTO_STOP_PLAY_MODE_FLAG_REL)
     DirAccess.make_dir_recursive_absolute(request_path.get_base_dir())
@@ -317,6 +483,12 @@ func _request_stop_play_mode() -> bool:
     out.store_string(JSON.stringify({"schema": "pointer_gpf.v2.auto_stop.v1", "issued_at_unix": Time.get_unix_time_from_system()}))
     out.close()
     return true
+
+
+func _quit_runtime_process() -> void:
+    var tree := get_tree()
+    if tree != null:
+        tree.quit()
 
 
 func _write_response(payload: Dictionary) -> void:
@@ -351,3 +523,45 @@ func _coerce_int(v: Variant) -> int:
             return int(v)
         _:
             return -1
+
+
+func _coerce_tolerance(v: Variant) -> float:
+    match typeof(v):
+        TYPE_INT:
+            return float(v)
+        TYPE_FLOAT:
+            return float(v)
+        _:
+            return 0.001
+
+
+func _execution_mode() -> String:
+    var mode := OS.get_environment("POINTER_GPF_EXECUTION_MODE").strip_edges()
+    if mode == "":
+        return "play_mode"
+    return mode
+
+
+func _write_runtime_session() -> void:
+    var session_path := ProjectSettings.globalize_path(_RUNTIME_SESSION_REL)
+    DirAccess.make_dir_recursive_absolute(session_path.get_base_dir())
+    var out := FileAccess.open(session_path, FileAccess.WRITE)
+    if out == null:
+        return
+    out.store_string(
+        JSON.stringify(
+            {
+                "schema": "pointer_gpf.v2.runtime_session.v1",
+                "execution_mode": _execution_mode(),
+                "process_id": OS.get_process_id(),
+                "desktop_name": OS.get_environment("POINTER_GPF_RUNTIME_DESKTOP"),
+            }
+        )
+    )
+    out.close()
+
+
+func _delete_runtime_session() -> void:
+    var session_path := ProjectSettings.globalize_path(_RUNTIME_SESSION_REL)
+    if FileAccess.file_exists(session_path):
+        DirAccess.remove_absolute(session_path)

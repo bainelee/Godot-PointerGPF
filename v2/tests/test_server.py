@@ -13,6 +13,7 @@ from v2.mcp_core.server import (
     _flow_lock_path,
     _is_editor_process_running,
     _launch_editor_if_needed,
+    _normalize_execution_mode,
     _release_flow_lock,
     _verify_teardown,
     main,
@@ -20,6 +21,10 @@ from v2.mcp_core.server import (
 
 
 class ServerLaunchEditorTests(unittest.TestCase):
+    def test_normalize_execution_mode_rejects_unknown_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported execution mode"):
+            _normalize_execution_mode("desktop_magic")
+
     def test_is_editor_process_running_uses_unescaped_project_path_in_probe(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -35,6 +40,19 @@ class ServerLaunchEditorTests(unittest.TestCase):
         probe = run_mock.call_args.args[0][2]
         self.assertIn(str(project_root.resolve()), probe)
         self.assertNotIn("\\\\", probe)
+
+    def test_is_editor_process_running_ignores_non_editor_runtime_process(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            with patch(
+                "v2.mcp_core.server._list_project_processes",
+                return_value=[
+                    {"ProcessId": 10, "Name": "Godot.exe", "CommandLine": f"Godot --path {project_root.resolve()}"},
+                ],
+            ):
+                result = _is_editor_process_running(project_root)
+
+        self.assertFalse(result)
 
     def test_launch_editor_if_needed_reuses_running_editor_without_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,11 +94,39 @@ class ServerLaunchEditorTests(unittest.TestCase):
             ), patch(
                 "v2.mcp_core.server._list_project_processes",
                 return_value=[{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
-            ), patch("v2.mcp_core.server.time.monotonic", side_effect=[0.0, 0.0]), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=50)
+            ), patch(
+                "v2.mcp_core.server.time.monotonic",
+                side_effect=[0.0, 0.0, 0.1, 0.2, 0.4, 0.6],
+            ), patch("v2.mcp_core.server.time.sleep"):
+                result = _verify_teardown(project_root, timeout_ms=1000, stable_ms=300)
 
         self.assertEqual(result["status"], "verified")
         self.assertEqual(result["project_process_count"], 1)
+        self.assertGreaterEqual(result["stable_stop_ms"], 300)
+
+    def test_verify_teardown_waits_for_stable_stop_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            with patch(
+                "v2.mcp_core.server._read_runtime_gate",
+                side_effect=[
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                    {"runtime_gate_passed": True, "runtime_mode": "play_mode"},
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                ],
+            ), patch(
+                "v2.mcp_core.server._list_project_processes",
+                return_value=[{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
+            ), patch(
+                "v2.mcp_core.server.time.monotonic",
+                side_effect=[0.0, 0.0, 0.1, 0.15, 0.25, 0.45, 0.65, 0.85, 1.05],
+            ), patch("v2.mcp_core.server.time.sleep"):
+                result = _verify_teardown(project_root, timeout_ms=1000, stable_ms=200)
+
+        self.assertEqual(result["status"], "verified")
+        self.assertGreaterEqual(result["stable_stop_ms"], 200)
 
     def test_verify_teardown_fails_when_multiple_project_processes_remain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,11 +137,14 @@ class ServerLaunchEditorTests(unittest.TestCase):
             ), patch(
                 "v2.mcp_core.server._list_project_processes",
                 return_value=[
-                    {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"},
-                    {"ProcessId": 5678, "Name": "Godot.exe", "CommandLine": "godot --path project"},
+                    {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
+                    {"ProcessId": 5678, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
                 ],
-            ), patch("v2.mcp_core.server.time.monotonic", side_effect=[0.0, 0.0, 1.0]), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=50)
+            ), patch(
+                "v2.mcp_core.server.time.monotonic",
+                side_effect=[0.0, 0.0, 0.1, 1.0],
+            ), patch("v2.mcp_core.server.time.sleep"):
+                result = _verify_teardown(project_root, timeout_ms=50, stable_ms=25)
 
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["project_process_count"], 2)
@@ -175,6 +224,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                         "plugin_source": None,
                     },
                 )(),
+            ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
             ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -345,6 +397,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ) as sync_mock, patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
             ), patch(
@@ -374,7 +429,111 @@ class ServerLaunchEditorTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"]["basicflow"]["last_successful_run_at"], "2026-04-11T12:34:56+00:00")
+        self.assertFalse(response["result"]["isolation"]["isolated"])
+        self.assertEqual(response["result"]["isolation"]["status"], "shared_desktop")
+        self.assertEqual(response["result"]["plugin_sync"]["destination"], str(project_root / "addons" / "pointer_gpf"))
+        sync_mock.assert_called_once_with(project_root)
         mark_mock.assert_called_once()
+
+    def test_run_basic_flow_tool_supports_isolated_runtime_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            flow_file = project_root / "pointer_gpf" / "basicflow.json"
+            flow_file.parent.mkdir(parents=True, exist_ok=True)
+            flow_file.write_text(
+                json.dumps({"flowId": "project_basicflow", "steps": [{"id": "close", "action": "closeProject"}]}),
+                encoding="utf-8",
+            )
+            isolated_session = type(
+                "Session",
+                (),
+                {
+                    "pid": 4321,
+                    "desktop_name": "pointer_gpf_v2_test",
+                    "host_desktop_name": "Default",
+                    "process": object(),
+                },
+            )()
+            with patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ), patch(
+                "v2.mcp_core.server.run_preflight",
+                return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+            ), patch(
+                "v2.mcp_core.server.load_godot_executable",
+                return_value="D:/GODOT/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64.exe",
+            ), patch(
+                "v2.mcp_core.server.launch_isolated_runtime",
+                return_value=isolated_session,
+            ), patch(
+                "v2.mcp_core.server.run_basic_flow",
+                return_value={"status": "passed", "step_count": 1},
+            ), patch(
+                "v2.mcp_core.server.verify_isolated_runtime_stopped",
+                return_value={"status": "verified", "runtime_pid": 4321},
+            ), patch(
+                "v2.mcp_core.server.close_isolated_runtime_session",
+            ) as close_mock, patch(
+                "v2.mcp_core.server.mark_basicflow_run_success",
+                return_value={"last_successful_run_at": "2026-04-11T12:34:56+00:00"},
+            ):
+                from v2.mcp_core.server import _run_basic_flow_tool
+
+                exit_code, response, _ = _run_basic_flow_tool(
+                    project_root,
+                    flow_file,
+                    basicflow_context={"status": "fresh", "flow_summary": "summary"},
+                    execution_mode="isolated_runtime",
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["execution_mode"], "isolated_runtime")
+        self.assertTrue(response["result"]["isolation"]["isolated"])
+        self.assertEqual(response["result"]["isolation"]["status"], "isolated_desktop")
+        self.assertEqual(response["result"]["isolation"]["desktop_name"], "pointer_gpf_v2_test")
+        self.assertEqual(response["result"]["isolation"]["host_desktop_name"], "Default")
+        self.assertTrue(response["result"]["isolation"]["separate_desktop"])
+        self.assertEqual(response["result"]["play_mode"]["runtime_process"]["pid"], 4321)
+        self.assertEqual(response["result"]["plugin_sync"]["destination"], str(project_root / "addons" / "pointer_gpf"))
+        close_mock.assert_called_once_with(isolated_session)
+
+    def test_run_basic_flow_tool_syncs_plugin_before_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            flow_file = project_root / "flow.json"
+            flow_file.write_text(
+                json.dumps({"flowId": "interactive", "steps": [{"id": "close", "action": "closeProject"}]}),
+                encoding="utf-8",
+            )
+            with patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ) as sync_mock, patch(
+                "v2.mcp_core.server.run_preflight",
+                return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+            ) as preflight_mock, patch(
+                "v2.mcp_core.server._ensure_play_mode",
+                return_value={"status": "entered_play_mode"},
+            ), patch(
+                "v2.mcp_core.server.run_basic_flow",
+                return_value={"status": "passed", "step_count": 1},
+            ), patch(
+                "v2.mcp_core.server._verify_teardown",
+                return_value={"status": "verified", "project_process_count": 1},
+            ), patch(
+                "v2.mcp_core.server._list_project_processes",
+                return_value=[],
+            ):
+                from v2.mcp_core.server import _run_basic_flow_tool
+
+                exit_code, response, _ = _run_basic_flow_tool(project_root, flow_file)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(response["ok"])
+        sync_mock.assert_called_once_with(project_root)
+        preflight_mock.assert_called_once_with(project_root)
 
     def test_main_generate_basic_flow_writes_assets_from_answers_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -651,6 +810,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                     },
                 )(),
             ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
             ), patch(
@@ -691,6 +853,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                         "allow_stale_basicflow": False,
                     },
                 )(),
+            ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
             ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -740,6 +905,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                         "allow_stale_basicflow": False,
                     },
                 )(),
+            ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
             ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),

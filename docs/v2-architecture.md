@@ -29,6 +29,7 @@ V2 phase 1 includes:
 - verify teardown after `closeProject`
 - reject overlapping flows for one project
 - reject manual multi-editor runs for one project
+- support an experimental `isolated_runtime` execution mode on Windows
 - warn when project-local `basicflow` assets look stale
 - allow explicit stale-flow override through `--allow-stale-basicflow`
 - expose a stale-analysis entrypoint for comparing old `basicflow` assumptions against the current project snapshot
@@ -49,6 +50,7 @@ Responsibilities:
 - CLI tool entrypoints
 - preflight checks
 - plugin sync
+- Windows isolated-runtime launch and stop verification
 - basicflow asset generation/loading/stale detection
 - launching editor if needed
 - entering play mode
@@ -106,10 +108,14 @@ V2 is designed so that:
 - preflight catches project-level issues earlier
 - runtime flow runner stays small
 - plugin responsibilities stay narrow
+- execution mode can evolve beyond editor `play_mode` without rewriting the bridge contract
 
 ## Phase 2 Direction
 
-Phase 1 already covers the smallest interactive loop.
+Phase 1 already covers the smallest interactive loop. It now has two runtime paths:
+
+- validated default `play_mode`
+- experimental Windows `isolated_runtime` that launches the game on a dedicated desktop and verifies shutdown through `runtime_session.json` plus runtime PID
 
 The next architecture step should focus on turning that loop into a stable project asset:
 

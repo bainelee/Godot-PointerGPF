@@ -68,6 +68,7 @@ def _clear_runtime_markers(project_root: Path) -> None:
     for name in (
         "flow_run.lock",
         "runtime_gate.json",
+        "runtime_session.json",
         "runtime_diagnostics.json",
         "command.json",
         "response.json",
@@ -104,6 +105,7 @@ def run_v2_unit_tests() -> dict[str, Any]:
         repo / "v2" / "tests" / "test_basicflow_generation.py",
         repo / "v2" / "tests" / "test_basicflow_generation_session.py",
         repo / "v2" / "tests" / "test_server.py",
+        repo / "v2" / "tests" / "test_windows_isolated_runtime.py",
         repo / "v2" / "tests" / "test_flow_runner.py",
         repo / "v2" / "tests" / "test_preflight.py",
         repo / "v2" / "tests" / "test_plugin_sync.py",
@@ -374,9 +376,62 @@ def run_runtime_guards(project_root: Path) -> dict[str, Any]:
     }
 
 
+def run_isolated_runtime_flow(project_root: Path, flow_name: str) -> dict[str, Any]:
+    _reset_runtime_state(project_root)
+    flow_file = _repo_root() / "v2" / "flows" / flow_name
+    proc = _hidden_run(
+        [
+            sys.executable,
+            "-m",
+            "v2.mcp_core.server",
+            "--tool",
+            "run_basic_flow",
+            "--project-root",
+            str(project_root),
+            "--flow-file",
+            str(flow_file),
+            "--execution-mode",
+            "isolated_runtime",
+        ],
+        cwd=_repo_root(),
+        timeout=240,
+    )
+    payload = json.loads(proc.stdout)
+    result = payload.get("result", {})
+    return {
+        "name": f"isolated_runtime_{flow_file.stem}",
+        "ok": (
+            proc.returncode == 0
+            and bool(payload.get("ok"))
+            and result.get("execution_mode") == "isolated_runtime"
+            and result.get("isolation", {}).get("isolated") is True
+            and result.get("isolation", {}).get("status") == "isolated_desktop"
+            and result.get("isolation", {}).get("separate_desktop") is True
+            and result.get("play_mode", {}).get("status") == "launched_isolated_runtime"
+            and result.get("execution", {}).get("status") == "passed"
+            and result.get("project_close", {}).get("status") == "verified"
+        ),
+        "returncode": proc.returncode,
+        "payload": payload,
+    }
+
+
+def run_isolated_runtime_host_activity_flow(project_root: Path, flow_name: str) -> dict[str, Any]:
+    helper_path = _repo_root() / "scripts" / "verify-v2-isolated-runtime-with-host-activity.py"
+    spec = importlib.util.spec_from_file_location("verify_v2_isolated_runtime_with_host_activity", helper_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"unable to load host activity helper: {helper_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.run_isolated_runtime_flow_with_host_activity(project_root, flow_name)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the fixed V2 regression bundle.")
     parser.add_argument("--project-root", required=True)
+    parser.add_argument("--include-isolated-runtime", action="store_true")
+    parser.add_argument("--include-host-activity", action="store_true")
     args = parser.parse_args()
 
     project_root = Path(args.project_root).resolve()
@@ -391,6 +446,20 @@ def main() -> int:
         run_stale_override_flow(project_root),
         run_runtime_guards(project_root),
     ]
+    if args.include_isolated_runtime:
+        results.extend(
+            [
+                run_isolated_runtime_flow(project_root, "basic_minimal_flow.json"),
+                run_isolated_runtime_flow(project_root, "basic_interactive_flow.json"),
+            ]
+        )
+    if args.include_host_activity:
+        results.extend(
+            [
+                run_isolated_runtime_host_activity_flow(project_root, "basic_minimal_flow.json"),
+                run_isolated_runtime_host_activity_flow(project_root, "basic_interactive_flow.json"),
+            ]
+        )
     ok = all(item.get("ok", False) for item in results)
     print(json.dumps({"ok": ok, "results": results}, ensure_ascii=False))
     return 0 if ok else 2
