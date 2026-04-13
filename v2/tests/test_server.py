@@ -7,194 +7,45 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from v2.mcp_core.server import (
-    _acquire_flow_lock,
-    _detect_multiple_project_processes,
-    _flow_lock_path,
-    _is_editor_process_running,
-    _launch_editor_if_needed,
-    _normalize_execution_mode,
-    _release_flow_lock,
-    _verify_teardown,
-    main,
-)
+from v2.mcp_core.server import _flow_lock_path, _normalize_execution_mode, main
 
 
-class ServerLaunchEditorTests(unittest.TestCase):
+class ServerCliTests(unittest.TestCase):
+    def test_main_collect_bug_report_returns_normalized_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "collect_bug_report",
+                        "project_root": str(project_root),
+                        "bug_report": "点击开始游戏没有反应",
+                        "bug_summary": None,
+                        "expected_behavior": "应该进入游戏关卡",
+                        "steps_to_trigger": "启动游戏|点击开始游戏",
+                        "location_scene": "res://scenes/boot.tscn",
+                        "location_node": "StartButton",
+                        "location_script": "",
+                        "frequency_hint": "always",
+                        "severity_hint": "core_progression_blocker",
+                    },
+                )(),
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.bug_intake.v1")
+        self.assertEqual(payload["result"]["expected_behavior"], "应该进入游戏关卡")
+
     def test_normalize_execution_mode_rejects_unknown_value(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported execution mode"):
             _normalize_execution_mode("desktop_magic")
-
-    def test_is_editor_process_running_uses_unescaped_project_path_in_probe(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            with patch("v2.mcp_core.server.subprocess.run") as run_mock:
-                run_mock.return_value.stdout = json.dumps(
-                    {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": f"Godot -e --path {project_root.resolve()}"}
-                )
-                run_mock.return_value.returncode = 0
-
-                result = _is_editor_process_running(project_root)
-
-        self.assertTrue(result)
-        probe = run_mock.call_args.args[0][2]
-        self.assertIn(str(project_root.resolve()), probe)
-        self.assertNotIn("\\\\", probe)
-
-    def test_is_editor_process_running_ignores_non_editor_runtime_process(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            with patch(
-                "v2.mcp_core.server._list_project_processes",
-                return_value=[
-                    {"ProcessId": 10, "Name": "Godot.exe", "CommandLine": f"Godot --path {project_root.resolve()}"},
-                ],
-            ):
-                result = _is_editor_process_running(project_root)
-
-        self.assertFalse(result)
-
-    def test_launch_editor_if_needed_reuses_running_editor_without_gate(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            (project_root / "project.godot").write_text("[application]\nconfig/name=\"tmp\"\n", encoding="utf-8")
-
-            with patch("v2.mcp_core.server._is_editor_process_running", return_value=True), patch(
-                "v2.mcp_core.server.subprocess.Popen"
-            ) as popen_mock:
-                result = _launch_editor_if_needed(project_root)
-
-        self.assertEqual(result["status"], "editor_running")
-        self.assertEqual(result["runtime_gate"], {})
-        popen_mock.assert_not_called()
-
-    def test_launch_editor_if_needed_reuses_running_editor_with_gate(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            gate_path = project_root / "pointer_gpf" / "tmp" / "runtime_gate.json"
-            gate_path.parent.mkdir(parents=True, exist_ok=True)
-            gate_payload = {"runtime_gate_passed": False, "runtime_mode": "editor_poll"}
-            gate_path.write_text(json.dumps(gate_payload), encoding="utf-8")
-
-            with patch("v2.mcp_core.server._is_editor_process_running", return_value=True), patch(
-                "v2.mcp_core.server.subprocess.Popen"
-            ) as popen_mock:
-                result = _launch_editor_if_needed(project_root)
-
-        self.assertEqual(result["status"], "already_available")
-        self.assertEqual(result["runtime_gate"], gate_payload)
-        popen_mock.assert_not_called()
-
-    def test_verify_teardown_passes_when_play_stopped_and_single_process(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            with patch(
-                "v2.mcp_core.server._read_runtime_gate",
-                return_value={"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-            ), patch(
-                "v2.mcp_core.server._list_project_processes",
-                return_value=[{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
-            ), patch(
-                "v2.mcp_core.server.time.monotonic",
-                side_effect=[0.0, 0.0, 0.1, 0.2, 0.4, 0.6],
-            ), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=1000, stable_ms=300)
-
-        self.assertEqual(result["status"], "verified")
-        self.assertEqual(result["project_process_count"], 1)
-        self.assertGreaterEqual(result["stable_stop_ms"], 300)
-
-    def test_verify_teardown_waits_for_stable_stop_window(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            with patch(
-                "v2.mcp_core.server._read_runtime_gate",
-                side_effect=[
-                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-                    {"runtime_gate_passed": True, "runtime_mode": "play_mode"},
-                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-                ],
-            ), patch(
-                "v2.mcp_core.server._list_project_processes",
-                return_value=[{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
-            ), patch(
-                "v2.mcp_core.server.time.monotonic",
-                side_effect=[0.0, 0.0, 0.1, 0.15, 0.25, 0.45, 0.65, 0.85, 1.05],
-            ), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=1000, stable_ms=200)
-
-        self.assertEqual(result["status"], "verified")
-        self.assertGreaterEqual(result["stable_stop_ms"], 200)
-
-    def test_verify_teardown_fails_when_multiple_project_processes_remain(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            with patch(
-                "v2.mcp_core.server._read_runtime_gate",
-                return_value={"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-            ), patch(
-                "v2.mcp_core.server._list_project_processes",
-                return_value=[
-                    {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
-                    {"ProcessId": 5678, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
-                ],
-            ), patch(
-                "v2.mcp_core.server.time.monotonic",
-                side_effect=[0.0, 0.0, 0.1, 1.0],
-            ), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=50, stable_ms=25)
-
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["project_process_count"], 2)
-
-    def test_acquire_flow_lock_writes_lock_and_release_removes_it(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-
-            lock = _acquire_flow_lock(project_root)
-            lock_path = _flow_lock_path(project_root)
-
-            self.assertTrue(lock_path.is_file())
-            self.assertEqual(json.loads(lock_path.read_text(encoding="utf-8"))["token"], lock["token"])
-
-            _release_flow_lock(project_root, lock["token"])
-
-            self.assertFalse(lock_path.exists())
-
-    def test_acquire_flow_lock_recovers_stale_lock_when_pid_is_dead(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            lock_path = _flow_lock_path(project_root)
-            lock_path.parent.mkdir(parents=True, exist_ok=True)
-            lock_path.write_text(
-                json.dumps({"schema": "pointer_gpf.v2.flow_lock.v1", "pid": 999999, "token": "stale-token"}),
-                encoding="utf-8",
-            )
-
-            with patch("v2.mcp_core.server._is_pid_running", return_value=False):
-                lock = _acquire_flow_lock(project_root)
-
-            self.assertTrue(lock["recovered_stale_lock"])
-            self.assertEqual(lock["stale_lock"]["token"], "stale-token")
-            self.assertEqual(json.loads(lock_path.read_text(encoding="utf-8"))["token"], lock["token"])
-
-    def test_detect_multiple_project_processes_reports_manual_multi_editor(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            with patch(
-                "v2.mcp_core.server._list_project_processes",
-                return_value=[
-                    {"ProcessId": 1, "Name": "Godot.exe", "CommandLine": "godot -e --path a"},
-                    {"ProcessId": 2, "Name": "Godot.exe", "CommandLine": "godot -e --path a"},
-                ],
-            ):
-                result = _detect_multiple_project_processes(project_root)
-
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result["project_process_count"], 2)
 
     def test_main_run_basic_flow_rejects_when_lock_already_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

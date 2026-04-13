@@ -15,6 +15,8 @@ When continuing V2 work in a new conversation, read these files first:
 9. [v2-basic-flow-staleness-and-generation.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-staleness-and-generation.md)
 10. [v2-plugin-runtime-map.md](/D:/AI/pointer_gpf/docs/v2-plugin-runtime-map.md)
 11. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
+12. [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
+13. [2026-04-14-gpf-bug-intake-and-assertion-contract.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-bug-intake-and-assertion-contract.md)
 
 ## Current Repository Shape
 
@@ -35,6 +37,16 @@ Use `legacy/mcp` only when historical reference is required.
 ## Current State
 
 V2 phase 1 minimal chain is already passing.
+
+The server-split refactor is also no longer just planned.
+The current `main` branch now has a materially split V2 core:
+
+- `server.py` as the entry shell
+- `tool_dispatch.py` as the top-level tool branch layer
+- `request_layer.py` as the bounded user-request layer
+- `runtime_orchestration.py` as the runtime execution coordinator
+- `process_probe.py` as the Godot process / editor probe layer
+- `teardown_verification.py` as the stop-verification and flow-lock layer
 
 Verified:
 
@@ -61,9 +73,17 @@ Verified:
 - `run_basic_flow` now returns an `isolation` object so callers can distinguish shared desktop vs isolated desktop execution
 - isolated-runtime payloads now also include `host_desktop_name` and `separate_desktop`
 - V2 fixed regression now passes with `Ran 66 tests`, `OK`
+- after the server-split and test migration work, the fixed regression bundle now reports `v2_unit_tests` with `Ran 81 tests`, `OK`
 - V2 rejects overlapping flow runs for one project with `FLOW_ALREADY_RUNNING`
 - V2 rejects manual multi-editor runs for one project with `MULTIPLE_EDITOR_PROCESSES_DETECTED`
 - user language like `跑基础测试流程` should be interpreted as `run_basic_flow`
+
+Current product-priority judgment:
+
+- `input isolation` should now be treated as later TODO work unless it directly blocks the next core bug loop
+- further `basicflow` expansion should also be treated as later TODO work unless it directly blocks the next core bug loop
+- regression-bundle final Godot cleanup should also be treated as later TODO work unless it directly blocks the next core bug loop
+- the next mainline should return to the core GPF product loop described in [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
 
 ## Current Verification Commands
 
@@ -108,6 +128,15 @@ Current fixed regression coverage includes:
 - stale override `run_basic_flow --allow-stale-basicflow`
 - runtime guard checks
 - optional isolated runtime minimal + interactive flows
+
+Current test shape after the split:
+
+- `test_server.py` is now mainly for CLI smoke and compatibility wrappers
+- request behavior is increasingly covered in `test_request_layer.py`
+- runtime orchestration behavior is increasingly covered in `test_runtime_orchestration.py`
+- process probes are covered in `test_process_probe.py`
+- teardown / lock behavior is covered in `test_teardown_verification.py`
+- top-level dispatch behavior is covered in `test_tool_dispatch.py`
 
 ```powershell
 python -m v2.mcp_core.server --tool generate_basic_flow --project-root D:\AI\pointer_gpf_testgame --answers-file D:\AI\pointer_gpf\pointer_gpf\tmp\basicflow_answers.json
@@ -165,11 +194,15 @@ Fixed regression expectation:
 
 ## Next Implementation Target
 
-Continue with the `basicflow` productization work:
+After the completed server split, the preferred next product-facing work is no longer more `basicflow` expansion by default.
 
-1. extend the conservative project-specific target inference beyond the currently validated `StartButton -> GameLevel -> GamePointerHud` path
-2. keep regression coverage aligned when `basicflow` generation logic changes
-3. preserve serial execution for flow runs and generation sessions against one shared project
+Preferred next target:
+
+1. implement `collect_bug_report`
+2. implement `analyze_bug_report`
+3. implement `define_bug_assertions`
+4. then define how GPF chooses or patches a flow that can reproduce the bug
+5. then define the first reproduction -> fix -> re-verify slice
 
 Latest implementation note:
 
@@ -188,6 +221,19 @@ Latest implementation note:
 - the top-level user-request path is now split into `plan_user_request` and `handle_user_request`
   - `plan_user_request` resolves the supported high-level request into `tool + args + readiness`
   - `handle_user_request` currently auto-executes only safe next-step tools, not real runtime flow execution
+- the server split is now materially implemented
+  - `server.py` no longer owns the main request catalogs or runtime helper bodies
+  - `tool_dispatch.py` now owns the main tool branch logic formerly in `main()`
+  - `process_probe.py` and `teardown_verification.py` now hold the narrower runtime helper concerns that previously sat inside the orchestration path
+  - current follow-up should prefer documentation and test hygiene over more structural splitting, unless a new high-level domain forces another boundary change
+- `input isolation` remains important but is now considered later TODO work, not the immediate mainline
+- `basicflow` remains important but is now considered "good enough for now" unless a bug-focused flow requirement exposes a real missing piece
+- there is also a deferred regression-cleanup issue in shared `play_mode`
+  - after the current module/CLI test collection plus `verify-v2-regression.py`, one Godot editor process for the active project can remain alive by design
+  - this matches the current teardown contract, because `project_close.status: verified` only requires play mode to stop and the project editor-process count to be `<= 1`
+  - users may see the leftover project editor window become `未响应` if they interact with it during or after teardown
+  - future cleanup work should explicitly exit all remaining Godot processes for the current project after the regression bundle finishes
+  - that cleanup must stay project-scoped: do not kill unrelated Godot editors or runtimes that belong to other projects open on the same machine
 
 ## Plugin Summary For Colleagues
 
@@ -247,5 +293,5 @@ Check in this order:
 Use this starter:
 
 ```text
-继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出，再继续做 basicflow 的项目特定目标推断扩展，并同步补测试与文档。
+继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-14-gpf-core-direction.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出，再开始设计 bug 描述 -> 原因分析 -> 正确状态断言 -> repro flow -> 修复 -> 回归验证 的第一条主线切片，并同步补测试与文档。
 ```

@@ -7,9 +7,15 @@ V2 is in **phase 1.5**.
 Current goal:
 
 - keep the validated runtime chain stable
-- start productizing `basicflow` as an explicit asset rather than a one-off runtime file
-- define a real input-isolation path so flow execution does not depend on the user avoiding mouse/keyboard interaction on Windows
-- avoid inheriting old system features such as auto-fix, NL routing, orchestration, and Figma workflows
+- treat `input isolation` as a later TODO unless it directly blocks the next core loop
+- treat further `basicflow` productization expansion as a later TODO unless it directly blocks the next core loop
+- return focus to GPF's main product loop: bug report -> analysis -> correct-state assertion -> repro flow -> reproduction -> fix -> re-verify
+- avoid inheriting old system features such as open-ended NL routing, broad orchestration, and Figma workflows
+
+Direction note:
+
+- the current preferred direction is recorded in [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
+- the first concrete core-loop contract slice is recorded in [2026-04-14-gpf-bug-intake-and-assertion-contract.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-bug-intake-and-assertion-contract.md)
 
 ## What Is Already Working
 
@@ -44,6 +50,54 @@ The following V2 capabilities are already implemented in `v2/`:
 - project-specific target inference now covers a broader button-to-scene pattern, not just one hard-coded testgame path
 - `run_basic_flow` now syncs the latest repository plugin into the target project before preflight and launch
 - experimental Windows `isolated_runtime` can launch the tested Godot runtime on a dedicated desktop and verify teardown against that runtime process
+
+## Deferred TODO
+
+These areas are not the current mainline, unless they directly block the new core bug loop:
+
+- stronger `input isolation` guarantees and validation
+- more `basicflow` productization work beyond the current already-working scope
+- regression-bundle final cleanup for `play_mode` runs: after the full module/CLI test set plus fixed regression finishes, exit all remaining Godot processes for the current project only
+- shared-desktop `play_mode` hang / `未响应` symptom after regression teardown, especially when the user manually interacts with the leftover project editor window
+
+Current judgment:
+
+- `input isolation` should be recorded as later-stage work
+- additional `basicflow` expansion should also be recorded as later-stage work
+- the regression final-cleanup issue should also be recorded as later-stage work
+- the next mainline should move back toward bug-focused gray-box testing and repair
+
+Deferred cleanup constraint:
+
+- when this cleanup work is implemented, it must target only Godot processes that belong to the current `--project-root`
+- if other Godot editors or runtimes from different projects are open on the same machine, they must not be terminated by this cleanup
+- the current observed behavior is that `closeProject` + teardown verification in shared `play_mode` accepts one remaining editor process for the project, so the fixed regression bundle can end with a leftover project editor window
+
+## Next Mainline Direction
+
+GPF should now be treated as:
+
+- a Godot gray-box testing tool
+- a bug reproduction tool
+- a bug fixing assistant
+
+The next core loop should be:
+
+1. the user describes a bug in natural language
+2. GPF analyzes likely causes and affected areas
+3. GPF defines the correct non-bug state as explicit assertions
+4. GPF designs or updates a flow that can reach the bug
+5. GPF runs the flow to confirm reproduction
+6. GPF applies a fix
+7. GPF reruns the updated flow and assertions to confirm the fix
+
+This should become the main product direction after the completed server split.
+
+The first concrete implementation slice inside that direction should be:
+
+1. `collect_bug_report`
+2. `analyze_bug_report`
+3. `define_bug_assertions`
 
 The current V2 structure lives under:
 
