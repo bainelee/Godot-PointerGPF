@@ -13,6 +13,7 @@ from v2.mcp_core.server import (
     _flow_lock_path,
     _is_editor_process_running,
     _launch_editor_if_needed,
+    _normalize_execution_mode,
     _release_flow_lock,
     _verify_teardown,
     main,
@@ -20,6 +21,10 @@ from v2.mcp_core.server import (
 
 
 class ServerLaunchEditorTests(unittest.TestCase):
+    def test_normalize_execution_mode_rejects_unknown_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported execution mode"):
+            _normalize_execution_mode("desktop_magic")
+
     def test_is_editor_process_running_uses_unescaped_project_path_in_probe(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -35,6 +40,19 @@ class ServerLaunchEditorTests(unittest.TestCase):
         probe = run_mock.call_args.args[0][2]
         self.assertIn(str(project_root.resolve()), probe)
         self.assertNotIn("\\\\", probe)
+
+    def test_is_editor_process_running_ignores_non_editor_runtime_process(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            with patch(
+                "v2.mcp_core.server._list_project_processes",
+                return_value=[
+                    {"ProcessId": 10, "Name": "Godot.exe", "CommandLine": f"Godot --path {project_root.resolve()}"},
+                ],
+            ):
+                result = _is_editor_process_running(project_root)
+
+        self.assertFalse(result)
 
     def test_launch_editor_if_needed_reuses_running_editor_without_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,11 +94,39 @@ class ServerLaunchEditorTests(unittest.TestCase):
             ), patch(
                 "v2.mcp_core.server._list_project_processes",
                 return_value=[{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
-            ), patch("v2.mcp_core.server.time.monotonic", side_effect=[0.0, 0.0]), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=50)
+            ), patch(
+                "v2.mcp_core.server.time.monotonic",
+                side_effect=[0.0, 0.0, 0.1, 0.2, 0.4, 0.6],
+            ), patch("v2.mcp_core.server.time.sleep"):
+                result = _verify_teardown(project_root, timeout_ms=1000, stable_ms=300)
 
         self.assertEqual(result["status"], "verified")
         self.assertEqual(result["project_process_count"], 1)
+        self.assertGreaterEqual(result["stable_stop_ms"], 300)
+
+    def test_verify_teardown_waits_for_stable_stop_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            with patch(
+                "v2.mcp_core.server._read_runtime_gate",
+                side_effect=[
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                    {"runtime_gate_passed": True, "runtime_mode": "play_mode"},
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                    {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
+                ],
+            ), patch(
+                "v2.mcp_core.server._list_project_processes",
+                return_value=[{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
+            ), patch(
+                "v2.mcp_core.server.time.monotonic",
+                side_effect=[0.0, 0.0, 0.1, 0.15, 0.25, 0.45, 0.65, 0.85, 1.05],
+            ), patch("v2.mcp_core.server.time.sleep"):
+                result = _verify_teardown(project_root, timeout_ms=1000, stable_ms=200)
+
+        self.assertEqual(result["status"], "verified")
+        self.assertGreaterEqual(result["stable_stop_ms"], 200)
 
     def test_verify_teardown_fails_when_multiple_project_processes_remain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,11 +137,14 @@ class ServerLaunchEditorTests(unittest.TestCase):
             ), patch(
                 "v2.mcp_core.server._list_project_processes",
                 return_value=[
-                    {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"},
-                    {"ProcessId": 5678, "Name": "Godot.exe", "CommandLine": "godot --path project"},
+                    {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
+                    {"ProcessId": 5678, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
                 ],
-            ), patch("v2.mcp_core.server.time.monotonic", side_effect=[0.0, 0.0, 1.0]), patch("v2.mcp_core.server.time.sleep"):
-                result = _verify_teardown(project_root, timeout_ms=50)
+            ), patch(
+                "v2.mcp_core.server.time.monotonic",
+                side_effect=[0.0, 0.0, 0.1, 1.0],
+            ), patch("v2.mcp_core.server.time.sleep"):
+                result = _verify_teardown(project_root, timeout_ms=50, stable_ms=25)
 
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["project_process_count"], 2)
@@ -175,6 +224,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                         "plugin_source": None,
                     },
                 )(),
+            ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
             ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -345,6 +397,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ) as sync_mock, patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
             ), patch(
@@ -374,7 +429,111 @@ class ServerLaunchEditorTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"]["basicflow"]["last_successful_run_at"], "2026-04-11T12:34:56+00:00")
+        self.assertFalse(response["result"]["isolation"]["isolated"])
+        self.assertEqual(response["result"]["isolation"]["status"], "shared_desktop")
+        self.assertEqual(response["result"]["plugin_sync"]["destination"], str(project_root / "addons" / "pointer_gpf"))
+        sync_mock.assert_called_once_with(project_root)
         mark_mock.assert_called_once()
+
+    def test_run_basic_flow_tool_supports_isolated_runtime_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            flow_file = project_root / "pointer_gpf" / "basicflow.json"
+            flow_file.parent.mkdir(parents=True, exist_ok=True)
+            flow_file.write_text(
+                json.dumps({"flowId": "project_basicflow", "steps": [{"id": "close", "action": "closeProject"}]}),
+                encoding="utf-8",
+            )
+            isolated_session = type(
+                "Session",
+                (),
+                {
+                    "pid": 4321,
+                    "desktop_name": "pointer_gpf_v2_test",
+                    "host_desktop_name": "Default",
+                    "process": object(),
+                },
+            )()
+            with patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ), patch(
+                "v2.mcp_core.server.run_preflight",
+                return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+            ), patch(
+                "v2.mcp_core.server.load_godot_executable",
+                return_value="D:/GODOT/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64.exe",
+            ), patch(
+                "v2.mcp_core.server.launch_isolated_runtime",
+                return_value=isolated_session,
+            ), patch(
+                "v2.mcp_core.server.run_basic_flow",
+                return_value={"status": "passed", "step_count": 1},
+            ), patch(
+                "v2.mcp_core.server.verify_isolated_runtime_stopped",
+                return_value={"status": "verified", "runtime_pid": 4321},
+            ), patch(
+                "v2.mcp_core.server.close_isolated_runtime_session",
+            ) as close_mock, patch(
+                "v2.mcp_core.server.mark_basicflow_run_success",
+                return_value={"last_successful_run_at": "2026-04-11T12:34:56+00:00"},
+            ):
+                from v2.mcp_core.server import _run_basic_flow_tool
+
+                exit_code, response, _ = _run_basic_flow_tool(
+                    project_root,
+                    flow_file,
+                    basicflow_context={"status": "fresh", "flow_summary": "summary"},
+                    execution_mode="isolated_runtime",
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["execution_mode"], "isolated_runtime")
+        self.assertTrue(response["result"]["isolation"]["isolated"])
+        self.assertEqual(response["result"]["isolation"]["status"], "isolated_desktop")
+        self.assertEqual(response["result"]["isolation"]["desktop_name"], "pointer_gpf_v2_test")
+        self.assertEqual(response["result"]["isolation"]["host_desktop_name"], "Default")
+        self.assertTrue(response["result"]["isolation"]["separate_desktop"])
+        self.assertEqual(response["result"]["play_mode"]["runtime_process"]["pid"], 4321)
+        self.assertEqual(response["result"]["plugin_sync"]["destination"], str(project_root / "addons" / "pointer_gpf"))
+        close_mock.assert_called_once_with(isolated_session)
+
+    def test_run_basic_flow_tool_syncs_plugin_before_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            flow_file = project_root / "flow.json"
+            flow_file.write_text(
+                json.dumps({"flowId": "interactive", "steps": [{"id": "close", "action": "closeProject"}]}),
+                encoding="utf-8",
+            )
+            with patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ) as sync_mock, patch(
+                "v2.mcp_core.server.run_preflight",
+                return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+            ) as preflight_mock, patch(
+                "v2.mcp_core.server._ensure_play_mode",
+                return_value={"status": "entered_play_mode"},
+            ), patch(
+                "v2.mcp_core.server.run_basic_flow",
+                return_value={"status": "passed", "step_count": 1},
+            ), patch(
+                "v2.mcp_core.server._verify_teardown",
+                return_value={"status": "verified", "project_process_count": 1},
+            ), patch(
+                "v2.mcp_core.server._list_project_processes",
+                return_value=[],
+            ):
+                from v2.mcp_core.server import _run_basic_flow_tool
+
+                exit_code, response, _ = _run_basic_flow_tool(project_root, flow_file)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(response["ok"])
+        sync_mock.assert_called_once_with(project_root)
+        preflight_mock.assert_called_once_with(project_root)
 
     def test_main_generate_basic_flow_writes_assets_from_answers_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -558,6 +717,1016 @@ class ServerLaunchEditorTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["status"], "questions_ready")
 
+    def test_main_get_basic_flow_user_intents_marks_missing_basicflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "get_basic_flow_user_intents",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "missing", "is_stale": False, "reasons": [], "message": "missing"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "intents_ready")
+        self.assertEqual(payload["result"]["basicflow_state"], "missing")
+        self.assertEqual(payload["result"]["intents"][0]["availability"], "blocked_missing_basicflow")
+        self.assertEqual(payload["result"]["intents"][1]["availability"], "recommended")
+        self.assertEqual(payload["result"]["primary_recommendation"]["tool"], "generate_basic_flow")
+        self.assertEqual(payload["result"]["secondary_actions"][0]["tool"], "get_basic_flow_generation_questions")
+
+    def test_main_get_basic_flow_user_intents_marks_stale_basicflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "get_basic_flow_user_intents",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["basicflow_state"], "stale")
+        self.assertEqual(payload["result"]["intents"][0]["availability"], "decision_required")
+        self.assertEqual(payload["result"]["intents"][2]["availability"], "recommended")
+        self.assertEqual(payload["result"]["primary_recommendation"]["tool"], "generate_basic_flow")
+        self.assertEqual(payload["result"]["secondary_actions"][0]["tool"], "analyze_basic_flow_staleness")
+
+    def test_main_get_basic_flow_user_intents_marks_fresh_basicflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "get_basic_flow_user_intents",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["basicflow_state"], "fresh")
+        self.assertEqual(payload["result"]["intents"][0]["availability"], "recommended")
+        self.assertEqual(payload["result"]["intents"][1]["availability"], "available")
+        self.assertEqual(payload["result"]["primary_recommendation"]["tool"], "run_basic_flow")
+
+    def test_main_get_user_request_command_guide_returns_supported_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "get_user_request_command_guide",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": None,
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "command_guide_ready")
+        self.assertIn("basicflow", payload["result"]["supported_domains"])
+        self.assertIn("project_readiness", payload["result"]["supported_domains"])
+        tools = {group["tool"] for group in payload["result"]["command_groups"]}
+        self.assertIn("run_basic_flow", tools)
+        self.assertIn("preflight_project", tools)
+        self.assertIn("configure_godot_executable", tools)
+
+    def test_main_resolve_basic_flow_user_request_routes_run_phrase_to_run_when_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "跑基础测试流程",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "basicflow_request_resolved")
+        self.assertTrue(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "run_basic_flow")
+        self.assertFalse(payload["result"]["requires_confirmation"])
+        self.assertEqual(payload["result"]["matched_intent"]["tool"], "run_basic_flow")
+        self.assertEqual(payload["result"]["recommended_action"]["tool"], "run_basic_flow")
+
+    def test_main_resolve_basic_flow_user_request_routes_run_phrase_to_generate_when_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "run the basic test flow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "generate_basic_flow")
+        self.assertFalse(payload["result"]["requires_confirmation"])
+        self.assertEqual(payload["result"]["matched_intent"]["tool"], "run_basic_flow")
+        self.assertEqual(payload["result"]["recommended_action"]["tool"], "generate_basic_flow")
+
+    def test_main_resolve_basic_flow_user_request_respects_explicit_analyze_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "分析基础流程为什么过期",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "analyze_basic_flow_staleness")
+        self.assertFalse(payload["result"]["requires_confirmation"])
+        self.assertEqual(payload["result"]["matched_intent"]["tool"], "analyze_basic_flow_staleness")
+        self.assertEqual(payload["result"]["recommended_action"]["tool"], "analyze_basic_flow_staleness")
+
+    def test_main_resolve_basic_flow_user_request_returns_no_match_when_phrase_is_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "帮我看看渲染性能",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "no_basicflow_intent_match")
+        self.assertFalse(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "")
+
+    def test_main_resolve_basic_flow_user_request_accepts_run_basicflow_synonym(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "run basicflow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "run_basic_flow")
+
+    def test_main_resolve_basic_flow_user_request_accepts_regenerate_synonym(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "regenerate basicflow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "generate_basic_flow")
+
+    def test_main_resolve_basic_flow_user_request_accepts_inspect_drift_synonym(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "resolve_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "inspect basicflow drift",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["result"]["resolved"])
+        self.assertEqual(payload["result"]["tool"], "analyze_basic_flow_staleness")
+
+    def test_main_plan_basic_flow_user_request_routes_fresh_run_to_run_basic_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "run basicflow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["tool"], "run_basic_flow")
+        self.assertEqual(payload["result"]["args"]["project_root"], str(project_root.resolve()))
+        self.assertTrue(payload["result"]["ready_to_execute"])
+        self.assertFalse(payload["result"]["ask_confirmation"])
+
+    def test_main_plan_basic_flow_user_request_routes_stale_run_to_generation_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "跑基础测试流程",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["tool"], "get_basic_flow_generation_questions")
+        self.assertEqual(payload["result"]["follow_up_tool"], "generate_basic_flow")
+        self.assertTrue(payload["result"]["ready_to_execute"])
+        self.assertFalse(payload["result"]["ask_confirmation"])
+
+    def test_main_plan_basic_flow_user_request_routes_explicit_generate_to_generation_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "regenerate basicflow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["tool"], "get_basic_flow_generation_questions")
+        self.assertEqual(payload["result"]["follow_up_tool"], "generate_basic_flow")
+
+    def test_main_plan_basic_flow_user_request_routes_explicit_analyze_to_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_basic_flow_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "inspect basicflow drift",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["tool"], "analyze_basic_flow_staleness")
+        self.assertEqual(payload["result"]["args"]["project_root"], str(project_root.resolve()))
+
+    def test_main_plan_user_request_routes_basicflow_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "run basicflow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_planned")
+        self.assertEqual(payload["result"]["domain"], "basicflow")
+        self.assertEqual(payload["result"]["tool"], "run_basic_flow")
+
+    def test_main_plan_user_request_returns_no_plan_for_unknown_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "帮我看看渲染性能",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "no_user_request_plan")
+        self.assertFalse(payload["result"]["resolved"])
+
+    def test_main_plan_user_request_routes_preflight_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "跑项目预检",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["domain"], "project_readiness")
+        self.assertEqual(payload["result"]["tool"], "preflight_project")
+        self.assertTrue(payload["result"]["ready_to_execute"])
+
+    def test_main_plan_user_request_routes_configure_godot_without_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "配置 godot 路径",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["domain"], "project_readiness")
+        self.assertEqual(payload["result"]["tool"], "configure_godot_executable")
+        self.assertFalse(payload["result"]["ready_to_execute"])
+        self.assertTrue(payload["result"]["ask_confirmation"])
+
+    def test_main_plan_user_request_routes_configure_godot_with_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            exe_path = r"D:\Tools\Godot\Godot_v4.4.1-stable_win64.exe"
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": f"配置 godot 路径 {exe_path}",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["tool"], "configure_godot_executable")
+        self.assertEqual(payload["result"]["args"]["godot_executable"], exe_path)
+        self.assertTrue(payload["result"]["ready_to_execute"])
+
+    def test_main_handle_user_request_executes_preflight_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            preflight_result = type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True, "status": "ready"}})()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "跑项目预检",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), patch("v2.mcp_core.server.run_preflight", return_value=preflight_result), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_handled")
+        self.assertEqual(payload["result"]["tool"], "preflight_project")
+        self.assertEqual(payload["result"]["result"]["status"], "ready")
+
+    def test_main_handle_user_request_returns_needs_input_for_configure_without_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "配置 godot 路径",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_needs_input")
+        self.assertEqual(payload["result"]["tool"], "configure_godot_executable")
+        self.assertTrue(payload["result"]["ask_confirmation"])
+
+    def test_main_handle_user_request_executes_configure_with_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            exe_path = r"D:\Tools\Godot\Godot_v4.4.1-stable_win64.exe"
+            config_file = project_root / "pointer_gpf" / "godot_executable.json"
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": f"配置 godot 路径 {exe_path}",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), patch("v2.mcp_core.server.configure_godot_executable", return_value=config_file), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_handled")
+        self.assertEqual(payload["result"]["tool"], "configure_godot_executable")
+        self.assertEqual(payload["result"]["result"]["config_file"], str(config_file))
+
+    def test_main_handle_user_request_executes_generation_question_collection_for_stale_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "run basicflow",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), patch(
+                "v2.mcp_core.server.get_basicflow_generation_questions",
+                return_value={"status": "questions_ready", "questions": [{"id": "main_scene_is_entry"}]},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_handled")
+        self.assertEqual(payload["result"]["tool"], "get_basic_flow_generation_questions")
+        self.assertEqual(payload["result"]["follow_up_tool"], "generate_basic_flow")
+
+    def test_main_handle_user_request_executes_basicflow_staleness_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            analysis = {"status": "stale", "is_stale": True, "reasons": ["startup script changed"]}
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "inspect basicflow drift",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "stale", "is_stale": True, "reasons": [], "message": "stale"},
+            ), patch("v2.mcp_core.server.analyze_basicflow_staleness", return_value=analysis), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_handled")
+        self.assertEqual(payload["result"]["tool"], "analyze_basic_flow_staleness")
+        self.assertEqual(payload["result"]["result"]["reasons"][0], "startup script changed")
+
     def test_main_start_basic_flow_generation_session_returns_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -651,6 +1820,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                     },
                 )(),
             ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
+            ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
             ), patch(
@@ -691,6 +1863,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                         "allow_stale_basicflow": False,
                     },
                 )(),
+            ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
             ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -740,6 +1915,9 @@ class ServerLaunchEditorTests(unittest.TestCase):
                         "allow_stale_basicflow": False,
                     },
                 )(),
+            ), patch(
+                "v2.mcp_core.server._sync_project_plugin",
+                return_value=project_root / "addons" / "pointer_gpf",
             ), patch(
                 "v2.mcp_core.server.run_preflight",
                 return_value=type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),

@@ -6,12 +6,15 @@ When continuing V2 work in a new conversation, read these files first:
 
 1. [v2-status.md](/D:/AI/pointer_gpf/docs/v2-status.md)
 2. [v2-architecture.md](/D:/AI/pointer_gpf/docs/v2-architecture.md)
-3. [v2-basic-flow-user-intent.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-user-intent.md)
-4. [v2-basic-flow-contract.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-contract.md)
-5. [v2-basic-flow-asset-model.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-asset-model.md)
-6. [v2-basic-flow-staleness-and-generation.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-staleness-and-generation.md)
-7. [v2-plugin-runtime-map.md](/D:/AI/pointer_gpf/docs/v2-plugin-runtime-map.md)
-8. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
+3. [v2-how-to-command-gpf.md](/D:/AI/pointer_gpf/docs/v2-how-to-command-gpf.md)
+4. [v2-natural-language-boundary-principles.md](/D:/AI/pointer_gpf/docs/v2-natural-language-boundary-principles.md)
+5. [2026-04-13-v2-server-split-plan.md](/D:/AI/pointer_gpf/docs/2026-04-13-v2-server-split-plan.md)
+6. [v2-basic-flow-user-intent.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-user-intent.md)
+7. [v2-basic-flow-contract.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-contract.md)
+8. [v2-basic-flow-asset-model.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-asset-model.md)
+9. [v2-basic-flow-staleness-and-generation.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-staleness-and-generation.md)
+10. [v2-plugin-runtime-map.md](/D:/AI/pointer_gpf/docs/v2-plugin-runtime-map.md)
+11. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
 
 ## Current Repository Shape
 
@@ -44,10 +47,20 @@ Verified:
 - V2 can analyze why the current project-local `basicflow` is stale through `analyze_basic_flow_staleness`
 - V2 `generate_basic_flow` accepts either `--answers-file` or direct structured answers for the 3 generation questions
 - V2 `get_basic_flow_generation_questions` returns the structured 3-question contract plus the current startup-scene hint
+- V2 `get_basic_flow_user_intents` returns a small structured intent catalog plus `primary_recommendation` / `secondary_actions`, so the upper conversational layer can pick `run_basic_flow`, `generate_basic_flow`, or `analyze_basic_flow_staleness` based on project state
+- V2 `resolve_basic_flow_user_request` is now a thin adapter that matches a small set of basicflow-related user phrases and returns the current project-aware recommended action
 - V2 also supports a session form for the 3-question generation flow: start -> answer -> complete
 - V2 generated `basicflow` can now conservatively switch to a project-specific path when obvious targets are detected
 - V2 validated a real project-specific path on `D:\AI\pointer_gpf_testgame`: `StartButton -> GameLevel -> GamePointerHud -> closeProject`
-- V2 unit tests pass (`Ran 55 tests`, `OK` in the current fixed regression bundle)
+- V2 project-specific target inference is no longer limited to that exact path; it can now conservatively infer:
+  - `button_to_scene_with_runtime_anchor`
+  - `button_to_scene_root`
+  - fallback `generic_runtime_probe`
+- `run_basic_flow` now syncs the repository plugin into the target project before preflight and launch
+- V2 has an experimental Windows `isolated_runtime` mode for `run_basic_flow`
+- `run_basic_flow` now returns an `isolation` object so callers can distinguish shared desktop vs isolated desktop execution
+- isolated-runtime payloads now also include `host_desktop_name` and `separate_desktop`
+- V2 fixed regression now passes with `Ran 66 tests`, `OK`
 - V2 rejects overlapping flow runs for one project with `FLOW_ALREADY_RUNNING`
 - V2 rejects manual multi-editor runs for one project with `MULTIPLE_EDITOR_PROCESSES_DETECTED`
 - user language like `跑基础测试流程` should be interpreted as `run_basic_flow`
@@ -64,17 +77,37 @@ Preferred fixed regression entry:
 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame
 ```
 
+Optional isolated-runtime coverage:
+
+```powershell
+python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame --include-isolated-runtime
+```
+
+```powershell
+python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame --include-isolated-runtime --include-host-activity
+```
+
+```powershell
+python D:\AI\pointer_gpf\scripts\verify-v2-isolated-runtime.py --project-root D:\AI\pointer_gpf_testgame
+```
+
+```powershell
+python D:\AI\pointer_gpf\scripts\verify-v2-isolated-runtime-with-host-activity.py --project-root D:\AI\pointer_gpf_testgame
+```
+
 Current fixed regression coverage includes:
 
 - V2 unit tests
 - `preflight_project`
 - `basic_interactive_flow`
 - `get_basic_flow_generation_questions`
+- `get_basic_flow_user_intents`
 - session-based `basicflow` generation
 - default project-local `run_basic_flow`
 - `analyze_basic_flow_staleness`
 - stale override `run_basic_flow --allow-stale-basicflow`
 - runtime guard checks
+- optional isolated runtime minimal + interactive flows
 
 ```powershell
 python -m v2.mcp_core.server --tool generate_basic_flow --project-root D:\AI\pointer_gpf_testgame --answers-file D:\AI\pointer_gpf\pointer_gpf\tmp\basicflow_answers.json
@@ -137,6 +170,24 @@ Continue with the `basicflow` productization work:
 1. extend the conservative project-specific target inference beyond the currently validated `StartButton -> GameLevel -> GamePointerHud` path
 2. keep regression coverage aligned when `basicflow` generation logic changes
 3. preserve serial execution for flow runs and generation sessions against one shared project
+
+Latest implementation note:
+
+- inference now looks for a startup button scene, a scene-transition target from the startup script, the target scene root node, and an optional runtime anchor scene such as a HUD
+- if those signals are missing, generation still falls back to the old generic visible-click probe
+- input isolation is now an explicit architecture requirement; see [v2-input-isolation-requirements.md](/D:/AI/pointer_gpf/docs/v2-input-isolation-requirements.md)
+- the current implementation plan for that work is [2026-04-12-v2-input-isolation-plan.md](/D:/AI/pointer_gpf/docs/2026-04-12-v2-input-isolation-plan.md)
+- the first isolated-runtime slice is now implemented:
+  - `run_basic_flow --execution-mode isolated_runtime` launches a Godot runtime onto a dedicated Windows desktop
+  - `runtime_bridge.gd` writes `pointer_gpf/tmp/runtime_session.json`
+  - `closeProject` quits the isolated runtime process directly instead of writing `auto_stop_play_mode.flag`
+  - `project_close` is verified against the isolated runtime PID and stable stop window
+  - result payloads now include `isolation.isolated`, `isolation.surface`, `isolation.status`, `host_desktop_name`, and `separate_desktop`
+  - there is now a real host-desktop activity validation script that keeps moving the host cursor while isolated runtime flows run; the latest observed result still passed for both minimal and interactive flows
+  - `runtime_bridge.gd` also adds automation-time input guards that reduce captured-mouse symptoms, but those guards should still be described as mitigation rather than as the full isolation proof
+- the top-level user-request path is now split into `plan_user_request` and `handle_user_request`
+  - `plan_user_request` resolves the supported high-level request into `tool + args + readiness`
+  - `handle_user_request` currently auto-executes only safe next-step tools, not real runtime flow execution
 
 ## Plugin Summary For Colleagues
 
