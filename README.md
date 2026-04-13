@@ -131,6 +131,30 @@ python -m v2.mcp_core.server --tool get_basic_flow_generation_questions --projec
 python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame
 ```
 
+## 当前 release 形态
+
+当前 V2 已经具备一条经过 smoke 验证的最小 release 路径：
+
+- 构建源码 bundle zip
+- 解包后运行 V2 单测
+- 解包后运行 MCP 命令入口验证
+
+相关文档与脚本：
+
+- [docs/v2-release-and-install.md](./docs/v2-release-and-install.md)
+- [scripts/build-v2-release.py](./scripts/build-v2-release.py)
+- [scripts/verify-v2-release-package.py](./scripts/verify-v2-release-package.py)
+
+这条路径当前证明的是：
+
+- 用户拿到 zip 源码包后，可以解压并成功运行当前 V2
+
+它当前还不是：
+
+- 原生安装器
+- pip 包
+- 一键式 MCP 客户端集成安装
+
 ## 推荐阅读顺序
 
 如果你是第一次接触这个仓库，建议按这个顺序读：

@@ -131,6 +131,30 @@ Run the basic flow:
 python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame
 ```
 
+## Current Release Shape
+
+V2 now has a smoke-verified minimal release path:
+
+- build a source-bundle zip
+- unpack it and run the V2 unit tests
+- unpack it and run an MCP entrypoint check
+
+Related docs and scripts:
+
+- [docs/v2-release-and-install.md](./docs/v2-release-and-install.md)
+- [scripts/build-v2-release.py](./scripts/build-v2-release.py)
+- [scripts/verify-v2-release-package.py](./scripts/verify-v2-release-package.py)
+
+What this currently proves:
+
+- a user can receive the zip bundle, unpack it, and successfully run the current V2
+
+What it is not yet:
+
+- a native installer
+- a pip package
+- a one-click MCP client installation flow
+
 ## Suggested Reading Order
 
 If this is your first time in the repo, read in this order:

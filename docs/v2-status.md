@@ -38,6 +38,7 @@ The following V2 capabilities are already implemented in `v2/`:
 - V2 now also has an explicit development-side NL boundary rule set: [v2-natural-language-boundary-principles.md](/D:/AI/pointer_gpf/docs/v2-natural-language-boundary-principles.md)
 - the planned post-slice refactor for oversized [server.py](/D:/AI/pointer_gpf/v2/mcp_core/server.py) is recorded in [2026-04-13-v2-server-split-plan.md](/D:/AI/pointer_gpf/docs/2026-04-13-v2-server-split-plan.md)
 - both `basicflow` and `project_readiness` request phrases are now backed by shared in-code catalogs instead of ad hoc planner-only phrase lists
+- V2 now has a minimal source-bundle release path plus a release smoke verifier; see [v2-release-and-install.md](/D:/AI/pointer_gpf/docs/v2-release-and-install.md)
 - the 3-question generation flow also supports a session form: start -> answer -> complete
 - generated `basicflow` can conservatively prefer a project-specific path when obvious targets are detected
 - project-specific target inference now covers a broader button-to-scene pattern, not just one hard-coded testgame path
