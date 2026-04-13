@@ -6,12 +6,15 @@ When continuing V2 work in a new conversation, read these files first:
 
 1. [v2-status.md](/D:/AI/pointer_gpf/docs/v2-status.md)
 2. [v2-architecture.md](/D:/AI/pointer_gpf/docs/v2-architecture.md)
-3. [v2-basic-flow-user-intent.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-user-intent.md)
-4. [v2-basic-flow-contract.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-contract.md)
-5. [v2-basic-flow-asset-model.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-asset-model.md)
-6. [v2-basic-flow-staleness-and-generation.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-staleness-and-generation.md)
-7. [v2-plugin-runtime-map.md](/D:/AI/pointer_gpf/docs/v2-plugin-runtime-map.md)
-8. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
+3. [v2-how-to-command-gpf.md](/D:/AI/pointer_gpf/docs/v2-how-to-command-gpf.md)
+4. [v2-natural-language-boundary-principles.md](/D:/AI/pointer_gpf/docs/v2-natural-language-boundary-principles.md)
+5. [2026-04-13-v2-server-split-plan.md](/D:/AI/pointer_gpf/docs/2026-04-13-v2-server-split-plan.md)
+6. [v2-basic-flow-user-intent.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-user-intent.md)
+7. [v2-basic-flow-contract.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-contract.md)
+8. [v2-basic-flow-asset-model.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-asset-model.md)
+9. [v2-basic-flow-staleness-and-generation.md](/D:/AI/pointer_gpf/docs/v2-basic-flow-staleness-and-generation.md)
+10. [v2-plugin-runtime-map.md](/D:/AI/pointer_gpf/docs/v2-plugin-runtime-map.md)
+11. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
 
 ## Current Repository Shape
 
@@ -44,6 +47,8 @@ Verified:
 - V2 can analyze why the current project-local `basicflow` is stale through `analyze_basic_flow_staleness`
 - V2 `generate_basic_flow` accepts either `--answers-file` or direct structured answers for the 3 generation questions
 - V2 `get_basic_flow_generation_questions` returns the structured 3-question contract plus the current startup-scene hint
+- V2 `get_basic_flow_user_intents` returns a small structured intent catalog plus `primary_recommendation` / `secondary_actions`, so the upper conversational layer can pick `run_basic_flow`, `generate_basic_flow`, or `analyze_basic_flow_staleness` based on project state
+- V2 `resolve_basic_flow_user_request` is now a thin adapter that matches a small set of basicflow-related user phrases and returns the current project-aware recommended action
 - V2 also supports a session form for the 3-question generation flow: start -> answer -> complete
 - V2 generated `basicflow` can now conservatively switch to a project-specific path when obvious targets are detected
 - V2 validated a real project-specific path on `D:\AI\pointer_gpf_testgame`: `StartButton -> GameLevel -> GamePointerHud -> closeProject`
@@ -96,6 +101,7 @@ Current fixed regression coverage includes:
 - `preflight_project`
 - `basic_interactive_flow`
 - `get_basic_flow_generation_questions`
+- `get_basic_flow_user_intents`
 - session-based `basicflow` generation
 - default project-local `run_basic_flow`
 - `analyze_basic_flow_staleness`
@@ -179,6 +185,9 @@ Latest implementation note:
   - result payloads now include `isolation.isolated`, `isolation.surface`, `isolation.status`, `host_desktop_name`, and `separate_desktop`
   - there is now a real host-desktop activity validation script that keeps moving the host cursor while isolated runtime flows run; the latest observed result still passed for both minimal and interactive flows
   - `runtime_bridge.gd` also adds automation-time input guards that reduce captured-mouse symptoms, but those guards should still be described as mitigation rather than as the full isolation proof
+- the top-level user-request path is now split into `plan_user_request` and `handle_user_request`
+  - `plan_user_request` resolves the supported high-level request into `tool + args + readiness`
+  - `handle_user_request` currently auto-executes only safe next-step tools, not real runtime flow execution
 
 ## Plugin Summary For Colleagues
 

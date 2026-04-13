@@ -28,6 +28,16 @@ The following V2 capabilities are already implemented in `v2/`:
 - `analyze_basic_flow_staleness` can explain why the current project-local `basicflow` may no longer match the project
 - `generate_basic_flow` can now accept the 3 generation answers directly, without requiring `--answers-file`
 - `get_basic_flow_generation_questions` returns the structured 3-question contract, including the current startup-scene hint
+- `get_basic_flow_user_intents` returns a small structured intent catalog for the upper conversational layer
+- `resolve_basic_flow_user_request` can map a small set of basicflow-related user phrases onto the project-aware next tool choice
+- `plan_basic_flow_user_request` can map a basicflow-related user phrase onto an executable next tool call with args
+- `plan_user_request` now exists as the top-level user-request planner entry, currently wired to `basicflow` and a small `project_readiness` slice
+- `handle_user_request` now exists as a thin top-level user-request handler, currently auto-executing only safe next-step tools such as preflight, config, question collection, and staleness analysis
+- V2 now also has an explicit user-facing command-boundary document: [v2-how-to-command-gpf.md](/D:/AI/pointer_gpf/docs/v2-how-to-command-gpf.md)
+- `get_user_request_command_guide` now exposes the same bounded command set as a machine-readable payload for the upper layer
+- V2 now also has an explicit development-side NL boundary rule set: [v2-natural-language-boundary-principles.md](/D:/AI/pointer_gpf/docs/v2-natural-language-boundary-principles.md)
+- the planned post-slice refactor for oversized [server.py](/D:/AI/pointer_gpf/v2/mcp_core/server.py) is recorded in [2026-04-13-v2-server-split-plan.md](/D:/AI/pointer_gpf/docs/2026-04-13-v2-server-split-plan.md)
+- both `basicflow` and `project_readiness` request phrases are now backed by shared in-code catalogs instead of ad hoc planner-only phrase lists
 - the 3-question generation flow also supports a session form: start -> answer -> complete
 - generated `basicflow` can conservatively prefer a project-specific path when obvious targets are detected
 - project-specific target inference now covers a broader button-to-scene pattern, not just one hard-coded testgame path

@@ -82,6 +82,10 @@ For V2, the intended rule is:
 
 - keep `run_basic_flow` as the tool / code-facing command name
 - treat user language such as "跑基础测试流程" as the natural-language request that maps to `run_basic_flow`
+- expose a small structured intent catalog so the upper conversational layer can decide whether the project should:
+  - run the saved basicflow now
+  - generate the first basicflow
+  - analyze why the saved basicflow is stale
 
 But product language should remember that the user-facing meaning is:
 
@@ -91,3 +95,139 @@ That phrase carries the real intent:
 
 - "show me what GPF can do in my project"
 - "prove the project still stands after important changes"
+
+## Current V2 Intent Entry
+
+V2 now exposes a small structured entrypoint:
+
+```powershell
+python -m v2.mcp_core.server --tool get_basic_flow_user_intents --project-root D:\AI\pointer_gpf_testgame
+```
+
+It returns:
+
+- the current `basicflow` state for the project
+- one `primary_recommendation` for the upper layer
+- a small `secondary_actions` list for nearby alternatives
+- the main user intents around basicflow
+- which intent is currently recommended or blocked
+- the next step the upper user-facing layer should take
+
+This is not a full natural-language router yet.
+It is a stable bridge between:
+
+- user-facing intent
+- current project state
+- existing V2 tool entrypoints
+
+## Current V2 Request Resolution Entry
+
+V2 now also exposes a thin request-resolution entrypoint:
+
+```powershell
+python -m v2.mcp_core.server --tool resolve_basic_flow_user_request --project-root D:\AI\pointer_gpf_testgame --user-request "跑基础测试流程"
+```
+
+It does two things:
+
+- matches the user request against the current basicflow-related intent catalog
+- returns the action that should actually be recommended now for the current project state
+
+The returned shape now also includes a compact decision layer:
+
+- `resolved`
+- `tool`
+- `reason`
+- `requires_confirmation`
+- `follow_up_message`
+
+The current phrase coverage is still intentionally small and explicit.
+It only targets a short list of high-frequency basicflow requests around:
+
+- run
+- generate / regenerate
+- analyze staleness / drift
+
+Example:
+
+- if the user says "跑基础测试流程" and the project basicflow is fresh, the recommended action is `run_basic_flow`
+- if the user says the same thing but the project basicflow is stale, the recommended action can instead be `generate_basic_flow`
+
+So this entrypoint is the first thin adapter from:
+
+- user-facing phrasing
+
+to:
+
+- current project-aware tool choice
+
+## Current V2 Request Planning Entry
+
+V2 now also exposes a thin planning entrypoint:
+
+```powershell
+python -m v2.mcp_core.server --tool plan_basic_flow_user_request --project-root D:\AI\pointer_gpf_testgame --user-request "跑基础测试流程"
+```
+
+This goes one step beyond request resolution.
+It returns an executable next step for the upper layer, including:
+
+- `tool`
+- `args`
+- `ready_to_execute`
+- `ask_confirmation`
+- `message`
+
+Example:
+
+- if the next safe action is still just `run_basic_flow`, the plan returns that tool directly
+- if the user wants to regenerate `basicflow`, the plan can return `get_basic_flow_generation_questions` first, because `generate_basic_flow` still needs the 3 answers
+
+## Current Top-Level Planning Entry
+
+V2 now also has a top-level planning entrypoint:
+
+```powershell
+python -m v2.mcp_core.server --tool plan_user_request --project-root D:\AI\pointer_gpf_testgame --user-request "跑基础测试流程"
+```
+
+Right now it only routes the `basicflow` domain.
+It also has a small `project_readiness` slice for:
+
+- `preflight_project`
+- `configure_godot_executable`
+
+The goal is:
+
+- keep one top-level planning interface
+- let new high-level user request domains plug into it later
+- avoid re-solving basicflow-specific state logic in multiple places
+
+## Current Top-Level Handling Entry
+
+V2 now also has a thin execution entrypoint above the planner:
+
+```powershell
+python -m v2.mcp_core.server --tool handle_user_request --project-root D:\AI\pointer_gpf_testgame --user-request "run basicflow"
+```
+
+This entrypoint does not try to auto-run every possible high-level request.
+Right now it only auto-executes the safer next-step tools that do not immediately launch a runtime flow:
+
+- `preflight_project`
+- `configure_godot_executable`
+- `get_basic_flow_generation_questions`
+- `analyze_basic_flow_staleness`
+
+So the current chain is:
+
+- resolve user phrase
+- plan the next tool call
+- if that next tool is safe to auto-execute, execute it and return the nested result
+
+Example:
+
+- if the user says `run basicflow` on a stale project, `handle_user_request` does not jump straight to `run_basic_flow`
+- instead it executes `get_basic_flow_generation_questions` and returns `follow_up_tool: generate_basic_flow`
+
+This keeps the top-level request handling useful without silently starting play-mode execution from every natural-language request.
