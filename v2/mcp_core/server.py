@@ -27,6 +27,12 @@ from .contracts import (
     build_ok_payload,
 )
 from .basicflow_assets import basicflow_paths, load_basicflow_assets, mark_basicflow_run_success
+from .bug_analysis import analyze_bug_report
+from .bug_fix_application import apply_bug_fix
+from .bug_assertions import define_bug_assertions
+from .bug_fix_planning import plan_bug_fix
+from .bug_repro_execution import run_bug_repro_flow
+from .bug_repro_flow import plan_bug_repro_flow
 from .bug_report import collect_bug_report
 from .basicflow_generation import (
     generate_basicflow_from_answers,
@@ -401,6 +407,54 @@ def _handle_user_request(project_root: Path, user_request: str) -> dict[str, Any
 def _build_tool_dispatch_api() -> ToolDispatchApi:
     return ToolDispatchApi(
         collect_bug_report=collect_bug_report,
+        analyze_bug_report=analyze_bug_report,
+        define_bug_assertions=define_bug_assertions,
+        plan_bug_repro_flow=plan_bug_repro_flow,
+        run_bug_repro_flow=lambda project_root, args, execution_mode: run_bug_repro_flow(
+            project_root,
+            args,
+            run_basic_flow_tool=lambda root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                root,
+                flow_file,
+                basicflow_context=basicflow_context,
+                execution_mode=mode,
+            ),
+            normalize_execution_mode=lambda _: execution_mode,
+        ),
+        plan_bug_fix=lambda project_root, args: plan_bug_fix(
+            project_root,
+            args,
+            run_bug_repro_flow_fn=lambda root, inner_args: run_bug_repro_flow(
+                root,
+                inner_args,
+                run_basic_flow_tool=lambda sub_root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                    sub_root,
+                    flow_file,
+                    basicflow_context=basicflow_context,
+                    execution_mode=mode,
+                ),
+                normalize_execution_mode=_normalize_execution_mode,
+            ),
+        ),
+        apply_bug_fix=lambda project_root, args: apply_bug_fix(
+            project_root,
+            args,
+            plan_bug_fix_fn=lambda root, inner_args: plan_bug_fix(
+                root,
+                inner_args,
+                run_bug_repro_flow_fn=lambda repro_root, repro_args: run_bug_repro_flow(
+                    repro_root,
+                    repro_args,
+                    run_basic_flow_tool=lambda sub_root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                        sub_root,
+                        flow_file,
+                        basicflow_context=basicflow_context,
+                        execution_mode=mode,
+                    ),
+                    normalize_execution_mode=_normalize_execution_mode,
+                ),
+            ),
+        ),
         configure_godot_executable=configure_godot_executable,
         sync_project_plugin=_sync_project_plugin,
         run_preflight=run_preflight,
