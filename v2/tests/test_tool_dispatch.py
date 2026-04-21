@@ -38,8 +38,11 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -80,8 +83,11 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -139,8 +145,11 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -199,8 +208,11 @@ class ToolDispatchTests(unittest.TestCase):
                 },
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -259,8 +271,11 @@ class ToolDispatchTests(unittest.TestCase):
                     "candidate_flow": {"steps": []},
                 },
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -320,8 +335,11 @@ class ToolDispatchTests(unittest.TestCase):
                     "status": "bug_not_reproduced",
                     "execution_mode": execution_mode,
                 },
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -350,6 +368,61 @@ class ToolDispatchTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.repro_run.v1")
 
+    def test_dispatch_rerun_bug_repro_flow_returns_rerun_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type(
+                "Args",
+                (),
+                {
+                    "tool": "rerun_bug_repro_flow",
+                    "execution_mode": "play_mode",
+                },
+            )()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda project_root_arg, args_arg, execution_mode: {
+                    "schema": "pointer_gpf.v2.repro_rerun.v1",
+                    "project_root": str(project_root_arg),
+                    "status": "bug_not_reproduced",
+                    "execution_mode": execution_mode,
+                },
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.repro_rerun.v1")
+
     def test_dispatch_plan_bug_fix_returns_fix_plan_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -376,6 +449,7 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda project_root_arg, args_arg: {
                     "schema": "pointer_gpf.v2.fix_plan.v1",
                     "project_root": str(project_root_arg),
@@ -383,6 +457,8 @@ class ToolDispatchTests(unittest.TestCase):
                     "status": "fix_not_ready",
                 },
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -437,6 +513,7 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda project_root_arg, args_arg: {
                     "schema": "pointer_gpf.v2.fix_apply.v1",
@@ -444,6 +521,8 @@ class ToolDispatchTests(unittest.TestCase):
                     "bug_summary": args_arg.bug_report,
                     "status": "fix_not_applied",
                 },
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -472,6 +551,116 @@ class ToolDispatchTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.fix_apply.v1")
 
+    def test_dispatch_run_bug_fix_regression_returns_regression_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type("Args", (), {"tool": "run_bug_fix_regression"})()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda project_root_arg: {
+                    "schema": "pointer_gpf.v2.fix_regression.v1",
+                    "project_root": str(project_root_arg),
+                    "status": "passed",
+                },
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.fix_regression.v1")
+
+    def test_dispatch_verify_bug_fix_returns_verification_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type(
+                "Args",
+                (),
+                {
+                    "tool": "verify_bug_fix",
+                    "bug_report": "点击开始游戏没有反应",
+                    "bug_summary": None,
+                    "expected_behavior": "应该进入关卡",
+                    "steps_to_trigger": "启动游戏|点击开始游戏",
+                    "location_scene": "res://scenes/boot.tscn",
+                    "location_node": "StartButton",
+                    "location_script": "",
+                    "frequency_hint": "always",
+                    "severity_hint": "core_progression_blocker",
+                },
+            )()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda project_root_arg, args_arg: {
+                    "schema": "pointer_gpf.v2.fix_verification.v1",
+                    "project_root": str(project_root_arg),
+                    "bug_summary": args_arg.bug_report,
+                    "status": "fix_verification_failed",
+                },
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.fix_verification.v1")
+
     def test_dispatch_handle_user_request_uses_nested_result_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -482,8 +671,11 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
@@ -522,8 +714,11 @@ class ToolDispatchTests(unittest.TestCase):
                 define_bug_assertions=lambda *_: {},
                 plan_bug_repro_flow=lambda *_: {},
                 run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
                 plan_bug_fix=lambda *_: {},
                 apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
                 configure_godot_executable=lambda *_: project_root / "cfg.json",
                 sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
                 run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),

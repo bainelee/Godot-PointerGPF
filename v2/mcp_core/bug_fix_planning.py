@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from .bug_repro_execution import run_bug_repro_flow
+from .bug_repro_execution import load_repro_result
 
 
 def _unique_non_empty(items: list[str]) -> list[str]:
@@ -71,34 +71,90 @@ def _candidate_files(project_root: Path, repro_payload: dict[str, Any]) -> list[
     return out
 
 
+def _requested_bug_summary(args: Any) -> str:
+    return str(getattr(args, "bug_summary", None) or getattr(args, "bug_report", "") or "").strip()
+
+
+def _requested_bug_identity(args: Any) -> dict[str, str]:
+    return {
+        "scene": str(getattr(args, "location_scene", "") or "").strip(),
+        "node": str(getattr(args, "location_node", "") or "").strip(),
+        "script": str(getattr(args, "location_script", "") or "").strip(),
+    }
+
+
+def _artifact_matches_request(args: Any, repro_payload: dict[str, Any]) -> bool:
+    requested = _requested_bug_identity(args)
+    artifact = repro_payload.get("bug_identity", {})
+    if not isinstance(artifact, dict):
+        return True
+    for key, requested_value in requested.items():
+        if not requested_value:
+            continue
+        artifact_value = str(artifact.get(key, "")).strip()
+        if artifact_value and artifact_value != requested_value:
+            return False
+    return True
+
+
 def plan_bug_fix(
     project_root: Path,
     args: Any,
     *,
-    run_bug_repro_flow_fn: Callable[[Path, Any], dict[str, Any]] = run_bug_repro_flow,
+    load_repro_result_fn: Callable[[Path], dict[str, Any]] = load_repro_result,
 ) -> dict[str, Any]:
-    repro_payload = run_bug_repro_flow_fn(project_root, args)
+    repro_payload = load_repro_result_fn(project_root)
+    if not repro_payload:
+        return {
+            "schema": "pointer_gpf.v2.fix_plan.v1",
+            "project_root": str(project_root.resolve()),
+            "bug_summary": _requested_bug_summary(args),
+            "status": "fix_not_ready",
+            "reason": "no persisted repro result exists yet for this project",
+            "repro_status": "",
+            "repro_run": {},
+            "candidate_files": [],
+            "fix_goals": [],
+            "next_action": "run_bug_repro_flow_first",
+        }
+
+    requested_bug_summary = _requested_bug_summary(args)
+    artifact_bug_summary = str(repro_payload.get("bug_summary", "")).strip()
+    if not _artifact_matches_request(args, repro_payload):
+        return {
+            "schema": "pointer_gpf.v2.fix_plan.v1",
+            "project_root": str(project_root.resolve()),
+            "bug_summary": artifact_bug_summary or requested_bug_summary,
+            "status": "fix_not_ready",
+            "reason": "the persisted repro artifact belongs to a different bug target than the current request",
+            "repro_status": str(repro_payload.get("status", "")).strip(),
+            "repro_run": repro_payload,
+            "candidate_files": [],
+            "fix_goals": [],
+            "next_action": "rerun_bug_repro_flow_for_this_bug",
+        }
+
     repro_status = str(repro_payload.get("status", "")).strip()
     if repro_status != "bug_reproduced":
         return {
             "schema": "pointer_gpf.v2.fix_plan.v1",
             "project_root": str(project_root.resolve()),
-            "bug_summary": repro_payload.get("bug_summary", ""),
+            "bug_summary": artifact_bug_summary or requested_bug_summary,
             "status": "fix_not_ready",
-            "reason": "a code fix should not be planned until the bug is actually reproduced by the current repro flow",
+            "reason": "a code fix should not be planned until a persisted repro artifact confirms bug_reproduced",
             "repro_status": repro_status,
             "repro_run": repro_payload,
             "candidate_files": [],
             "fix_goals": [],
-            "next_action": "refine_repro_flow_or_assertions",
+            "next_action": str(repro_payload.get("next_action", "refine_repro_flow")),
         }
 
     return {
         "schema": "pointer_gpf.v2.fix_plan.v1",
         "project_root": str(project_root.resolve()),
-        "bug_summary": repro_payload.get("bug_summary", ""),
+        "bug_summary": artifact_bug_summary or requested_bug_summary,
         "status": "fix_ready",
-        "reason": "the current repro flow produced a bug_reproduced result, so code-level fix planning can start",
+        "reason": "the persisted repro artifact confirms bug_reproduced, so code-level fix planning can start",
         "repro_status": repro_status,
         "repro_run": repro_payload,
         "candidate_files": _candidate_files(project_root, repro_payload),

@@ -21,8 +21,11 @@ class ToolDispatchApi:
     define_bug_assertions: Callable[[Path, Any], dict[str, Any]]
     plan_bug_repro_flow: Callable[[Path, Any], dict[str, Any]]
     run_bug_repro_flow: Callable[[Path, Any, str], dict[str, Any]]
+    rerun_bug_repro_flow: Callable[[Path, Any, str], dict[str, Any]]
     plan_bug_fix: Callable[[Path, Any], dict[str, Any]]
     apply_bug_fix: Callable[[Path, Any], dict[str, Any]]
+    run_bug_fix_regression: Callable[[Path], dict[str, Any]]
+    verify_bug_fix: Callable[[Path, Any], dict[str, Any]]
     configure_godot_executable: Callable[[Path, str], Path]
     sync_project_plugin: Callable[[Path], Path]
     run_preflight: Callable[[Path], Any]
@@ -172,6 +175,15 @@ def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[
                 },
             )
 
+    if args.tool == "rerun_bug_repro_flow":
+        return 0, build_ok_payload(
+            api.rerun_bug_repro_flow(
+                project_root,
+                args,
+                api.normalize_execution_mode(getattr(args, "execution_mode", "play_mode")),
+            )
+        )
+
     if args.tool == "plan_bug_fix":
         try:
             return 0, build_ok_payload(api.plan_bug_fix(project_root, args))
@@ -199,6 +211,33 @@ def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[
     if args.tool == "apply_bug_fix":
         try:
             return 0, build_ok_payload(api.apply_bug_fix(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload(
+                ERR_BUG_REPORT_INCOMPLETE,
+                str(exc),
+                {
+                    "required_args": [
+                        "--bug-report",
+                        "--expected-behavior",
+                    ],
+                    "optional_args": [
+                        "--bug-summary",
+                        "--steps-to-trigger",
+                        "--location-scene",
+                        "--location-node",
+                        "--location-script",
+                        "--frequency-hint",
+                        "--severity-hint",
+                    ],
+                },
+            )
+
+    if args.tool == "run_bug_fix_regression":
+        return 0, build_ok_payload(api.run_bug_fix_regression(project_root))
+
+    if args.tool == "verify_bug_fix":
+        try:
+            return 0, build_ok_payload(api.verify_bug_fix(project_root, args))
         except ValueError as exc:
             return 2, build_error_payload(
                 ERR_BUG_REPORT_INCOMPLETE,

@@ -10,6 +10,7 @@ Current goal:
 - treat `input isolation` as a later TODO unless it directly blocks the next core loop
 - treat further `basicflow` productization expansion as a later TODO unless it directly blocks the next core loop
 - return focus to GPF's main product loop: bug report -> analysis -> correct-state assertion -> repro flow -> reproduction -> fix -> re-verify
+- the current bug-focused loop now also has persisted repro evidence, rerun support, and regression support after code changes
 - avoid inheriting old system features such as open-ended NL routing, broad orchestration, and Figma workflows
 
 Direction note:
@@ -50,6 +51,27 @@ The following V2 capabilities are already implemented in `v2/`:
 - project-specific target inference now covers a broader button-to-scene pattern, not just one hard-coded testgame path
 - `run_basic_flow` now syncs the latest repository plugin into the target project before preflight and launch
 - experimental Windows `isolated_runtime` can launch the tested Godot runtime on a dedicated desktop and verify teardown against that runtime process
+- `collect_bug_report`
+- `analyze_bug_report`
+- `define_bug_assertions`
+- `plan_bug_repro_flow`
+- `run_bug_repro_flow`
+- `rerun_bug_repro_flow`
+- `plan_bug_fix`
+- `apply_bug_fix`
+- `run_bug_fix_regression`
+- `verify_bug_fix`
+- bug-focused repro results are now persisted under `pointer_gpf/tmp/last_bug_repro_result.json`
+- bug-focused rerun verification is now persisted under `pointer_gpf/tmp/last_bug_fix_verification.json`
+- bug-fix regression results are now persisted under `pointer_gpf/tmp/last_bug_fix_regression.json`
+- bug-fix verification summary is now persisted under `pointer_gpf/tmp/last_bug_fix_verification_summary.json`
+- bug-focused repro classification now separates:
+  - `precondition_failed`
+  - `trigger_failed`
+  - `bug_reproduced`
+  - `bug_not_reproduced`
+  - `runtime_invalid`
+- `plan_bug_fix` no longer reruns repro internally; it reads the persisted repro result for the current project
 
 ## Deferred TODO
 
@@ -89,7 +111,9 @@ The next core loop should be:
 4. GPF designs or updates a flow that can reach the bug
 5. GPF runs the flow to confirm reproduction
 6. GPF applies a fix
-7. GPF reruns the updated flow and assertions to confirm the fix
+7. GPF reruns the same bug-focused flow after the code change
+8. GPF runs regression after the bug-focused rerun passes
+9. GPF reports one final verification result
 
 This should become the main product direction after the completed server split.
 

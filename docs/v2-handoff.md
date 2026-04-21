@@ -17,6 +17,8 @@ When continuing V2 work in a new conversation, read these files first:
 11. [godot-resource-uid-drift-and-false-mcp-failures.md](/D:/AI/pointer_gpf/docs/godot-resource-uid-drift-and-false-mcp-failures.md)
 12. [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
 13. [2026-04-14-gpf-bug-intake-and-assertion-contract.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-bug-intake-and-assertion-contract.md)
+14. [2026-04-21-gpf-stage-status-and-gap.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-stage-status-and-gap.md)
+15. [2026-04-21-gpf-next-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-next-development-plan.md)
 
 ## Current Repository Shape
 
@@ -84,6 +86,17 @@ Current product-priority judgment:
 - further `basicflow` expansion should also be treated as later TODO work unless it directly blocks the next core bug loop
 - regression-bundle final Godot cleanup should also be treated as later TODO work unless it directly blocks the next core bug loop
 - the next mainline should return to the core GPF product loop described in [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
+
+Current bug-focused implementation status:
+
+- `collect_bug_report`, `analyze_bug_report`, `define_bug_assertions`, `plan_bug_repro_flow`, `run_bug_repro_flow`, `rerun_bug_repro_flow`, `plan_bug_fix`, `apply_bug_fix`, `run_bug_fix_regression`, and `verify_bug_fix` now exist on the CLI/tool path
+- bug-focused repro no longer classifies by failed step guessing; it now classifies by execution phase
+- bug-focused repro results are persisted under `pointer_gpf/tmp/last_bug_repro_result.json`
+- rerun verification after a code change is persisted under `pointer_gpf/tmp/last_bug_fix_verification.json`
+- regression results after a code change are persisted under `pointer_gpf/tmp/last_bug_fix_regression.json`
+- the combined verification summary is persisted under `pointer_gpf/tmp/last_bug_fix_verification_summary.json`
+- `plan_bug_fix` now reads persisted repro evidence instead of running a new repro internally
+- planner logic has been reduced to base flow reuse, explicit trigger insertion, and explicit precondition/postcondition steps
 
 ## Current Verification Commands
 

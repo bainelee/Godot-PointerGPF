@@ -50,10 +50,28 @@ def _find_target_scene(analysis: dict[str, Any]) -> str:
     return preferred[0] if preferred else ""
 
 
-def _add_assertion(assertions: list[dict[str, Any]], payload: dict[str, Any]) -> None:
-    if any(existing.get("id") == payload.get("id") for existing in assertions):
-        return
-    assertions.append(payload)
+def _assertion(
+    assertion_id: str,
+    *,
+    kind: str,
+    target: dict[str, Any],
+    reason: str,
+    hint: str,
+    action: str = "check",
+) -> dict[str, Any]:
+    return {
+        "id": assertion_id,
+        "kind": kind,
+        "target": target,
+        "operator": "equals",
+        "expected": True,
+        "reason": reason,
+        "runtime_check": {
+            "supported": bool(hint),
+            "hint": hint,
+            "action": action,
+        },
+    }
 
 
 def define_bug_assertions(project_root: Path, args: Any) -> dict[str, Any]:
@@ -61,125 +79,53 @@ def define_bug_assertions(project_root: Path, args: Any) -> dict[str, Any]:
     intake = analysis.get("bug_intake", {})
     location_hint = intake.get("location_hint", {})
     location_node = str(location_hint.get("node", "")).strip()
-    location_scene = str(location_hint.get("scene", "")).strip()
     expected_behavior = str(intake.get("expected_behavior", "")).strip()
     basicflow_hints = _extract_basicflow_hints(project_root)
-    assertions: list[dict[str, Any]] = []
+
+    preconditions: list[dict[str, Any]] = []
+    postconditions: list[dict[str, Any]] = []
+
+    precondition_hint = ""
+    if location_node:
+        for hint in basicflow_hints:
+            if hint.startswith("node_exists:") and location_node.lower() in hint.lower():
+                precondition_hint = hint
+                break
+        if not precondition_hint:
+            precondition_hint = f"node_exists:{location_node}"
+        preconditions.append(
+            _assertion(
+                "interaction_target_present",
+                kind="runtime_hint",
+                target={"hint": precondition_hint},
+                reason=f"the interaction target {location_node} should exist before the trigger step",
+                hint=precondition_hint,
+            )
+        )
 
     target_scene = _find_target_scene(analysis)
     target_scene_root = _scene_root_name(target_scene)
-    if target_scene:
-        runtime_hint = f"node_exists:{target_scene_root}" if target_scene_root else ""
-        _add_assertion(
-            assertions,
-            {
-                "id": "target_scene_reached",
-                "kind": "scene_active",
-                "target": {"scene": target_scene},
-                "operator": "equals",
-                "expected": True,
-                "reason": expected_behavior or "the expected bug-free result should reach the target gameplay scene",
-                "runtime_check": {
-                    "supported": bool(runtime_hint),
-                    "hint": runtime_hint,
-                    "action": "check",
-                },
-            },
+    if target_scene and target_scene_root:
+        postconditions.append(
+            _assertion(
+                "target_scene_reached",
+                kind="scene_active",
+                target={"scene": target_scene},
+                reason=expected_behavior or "the expected bug-free result should reach the target gameplay scene",
+                hint=f"node_exists:{target_scene_root}",
+                action="wait",
+            )
         )
 
-    for hint in basicflow_hints:
-        if hint.startswith("node_exists:") and location_node and location_node.lower() in hint.lower():
-            _add_assertion(
-                assertions,
-                {
-                    "id": "interaction_target_present",
-                    "kind": "runtime_hint",
-                    "target": {"hint": hint},
-                    "operator": "equals",
-                    "expected": True,
-                    "reason": f"the interaction target {location_node} should exist before the trigger step",
-                    "runtime_check": {
-                        "supported": True,
-                        "hint": hint,
-                        "action": "check",
-                    },
-                },
-            )
-            _add_assertion(
-                assertions,
-                {
-                    "id": "interaction_target_hidden_after_success",
-                    "kind": "runtime_hint",
-                    "target": {"hint": hint.replace("node_exists:", "node_hidden:", 1)},
-                    "operator": "equals",
-                    "expected": True,
-                    "reason": f"the interaction target {location_node} should no longer stay visible after the bug-free transition",
-                    "runtime_check": {
-                        "supported": True,
-                        "hint": hint.replace("node_exists:", "node_hidden:", 1),
-                        "action": "check",
-                    },
-                },
-            )
-
-    for hint in basicflow_hints:
-        if hint.startswith("node_exists:") and target_scene_root and target_scene_root.lower() in hint.lower():
-            _add_assertion(
-                assertions,
-                {
-                    "id": "target_runtime_anchor_present",
-                    "kind": "runtime_hint",
-                    "target": {"hint": hint},
-                    "operator": "equals",
-                    "expected": True,
-                    "reason": "the target runtime anchor should appear when the bug-free state is reached",
-                    "runtime_check": {
-                        "supported": True,
-                        "hint": hint,
-                        "action": "check",
-                    },
-                },
-            )
-    if not any(item.get("id") == "target_runtime_anchor_present" for item in assertions):
-        for hint in basicflow_hints:
-            if hint.startswith("node_exists:") and hint not in {item.get("runtime_check", {}).get("hint", "") for item in assertions}:
-                _add_assertion(
-                    assertions,
-                    {
-                        "id": "bug_free_runtime_anchor_present",
-                        "kind": "runtime_hint",
-                        "target": {"hint": hint},
-                        "operator": "equals",
-                        "expected": True,
-                        "reason": "the bug-free state should expose at least one known runtime anchor from the project basicflow",
-                        "runtime_check": {
-                            "supported": True,
-                            "hint": hint,
-                            "action": "check",
-                        },
-                    },
-                )
-                break
-
     if location_node:
-        _add_assertion(
-            assertions,
-            {
-                "id": "interaction_should_change_state",
-                "kind": "state_transition_required",
-                "target": {
-                    "node": location_node,
-                    "scene": location_scene,
-                },
-                "operator": "changes_state",
-                "expected": True,
-                "reason": f"interacting with {location_node} should cause an observable state change in the bug-free case",
-                "runtime_check": {
-                    "supported": False,
-                    "hint": "",
-                    "action": "",
-                },
-            },
+        postconditions.append(
+            _assertion(
+                "interaction_target_hidden_after_success",
+                kind="runtime_hint",
+                target={"hint": f"node_hidden:{location_node}"},
+                reason=f"the interaction target {location_node} should no longer stay visible after the bug-free transition",
+                hint=f"node_hidden:{location_node}",
+            )
         )
 
     return {
@@ -187,5 +133,7 @@ def define_bug_assertions(project_root: Path, args: Any) -> dict[str, Any]:
         "project_root": str(project_root.resolve()),
         "bug_summary": analysis.get("bug_summary", ""),
         "bug_analysis": analysis,
-        "assertions": assertions,
+        "preconditions": preconditions,
+        "postconditions": postconditions,
+        "assertions": [*preconditions, *postconditions],
     }

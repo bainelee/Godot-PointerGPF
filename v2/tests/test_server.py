@@ -50,6 +50,74 @@ class ServerCliTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.fix_apply.v1")
 
+    def test_main_run_bug_fix_regression_returns_regression_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "run_bug_fix_regression",
+                        "project_root": str(project_root),
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.run_bug_fix_regression",
+                return_value={
+                    "schema": "pointer_gpf.v2.fix_regression.v1",
+                    "project_root": str(project_root),
+                    "status": "passed",
+                },
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.fix_regression.v1")
+
+    def test_main_verify_bug_fix_returns_verification_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "verify_bug_fix",
+                        "project_root": str(project_root),
+                        "execution_mode": "play_mode",
+                        "bug_report": "点击开始游戏没有反应",
+                        "bug_summary": None,
+                        "expected_behavior": "应该进入游戏关卡",
+                        "steps_to_trigger": "启动游戏|点击开始游戏",
+                        "location_scene": "res://scenes/main_scene_example.tscn",
+                        "location_node": "StartButton",
+                        "location_script": "",
+                        "frequency_hint": "always",
+                        "severity_hint": "core_progression_blocker",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.verify_bug_fix",
+                return_value={
+                    "schema": "pointer_gpf.v2.fix_verification.v1",
+                    "project_root": str(project_root),
+                    "status": "fix_verification_failed",
+                },
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.fix_verification.v1")
+
     def test_main_plan_bug_fix_returns_fix_plan_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -128,6 +196,37 @@ class ServerCliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.repro_run.v1")
+
+    def test_main_rerun_bug_repro_flow_returns_rerun_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "rerun_bug_repro_flow",
+                        "project_root": str(project_root),
+                        "execution_mode": "play_mode",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.rerun_bug_repro_flow",
+                return_value={
+                    "schema": "pointer_gpf.v2.repro_rerun.v1",
+                    "project_root": str(project_root),
+                    "status": "bug_not_reproduced",
+                    "reproduction_confirmed": False,
+                },
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.repro_rerun.v1")
 
     def test_main_plan_bug_repro_flow_returns_plan_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

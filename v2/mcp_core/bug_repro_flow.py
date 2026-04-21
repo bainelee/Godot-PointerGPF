@@ -24,8 +24,7 @@ def _load_base_flow(project_root: Path) -> tuple[dict[str, Any], str]:
             },
             "new_minimal_repro_flow",
         )
-    flow_payload = deepcopy(assets.get("flow", {}))
-    return flow_payload, "reuse_project_basicflow"
+    return deepcopy(assets.get("flow", {})), "reuse_project_basicflow"
 
 
 def _find_close_index(steps: list[dict[str, Any]]) -> int:
@@ -35,31 +34,31 @@ def _find_close_index(steps: list[dict[str, Any]]) -> int:
     return len(steps)
 
 
+def _find_first_trigger_index(steps: list[dict[str, Any]]) -> int | None:
+    for index, step in enumerate(steps):
+        if str(step.get("action", "")).strip().lower() == "click":
+            return index
+    return None
+
+
+def _runtime_hint(step: dict[str, Any]) -> str:
+    if isinstance(step.get("until"), dict):
+        hint = str(step["until"].get("hint", "")).strip()
+        if hint:
+            return hint
+    return str(step.get("hint", "")).strip()
+
+
 def _existing_runtime_hints(steps: list[dict[str, Any]]) -> set[str]:
     hints: set[str] = set()
     for step in steps:
-        if not isinstance(step, dict):
-            continue
-        hint = ""
-        if isinstance(step.get("until"), dict):
-            hint = str(step["until"].get("hint", "")).strip()
-        if not hint:
-            hint = str(step.get("hint", "")).strip()
+        hint = _runtime_hint(step)
         if hint:
             hints.add(hint)
     return hints
 
 
-def _step_hint(step: dict[str, Any]) -> str:
-    hint = ""
-    if isinstance(step.get("until"), dict):
-        hint = str(step["until"].get("hint", "")).strip()
-    if not hint:
-        hint = str(step.get("hint", "")).strip()
-    return hint
-
-
-def _assertion_step(assertion: dict[str, Any], index: int) -> dict[str, Any] | None:
+def _assertion_step(assertion: dict[str, Any], prefix: str, index: int) -> tuple[dict[str, Any], str] | None:
     runtime_check = assertion.get("runtime_check", {})
     if not isinstance(runtime_check, dict) or not bool(runtime_check.get("supported", False)):
         return None
@@ -67,363 +66,77 @@ def _assertion_step(assertion: dict[str, Any], index: int) -> dict[str, Any] | N
     if not hint:
         return None
     action = str(runtime_check.get("action", "check")).strip() or "check"
-    step_id = f"assert_{index}_{assertion.get('id', 'runtime_check')}"
+    step_id = f"{prefix}_{index}_{assertion.get('id', 'runtime_check')}"
     if action == "wait":
-        return {
-            "id": step_id,
-            "action": "wait",
-            "until": {"hint": hint},
-            "timeoutMs": 5000,
-        }
-    return {
-        "id": step_id,
-        "action": "check",
-        "hint": hint,
-    }
-
-
-def _covered_by_existing_assertions(assertion: dict[str, Any], assertion_set: dict[str, Any]) -> dict[str, Any] | None:
-    assertion_id = str(assertion.get("id", "")).strip()
-    if assertion_id != "interaction_should_change_state":
-        return None
-    assertions = assertion_set.get("assertions", [])
-    if not isinstance(assertions, list):
-        return None
-    supporting_ids: list[str] = []
-    for item in assertions:
-        if not isinstance(item, dict):
-            continue
-        item_id = str(item.get("id", "")).strip()
-        runtime_check = item.get("runtime_check", {})
-        if item_id in {"target_scene_reached", "target_runtime_anchor_present", "bug_free_runtime_anchor_present"} and bool(
-            isinstance(runtime_check, dict) and runtime_check.get("supported", False)
-        ):
-            supporting_ids.append(item_id)
-    if not supporting_ids:
-        return None
-    return {
-        "assertion_id": assertion_id,
-        "status": "covered_by_related_assertions",
-        "reason": "state transition is treated as indirectly covered because target-scene or runtime-anchor assertions already verify post-click state change",
-        "supporting_assertions": supporting_ids,
-    }
-
-
-def _direct_step_from_related_assertions(
-    assertion: dict[str, Any],
-    assertion_set: dict[str, Any],
-    index: int,
-) -> tuple[dict[str, Any], list[str]] | None:
-    assertion_id = str(assertion.get("id", "")).strip()
-    if assertion_id != "interaction_should_change_state":
-        return None
-    assertions = assertion_set.get("assertions", [])
-    if not isinstance(assertions, list):
-        return None
-
-    preferred_ids = (
-        "target_scene_reached",
-        "target_runtime_anchor_present",
-        "bug_free_runtime_anchor_present",
-    )
-    for preferred_id in preferred_ids:
-        for item in assertions:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("id", "")).strip() != preferred_id:
-                continue
-            runtime_check = item.get("runtime_check", {})
-            if not isinstance(runtime_check, dict) or not bool(runtime_check.get("supported", False)):
-                continue
-            hint = str(runtime_check.get("hint", "")).strip()
-            if not hint:
-                continue
-            return (
-                {
-                    "id": f"assert_{index}_{assertion_id}",
-                    "action": "wait",
-                    "until": {"hint": hint},
-                    "timeoutMs": 3000,
-                },
-                [preferred_id],
-            )
-    return None
-
-
-def _insert_trigger_refinement_steps(
-    steps: list[dict[str, Any]],
-    assertion_coverage: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    needs_trigger_refinement = any(
-        str(item.get("assertion_id", "")).strip() == "interaction_should_change_state"
-        and str(item.get("status", "")).strip() == "covered_by_planned_step"
-        for item in assertion_coverage
-        if isinstance(item, dict)
-    )
-    if not needs_trigger_refinement:
-        return steps
-
-    for index, step in enumerate(steps):
-        if str(step.get("action", "")).strip().lower() != "click":
-            continue
-        if index + 1 < len(steps):
-            next_step = steps[index + 1]
-            if (
-                isinstance(next_step, dict)
-                and str(next_step.get("action", "")).strip().lower() == "delay"
-                and int(next_step.get("timeoutMs", 0) or 0) == 250
-            ):
-                return steps
-        refined_steps = list(steps)
-        refined_steps.insert(
-            index + 1,
+        return (
             {
-                "id": f"tighten_trigger_after_click_{index}",
-                "action": "delay",
-                "timeoutMs": 250,
+                "id": step_id,
+                "action": "wait",
+                "until": {"hint": hint},
+                "timeoutMs": 5000,
             },
+            hint,
         )
-        return refined_steps
-    return steps
-
-
-def _intake_steps_to_trigger(assertion_set: dict[str, Any]) -> list[str]:
-    bug_analysis = assertion_set.get("bug_analysis", {})
-    if not isinstance(bug_analysis, dict):
-        return []
-    bug_intake = bug_analysis.get("bug_intake", {})
-    if not isinstance(bug_intake, dict):
-        return []
-    steps = bug_intake.get("steps_to_trigger", [])
-    if not isinstance(steps, list):
-        return []
-    return [str(item).strip() for item in steps if str(item).strip()]
-
-
-def _runtime_hint_for_assertion(assertion_set: dict[str, Any], assertion_id: str) -> str:
-    assertions = assertion_set.get("assertions", [])
-    if not isinstance(assertions, list):
-        return ""
-    for item in assertions:
-        if not isinstance(item, dict):
-            continue
-        if str(item.get("id", "")).strip() != assertion_id:
-            continue
-        runtime_check = item.get("runtime_check", {})
-        if not isinstance(runtime_check, dict):
-            return ""
-        return str(runtime_check.get("hint", "")).strip()
-    return ""
-
-
-def _pick_ui_hint_from_steps(steps: list[dict[str, Any]]) -> str:
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        hint = _step_hint(step)
-        lowered = hint.lower()
-        if any(token in lowered for token in ("hud", "ui", "panel", "menu")):
-            return hint
-    return ""
-
-
-def _as_hidden_hint(hint: str) -> str:
-    raw = str(hint).strip()
-    if raw.startswith("node_exists:"):
-        return "node_hidden:" + raw[len("node_exists:") :]
-    if raw.startswith("node_visible:"):
-        return "node_hidden:" + raw[len("node_visible:") :]
-    if raw.startswith("node_hidden:"):
-        return raw
-    return ""
-
-
-def _insert_steps_to_trigger_refinement(
-    steps: list[dict[str, Any]],
-    assertion_set: dict[str, Any],
-) -> list[dict[str, Any]]:
-    trigger_steps = _intake_steps_to_trigger(assertion_set)
-    normalized_steps = [raw.lower() for raw in trigger_steps]
-    wants_launch_wait = any(token in raw for raw in normalized_steps for token in ("启动", "launch", "打开游戏", "开始运行"))
-    wants_wait = any(token in raw for raw in normalized_steps for token in ("等待", "wait", "稍等", "停留"))
-    wants_repeat_click = any(token in raw for raw in normalized_steps for token in ("再次点击", "连续点击", "双击", "double click", "click again"))
-    wants_scene_checkpoint = any(token in raw for raw in normalized_steps for token in ("进入", "前往", "返回", "关卡", "level", "menu", "界面"))
-    wants_ui_hidden_checkpoint = any(token in raw for raw in normalized_steps for token in ("关闭", "隐藏", "hide", "close ui", "close hud", "隐藏hud"))
-    wants_ui_checkpoint = (
-        not wants_ui_hidden_checkpoint
-        and any(token in raw for raw in normalized_steps for token in ("显示", "打开面板", "打开hud", "显示hud", "show", "open ui", "hud", "面板"))
+    return (
+        {
+            "id": step_id,
+            "action": "check",
+            "hint": hint,
+        },
+        hint,
     )
-    refined_steps = list(steps)
 
-    if wants_launch_wait:
-        for index, step in enumerate(refined_steps):
-            if str(step.get("action", "")).strip().lower() != "launchgame":
-                continue
-            if index + 1 < len(refined_steps):
-                next_step = refined_steps[index + 1]
-                if (
-                    isinstance(next_step, dict)
-                    and str(next_step.get("action", "")).strip().lower() == "delay"
-                    and int(next_step.get("timeoutMs", 0) or 0) == 600
-                ):
-                    break
-            refined_steps.insert(
-                index + 1,
-                {
-                    "id": f"trigger_wait_after_launch_{index}",
-                    "action": "delay",
-                    "timeoutMs": 600,
-                },
-            )
-            break
 
-    if wants_scene_checkpoint:
-        target_hint = _runtime_hint_for_assertion(assertion_set, "target_scene_reached") or _runtime_hint_for_assertion(
-            assertion_set, "target_runtime_anchor_present"
-        )
-        if target_hint:
-            existing_checkpoint = any(
-                isinstance(item, dict)
-                and str(item.get("id", "")).startswith("trigger_scene_checkpoint")
-                and str(item.get("hint", "")).strip() == target_hint
-                for item in refined_steps
-            )
-            if not existing_checkpoint:
-                insert_at = next(
-                    (
-                        index + 1
-                        for index, item in enumerate(refined_steps)
-                        if isinstance(item, dict) and _step_hint(item) == target_hint
-                    ),
-                    len(refined_steps),
-                )
-                refined_steps.insert(
-                    insert_at,
-                    {
-                        "id": f"trigger_scene_checkpoint_{insert_at}",
-                        "action": "check",
-                        "hint": target_hint,
-                    },
-                )
+def _build_execution_contract(candidate_steps: list[dict[str, Any]]) -> dict[str, Any]:
+    first_trigger_index = _find_first_trigger_index(candidate_steps)
+    setup_step_ids: list[str] = []
+    precondition_step_ids: list[str] = []
+    trigger_step_ids: list[str] = []
+    postcondition_step_ids: list[str] = []
+    close_step_ids: list[str] = []
 
-    if wants_ui_checkpoint:
-        ui_hint = _runtime_hint_for_assertion(assertion_set, "bug_free_runtime_anchor_present") or _pick_ui_hint_from_steps(refined_steps)
-        if ui_hint:
-            existing_checkpoint = any(
-                isinstance(item, dict)
-                and str(item.get("id", "")).startswith("trigger_ui_checkpoint")
-                and str(item.get("hint", "")).strip() == ui_hint
-                for item in refined_steps
-            )
-            if not existing_checkpoint:
-                insert_at = next(
-                    (
-                        index + 1
-                        for index, item in enumerate(refined_steps)
-                        if isinstance(item, dict) and _step_hint(item) == ui_hint
-                    ),
-                    len(refined_steps),
-                )
-                refined_steps.insert(
-                    insert_at,
-                    {
-                        "id": f"trigger_ui_checkpoint_{insert_at}",
-                        "action": "check",
-                        "hint": ui_hint,
-                    },
-                )
-
-    if wants_ui_hidden_checkpoint:
-        hidden_hint = _as_hidden_hint(_pick_ui_hint_from_steps(refined_steps))
-        if hidden_hint:
-            existing_checkpoint = any(
-                isinstance(item, dict)
-                and str(item.get("id", "")).startswith("trigger_ui_hidden_checkpoint")
-                and str(item.get("hint", "")).strip() == hidden_hint
-                for item in refined_steps
-            )
-            if not existing_checkpoint:
-                insert_at = next(
-                    (
-                        index + 1
-                        for index, item in enumerate(refined_steps)
-                        if isinstance(item, dict) and _step_hint(item) in {hidden_hint.replace("node_hidden:", "node_exists:"), hidden_hint}
-                    ),
-                    len(refined_steps),
-                )
-                refined_steps.insert(
-                    insert_at,
-                    {
-                        "id": f"trigger_ui_hidden_checkpoint_{insert_at}",
-                        "action": "check",
-                        "hint": hidden_hint,
-                    },
-                )
-
-    if not wants_wait and not wants_repeat_click:
-        return refined_steps
-
-    for index, step in enumerate(refined_steps):
-        if str(step.get("action", "")).strip().lower() != "click":
+    for index, step in enumerate(candidate_steps):
+        step_id = str(step.get("id", "")).strip()
+        if not step_id:
             continue
-        inserted = False
-        if wants_wait and index > 0:
-            previous_step = refined_steps[index - 1]
-            if (
-                isinstance(previous_step, dict)
-                and str(previous_step.get("action", "")).strip().lower() == "delay"
-                and int(previous_step.get("timeoutMs", 0) or 0) == 400
-            ):
-                pass
+        action = str(step.get("action", "")).strip().lower()
+        if action == "closeproject":
+            close_step_ids.append(step_id)
+        elif action == "click":
+            trigger_step_ids.append(step_id)
+        elif first_trigger_index is None or index < first_trigger_index:
+            if action in {"wait", "check"}:
+                precondition_step_ids.append(step_id)
             else:
-                refined_steps.insert(
-                    index,
-                    {
-                        "id": f"trigger_wait_before_click_{index}",
-                        "action": "delay",
-                        "timeoutMs": 400,
-                    },
-                )
-                inserted = True
+                setup_step_ids.append(step_id)
+        else:
+            postcondition_step_ids.append(step_id)
 
-        if wants_repeat_click:
-            click_target = step.get("target")
-            if isinstance(click_target, dict):
-                existing_repeat = any(
-                    isinstance(item, dict) and str(item.get("id", "")).startswith("trigger_repeat_click")
-                    for item in refined_steps
-                )
-                if not existing_repeat:
-                    current_index = next(
-                        (
-                            position
-                            for position, item in enumerate(refined_steps)
-                            if isinstance(item, dict) and str(item.get("id", "")).strip() == str(step.get("id", "")).strip()
-                        ),
-                        index,
-                    )
-                    insert_at = current_index + 1
-                    if insert_at < len(refined_steps):
-                        next_step = refined_steps[insert_at]
-                        if (
-                            isinstance(next_step, dict)
-                            and str(next_step.get("action", "")).strip().lower() == "delay"
-                            and str(next_step.get("id", "")).startswith("tighten_trigger_after_click")
-                        ):
-                            insert_at += 1
-                    refined_steps.insert(
-                        insert_at,
-                        {
-                            "id": f"trigger_repeat_click_{current_index}",
-                            "action": "click",
-                            "target": deepcopy(click_target),
-                        },
-                    )
-                    inserted = True
-        if inserted:
-            return refined_steps
-        return refined_steps
-    return refined_steps
+    return {
+        "schema": "pointer_gpf.v2.repro_execution_contract.v1",
+        "setup_step_ids": setup_step_ids,
+        "precondition_step_ids": precondition_step_ids,
+        "trigger_step_ids": trigger_step_ids,
+        "postcondition_step_ids": postcondition_step_ids,
+        "close_step_ids": close_step_ids,
+        "trigger_started": bool(trigger_step_ids),
+        "first_trigger_step_id": trigger_step_ids[0] if trigger_step_ids else "",
+    }
+
+
+def _location_node(args: Any) -> str:
+    return str(getattr(args, "location_node", "") or "").strip()
+
+
+def _explicit_trigger_step(args: Any) -> dict[str, Any] | None:
+    node_name = _location_node(args)
+    if not node_name:
+        return None
+    return {
+        "id": f"trigger_click_{node_name.lower()}",
+        "action": "click",
+        "target": {"hint": f"node_name:{node_name}"},
+    }
 
 
 def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
@@ -431,63 +144,99 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
     base_flow, strategy = _load_base_flow(project_root)
     steps = [step for step in base_flow.get("steps", []) if isinstance(step, dict)]
     close_index = _find_close_index(steps)
-    existing_hints = _existing_runtime_hints(steps)
+    core_steps = steps[:close_index]
+    close_steps = steps[close_index:]
+    existing_hints = _existing_runtime_hints(core_steps)
+    first_trigger_index = _find_first_trigger_index(core_steps)
 
-    planned_assertion_steps: list[dict[str, Any]] = []
-    unsupported_assertions: list[str] = []
+    planned_precondition_steps: list[dict[str, Any]] = []
+    planned_postcondition_steps: list[dict[str, Any]] = []
     assertion_coverage: list[dict[str, Any]] = []
-    for index, assertion in enumerate(assertion_set.get("assertions", [])):
+    unsupported_assertions: list[str] = []
+
+    for index, assertion in enumerate(assertion_set.get("preconditions", [])):
         if not isinstance(assertion, dict):
             continue
-        step = _assertion_step(assertion, index)
-        if step is None:
-            direct_step = _direct_step_from_related_assertions(assertion, assertion_set, index)
-            if direct_step is not None:
-                step, supporting_assertions = direct_step
-                planned_assertion_steps.append(step)
-                assertion_coverage.append(
-                    {
-                        "assertion_id": str(assertion.get("id", f"assertion_{index}")),
-                        "status": "covered_by_planned_step",
-                        "reason": "planner inserted a dedicated post-trigger step using a supported related assertion hint",
-                        "supporting_assertions": supporting_assertions,
-                    }
-                )
-                continue
-            covered = _covered_by_existing_assertions(assertion, assertion_set)
-            if covered is not None:
-                assertion_coverage.append(covered)
-            else:
-                unsupported_assertions.append(str(assertion.get("id", f"assertion_{index}")))
+        built = _assertion_step(assertion, "precondition", index)
+        assertion_id = str(assertion.get("id", f"precondition_{index}"))
+        if built is None:
+            unsupported_assertions.append(assertion_id)
             continue
-        step_hint = str(step.get("hint", "")).strip()
-        if not step_hint and isinstance(step.get("until"), dict):
-            step_hint = str(step["until"].get("hint", "")).strip()
-        if step_hint and step_hint in existing_hints:
+        step, hint = built
+        if hint in existing_hints:
             assertion_coverage.append(
                 {
-                    "assertion_id": str(assertion.get("id", f"assertion_{index}")),
+                    "assertion_id": assertion_id,
                     "status": "already_covered_by_base_flow",
-                    "reason": f"base flow already contains runtime hint {step_hint}",
+                    "reason": f"base flow already contains runtime hint {hint}",
                     "supporting_assertions": [],
                 }
             )
             continue
-        planned_assertion_steps.append(step)
-        if step_hint:
-            existing_hints.add(step_hint)
+        planned_precondition_steps.append(step)
+        existing_hints.add(hint)
         assertion_coverage.append(
             {
-                "assertion_id": str(assertion.get("id", f"assertion_{index}")),
+                "assertion_id": assertion_id,
                 "status": "covered_by_planned_step",
-                "reason": "repro planner added an explicit step for this assertion",
+                "reason": "repro planner added an explicit precondition step for this assertion",
                 "supporting_assertions": [],
             }
         )
 
-    candidate_steps = steps[:close_index] + planned_assertion_steps + steps[close_index:]
-    candidate_steps = _insert_steps_to_trigger_refinement(candidate_steps, assertion_set)
-    candidate_steps = _insert_trigger_refinement_steps(candidate_steps, assertion_coverage)
+    for index, assertion in enumerate(assertion_set.get("postconditions", [])):
+        if not isinstance(assertion, dict):
+            continue
+        built = _assertion_step(assertion, "postcondition", index)
+        assertion_id = str(assertion.get("id", f"postcondition_{index}"))
+        if built is None:
+            unsupported_assertions.append(assertion_id)
+            continue
+        step, hint = built
+        if hint in existing_hints:
+            assertion_coverage.append(
+                {
+                    "assertion_id": assertion_id,
+                    "status": "already_covered_by_base_flow",
+                    "reason": f"base flow already contains runtime hint {hint}",
+                    "supporting_assertions": [],
+                }
+            )
+            continue
+        planned_postcondition_steps.append(step)
+        existing_hints.add(hint)
+        assertion_coverage.append(
+            {
+                "assertion_id": assertion_id,
+                "status": "covered_by_planned_step",
+                "reason": "repro planner added an explicit postcondition step for this assertion",
+                "supporting_assertions": [],
+            }
+        )
+
+    planned_trigger = None
+    if first_trigger_index is None:
+        planned_trigger = _explicit_trigger_step(args)
+        first_trigger_index = len(core_steps) + len(planned_precondition_steps) if planned_trigger is not None else None
+
+    if first_trigger_index is None:
+        candidate_core = core_steps + planned_precondition_steps + planned_postcondition_steps
+    else:
+        trigger_insert_index = _find_first_trigger_index(core_steps)
+        if trigger_insert_index is None:
+            candidate_core = core_steps + planned_precondition_steps
+            if planned_trigger is not None:
+                candidate_core.append(planned_trigger)
+            candidate_core.extend(planned_postcondition_steps)
+        else:
+            candidate_core = (
+                core_steps[:trigger_insert_index]
+                + planned_precondition_steps
+                + core_steps[trigger_insert_index:]
+                + planned_postcondition_steps
+            )
+
+    candidate_steps = candidate_core + close_steps
     flow_file = basicflow_paths(project_root).flow_file
     candidate_flow = {
         "flowId": "planned_bug_repro_flow",
@@ -495,6 +244,8 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
         "description": f"Planned repro flow for: {assertion_set.get('bug_summary', '')}",
         "steps": candidate_steps,
     }
+
+    planned_step_count = len(planned_precondition_steps) + len(planned_postcondition_steps) + (1 if planned_trigger is not None else 0)
     return {
         "schema": "pointer_gpf.v2.repro_flow_plan.v1",
         "project_root": str(project_root.resolve()),
@@ -505,11 +256,12 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
             "exists": strategy == "reuse_project_basicflow",
         },
         "assertion_set": assertion_set,
-        "planned_assertion_step_count": len(planned_assertion_steps),
+        "planned_assertion_step_count": planned_step_count,
         "unsupported_assertions": unsupported_assertions,
         "assertion_coverage": assertion_coverage,
-        "needs_flow_patch": bool(planned_assertion_steps),
+        "needs_flow_patch": bool(planned_step_count),
         "repro_readiness": "blocked_by_unsupported_assertions" if unsupported_assertions else "ready_for_repro_run",
         "candidate_flow": candidate_flow,
+        "execution_contract": _build_execution_contract(candidate_steps),
         "next_action": "review_or_materialize_repro_flow",
     }
