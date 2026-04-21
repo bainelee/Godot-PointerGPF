@@ -78,7 +78,7 @@ class BugReproFlowTests(unittest.TestCase):
         self.assertGreaterEqual(payload["planned_assertion_step_count"], 1)
         self.assertEqual(payload["candidate_flow"]["steps"][-1]["action"], "closeProject")
 
-    def test_plan_bug_repro_flow_marks_state_change_assertion_as_covered_when_target_scene_is_already_checked(self) -> None:
+    def test_plan_bug_repro_flow_adds_direct_state_change_assertion_step_when_target_scene_is_already_checked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             (project_root / "project.godot").write_text(
@@ -145,13 +145,240 @@ class BugReproFlowTests(unittest.TestCase):
 
         self.assertNotIn("interaction_should_change_state", payload["unsupported_assertions"])
         self.assertEqual(payload["repro_readiness"], "ready_for_repro_run")
+        self.assertGreaterEqual(payload["planned_assertion_step_count"], 1)
         self.assertTrue(
             any(
                 item["assertion_id"] == "interaction_should_change_state"
-                and item["status"] == "covered_by_related_assertions"
+                and item["status"] == "covered_by_planned_step"
                 for item in payload["assertion_coverage"]
             )
         )
+        self.assertTrue(
+            any(
+                str(step.get("id", "")).startswith("assert_")
+                and (
+                    str(step.get("hint", "")).strip() == "node_exists:GameLevel"
+                    or str(step.get("until", {}).get("hint", "")).strip() == "node_exists:GameLevel"
+                )
+                for step in payload["candidate_flow"]["steps"]
+            )
+        )
+
+    def test_plan_bug_repro_flow_inserts_post_click_settle_delay_for_trigger_refinement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "project.godot").write_text(
+                '\n'.join(
+                    [
+                        "[application]",
+                        'run/main_scene="res://scenes/main_scene_example.tscn"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf").mkdir(parents=True, exist_ok=True)
+            (project_root / "pointer_gpf" / "basicflow.json").write_text(
+                json.dumps(
+                    {
+                        "flowId": "project_basicflow",
+                        "steps": [
+                            {"id": "launch_game", "action": "launchGame"},
+                            {"id": "wait_startbutton", "action": "wait", "until": {"hint": "node_exists:StartButton"}},
+                            {"id": "click_startbutton", "action": "click", "target": {"hint": "node_name:StartButton"}},
+                            {"id": "wait_gamelevel", "action": "wait", "until": {"hint": "node_exists:GameLevel"}},
+                            {"id": "close_project", "action": "closeProject"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf" / "basicflow.meta.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-04-14T00:00:00+00:00",
+                        "generation_summary": "summary",
+                        "related_files": [
+                            "project.godot",
+                            "res://scenes/main_scene_example.tscn",
+                            "res://scripts/main_menu_flow.gd",
+                            "res://scenes/game_level.tscn",
+                        ],
+                        "project_file_summary": {
+                            "total_file_count": 4,
+                            "script_count": 1,
+                            "scene_count": 2,
+                        },
+                        "last_successful_run_at": None,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                bug_report="点击开始游戏没有反应",
+                bug_summary=None,
+                expected_behavior="应该进入游戏关卡",
+                steps_to_trigger="启动游戏|点击开始游戏",
+                location_scene="res://scenes/main_scene_example.tscn",
+                location_node="StartButton",
+                location_script="res://scripts/main_menu_flow.gd",
+                frequency_hint="always",
+                severity_hint="core_progression_blocker",
+            )
+
+            payload = plan_bug_repro_flow(project_root, args)
+
+        steps = payload["candidate_flow"]["steps"]
+        click_index = next(index for index, step in enumerate(steps) if step.get("id") == "click_startbutton")
+        delay_step = steps[click_index + 1]
+        self.assertEqual(delay_step["action"], "delay")
+        self.assertEqual(delay_step["timeoutMs"], 250)
+        self.assertTrue(str(delay_step["id"]).startswith("tighten_trigger_after_click"))
+
+    def test_plan_bug_repro_flow_inserts_pre_click_wait_from_steps_to_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "project.godot").write_text(
+                '\n'.join(
+                    [
+                        "[application]",
+                        'run/main_scene="res://scenes/main_scene_example.tscn"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf").mkdir(parents=True, exist_ok=True)
+            (project_root / "pointer_gpf" / "basicflow.json").write_text(
+                json.dumps(
+                    {
+                        "flowId": "project_basicflow",
+                        "steps": [
+                            {"id": "launch_game", "action": "launchGame"},
+                            {"id": "wait_startbutton", "action": "wait", "until": {"hint": "node_exists:StartButton"}},
+                            {"id": "click_startbutton", "action": "click", "target": {"hint": "node_name:StartButton"}},
+                            {"id": "wait_gamelevel", "action": "wait", "until": {"hint": "node_exists:GameLevel"}},
+                            {"id": "close_project", "action": "closeProject"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf" / "basicflow.meta.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-04-14T00:00:00+00:00",
+                        "generation_summary": "summary",
+                        "related_files": [
+                            "project.godot",
+                            "res://scenes/main_scene_example.tscn",
+                            "res://scripts/main_menu_flow.gd",
+                            "res://scenes/game_level.tscn",
+                        ],
+                        "project_file_summary": {
+                            "total_file_count": 4,
+                            "script_count": 1,
+                            "scene_count": 2,
+                        },
+                        "last_successful_run_at": None,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                bug_report="点击开始游戏没有反应",
+                bug_summary=None,
+                expected_behavior="应该进入游戏关卡",
+                steps_to_trigger="启动游戏|等待主菜单|点击开始游戏",
+                location_scene="res://scenes/main_scene_example.tscn",
+                location_node="StartButton",
+                location_script="res://scripts/main_menu_flow.gd",
+                frequency_hint="always",
+                severity_hint="core_progression_blocker",
+            )
+
+            payload = plan_bug_repro_flow(project_root, args)
+
+        steps = payload["candidate_flow"]["steps"]
+        click_index = next(index for index, step in enumerate(steps) if step.get("id") == "click_startbutton")
+        delay_step = steps[click_index - 1]
+        self.assertEqual(delay_step["action"], "delay")
+        self.assertEqual(delay_step["timeoutMs"], 400)
+        self.assertTrue(str(delay_step["id"]).startswith("trigger_wait_before_click"))
+
+    def test_plan_bug_repro_flow_inserts_repeat_click_from_steps_to_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "project.godot").write_text(
+                '\n'.join(
+                    [
+                        "[application]",
+                        'run/main_scene="res://scenes/main_scene_example.tscn"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf").mkdir(parents=True, exist_ok=True)
+            (project_root / "pointer_gpf" / "basicflow.json").write_text(
+                json.dumps(
+                    {
+                        "flowId": "project_basicflow",
+                        "steps": [
+                            {"id": "launch_game", "action": "launchGame"},
+                            {"id": "wait_startbutton", "action": "wait", "until": {"hint": "node_exists:StartButton"}},
+                            {"id": "click_startbutton", "action": "click", "target": {"hint": "node_name:StartButton"}},
+                            {"id": "wait_gamelevel", "action": "wait", "until": {"hint": "node_exists:GameLevel"}},
+                            {"id": "close_project", "action": "closeProject"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf" / "basicflow.meta.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-04-14T00:00:00+00:00",
+                        "generation_summary": "summary",
+                        "related_files": [
+                            "project.godot",
+                            "res://scenes/main_scene_example.tscn",
+                            "res://scripts/main_menu_flow.gd",
+                            "res://scenes/game_level.tscn",
+                        ],
+                        "project_file_summary": {
+                            "total_file_count": 4,
+                            "script_count": 1,
+                            "scene_count": 2,
+                        },
+                        "last_successful_run_at": None,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                bug_report="点击开始游戏没有反应",
+                bug_summary=None,
+                expected_behavior="应该进入游戏关卡",
+                steps_to_trigger="启动游戏|点击开始游戏|再次点击开始游戏",
+                location_scene="res://scenes/main_scene_example.tscn",
+                location_node="StartButton",
+                location_script="res://scripts/main_menu_flow.gd",
+                frequency_hint="always",
+                severity_hint="core_progression_blocker",
+            )
+
+            payload = plan_bug_repro_flow(project_root, args)
+
+        steps = payload["candidate_flow"]["steps"]
+        click_indices = [index for index, step in enumerate(steps) if step.get("action") == "click"]
+        self.assertGreaterEqual(len(click_indices), 2)
+        second_click = steps[click_indices[1]]
+        self.assertTrue(str(second_click["id"]).startswith("trigger_repeat_click"))
+        self.assertEqual(second_click["target"]["hint"], "node_name:StartButton")
 
 
 if __name__ == "__main__":
