@@ -76,6 +76,8 @@ class BugAssertionsTests(unittest.TestCase):
         self.assertEqual(payload["bug_analysis"]["schema"], "pointer_gpf.v2.bug_analysis.v1")
         self.assertTrue(any(item["id"] == "target_scene_reached" for item in payload["assertions"]))
         self.assertTrue(any(item["runtime_check"]["hint"] == "node_exists:GameLevel" for item in payload["assertions"]))
+        self.assertTrue(any(item["id"] == "interaction_target_hidden_after_success" for item in payload["assertions"]))
+        self.assertTrue(any(item["runtime_check"]["hint"] == "node_hidden:StartButton" for item in payload["assertions"]))
 
 
 if __name__ == "__main__":

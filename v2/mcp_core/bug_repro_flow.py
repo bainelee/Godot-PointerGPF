@@ -216,6 +216,28 @@ def _runtime_hint_for_assertion(assertion_set: dict[str, Any], assertion_id: str
     return ""
 
 
+def _pick_ui_hint_from_steps(steps: list[dict[str, Any]]) -> str:
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        hint = _step_hint(step)
+        lowered = hint.lower()
+        if any(token in lowered for token in ("hud", "ui", "panel", "menu")):
+            return hint
+    return ""
+
+
+def _as_hidden_hint(hint: str) -> str:
+    raw = str(hint).strip()
+    if raw.startswith("node_exists:"):
+        return "node_hidden:" + raw[len("node_exists:") :]
+    if raw.startswith("node_visible:"):
+        return "node_hidden:" + raw[len("node_visible:") :]
+    if raw.startswith("node_hidden:"):
+        return raw
+    return ""
+
+
 def _insert_steps_to_trigger_refinement(
     steps: list[dict[str, Any]],
     assertion_set: dict[str, Any],
@@ -226,6 +248,11 @@ def _insert_steps_to_trigger_refinement(
     wants_wait = any(token in raw for raw in normalized_steps for token in ("等待", "wait", "稍等", "停留"))
     wants_repeat_click = any(token in raw for raw in normalized_steps for token in ("再次点击", "连续点击", "双击", "double click", "click again"))
     wants_scene_checkpoint = any(token in raw for raw in normalized_steps for token in ("进入", "前往", "返回", "关卡", "level", "menu", "界面"))
+    wants_ui_hidden_checkpoint = any(token in raw for raw in normalized_steps for token in ("关闭", "隐藏", "hide", "close ui", "close hud", "隐藏hud"))
+    wants_ui_checkpoint = (
+        not wants_ui_hidden_checkpoint
+        and any(token in raw for raw in normalized_steps for token in ("显示", "打开面板", "打开hud", "显示hud", "show", "open ui", "hud", "面板"))
+    )
     refined_steps = list(steps)
 
     if wants_launch_wait:
@@ -276,6 +303,60 @@ def _insert_steps_to_trigger_refinement(
                         "id": f"trigger_scene_checkpoint_{insert_at}",
                         "action": "check",
                         "hint": target_hint,
+                    },
+                )
+
+    if wants_ui_checkpoint:
+        ui_hint = _runtime_hint_for_assertion(assertion_set, "bug_free_runtime_anchor_present") or _pick_ui_hint_from_steps(refined_steps)
+        if ui_hint:
+            existing_checkpoint = any(
+                isinstance(item, dict)
+                and str(item.get("id", "")).startswith("trigger_ui_checkpoint")
+                and str(item.get("hint", "")).strip() == ui_hint
+                for item in refined_steps
+            )
+            if not existing_checkpoint:
+                insert_at = next(
+                    (
+                        index + 1
+                        for index, item in enumerate(refined_steps)
+                        if isinstance(item, dict) and _step_hint(item) == ui_hint
+                    ),
+                    len(refined_steps),
+                )
+                refined_steps.insert(
+                    insert_at,
+                    {
+                        "id": f"trigger_ui_checkpoint_{insert_at}",
+                        "action": "check",
+                        "hint": ui_hint,
+                    },
+                )
+
+    if wants_ui_hidden_checkpoint:
+        hidden_hint = _as_hidden_hint(_pick_ui_hint_from_steps(refined_steps))
+        if hidden_hint:
+            existing_checkpoint = any(
+                isinstance(item, dict)
+                and str(item.get("id", "")).startswith("trigger_ui_hidden_checkpoint")
+                and str(item.get("hint", "")).strip() == hidden_hint
+                for item in refined_steps
+            )
+            if not existing_checkpoint:
+                insert_at = next(
+                    (
+                        index + 1
+                        for index, item in enumerate(refined_steps)
+                        if isinstance(item, dict) and _step_hint(item) in {hidden_hint.replace("node_hidden:", "node_exists:"), hidden_hint}
+                    ),
+                    len(refined_steps),
+                )
+                refined_steps.insert(
+                    insert_at,
+                    {
+                        "id": f"trigger_ui_hidden_checkpoint_{insert_at}",
+                        "action": "check",
+                        "hint": hidden_hint,
                     },
                 )
 

@@ -105,6 +105,22 @@ def define_bug_assertions(project_root: Path, args: Any) -> dict[str, Any]:
                     },
                 },
             )
+            _add_assertion(
+                assertions,
+                {
+                    "id": "interaction_target_hidden_after_success",
+                    "kind": "runtime_hint",
+                    "target": {"hint": hint.replace("node_exists:", "node_hidden:", 1)},
+                    "operator": "equals",
+                    "expected": True,
+                    "reason": f"the interaction target {location_node} should no longer stay visible after the bug-free transition",
+                    "runtime_check": {
+                        "supported": True,
+                        "hint": hint.replace("node_exists:", "node_hidden:", 1),
+                        "action": "check",
+                    },
+                },
+            )
 
     for hint in basicflow_hints:
         if hint.startswith("node_exists:") and target_scene_root and target_scene_root.lower() in hint.lower():
