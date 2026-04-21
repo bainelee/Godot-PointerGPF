@@ -89,6 +89,8 @@ from .runtime_orchestration import (
     resolve_requested_flow_file as runtime_resolve_requested_flow_file,
     run_basic_flow_tool as runtime_run_basic_flow_tool,
     runtime_gate_path as runtime_runtime_gate_path,
+    clear_runtime_markers as runtime_clear_runtime_markers,
+    terminate_project_processes as runtime_terminate_project_processes,
     verify_teardown as runtime_verify_teardown,
 )
 from .tool_dispatch import ToolDispatchApi, dispatch_tool
@@ -225,12 +227,25 @@ def _verify_teardown(project_root: Path, timeout_ms: int = 10000, *, stable_ms: 
     return runtime_verify_teardown(
         project_root,
         read_runtime_gate=_read_runtime_gate,
-        list_project_editor_processes=_list_project_editor_processes,
+        list_project_processes=_list_project_processes,
         monotonic=time.monotonic,
         sleep=time.sleep,
         timeout_ms=timeout_ms,
         stable_ms=stable_ms,
     )
+
+
+def _terminate_project_processes(project_root: Path) -> dict[str, Any]:
+    return runtime_terminate_project_processes(
+        project_root,
+        list_project_processes=_list_project_processes,
+        subprocess_run=subprocess.run,
+        sleep=time.sleep,
+    )
+
+
+def _clear_runtime_markers(project_root: Path) -> None:
+    runtime_clear_runtime_markers(project_root)
 
 
 def _read_flow_lock(project_root: Path) -> dict[str, Any]:
@@ -283,6 +298,8 @@ def _run_basic_flow_tool(
         run_basic_flow=run_basic_flow,
         verify_isolated_runtime_stopped=verify_isolated_runtime_stopped,
         verify_teardown=lambda path: _verify_teardown(path),
+        terminate_project_processes=_terminate_project_processes,
+        clear_runtime_markers=_clear_runtime_markers,
         mark_basicflow_run_success=mark_basicflow_run_success,
         basicflow_paths=basicflow_paths,
         close_isolated_runtime_session=close_isolated_runtime_session,

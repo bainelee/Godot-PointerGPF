@@ -10,6 +10,7 @@ from v2.mcp_core.process_probe import (
     is_editor_process_running,
     is_pid_running,
     list_project_processes,
+    terminate_project_processes,
 )
 
 
@@ -62,6 +63,38 @@ class ProcessProbeTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result["project_process_count"], 2)
+
+    def test_terminate_project_processes_only_kills_current_project_pids(self) -> None:
+        project_root = Path.cwd()
+        process_snapshots = iter(
+            [
+                [
+                    {"ProcessId": 100, "Name": "Godot.exe", "CommandLine": f"godot -e --path {project_root}"},
+                    {"ProcessId": 200, "Name": "Godot.exe", "CommandLine": f"godot --path {project_root} --scene res://main.tscn"},
+                ],
+                [],
+            ]
+        )
+        taskkill_calls: list[list[str]] = []
+
+        def fake_list(_: Path) -> list[dict[str, object]]:
+            return next(process_snapshots)
+
+        def fake_run(args: list[str], **_: object):
+            taskkill_calls.append(args)
+            return type("Completed", (), {"stdout": "", "stderr": ""})()
+
+        result = terminate_project_processes(
+            project_root,
+            list_project_processes=fake_list,
+            subprocess_run=fake_run,
+            sleep=lambda _: None,
+        )
+
+        self.assertEqual(result["status"], "cleared")
+        self.assertEqual(result["terminated_pids"], [100, 200])
+        self.assertEqual(taskkill_calls[0], ["taskkill", "/PID", "100", "/T", "/F"])
+        self.assertEqual(taskkill_calls[1], ["taskkill", "/PID", "200", "/T", "/F"])
 
 
 if __name__ == "__main__":

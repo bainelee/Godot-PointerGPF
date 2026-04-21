@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -93,4 +94,41 @@ def detect_multiple_project_processes(
         "project_process_count": len(processes),
         "project_processes": processes,
         "message": "close extra Godot editor instances for this project before running a flow",
+    }
+
+
+def terminate_project_processes(
+    project_root: Path,
+    *,
+    list_project_processes: Callable[[Path], list[dict[str, Any]]],
+    subprocess_run: Callable[..., Any] = subprocess.run,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    processes = list_project_processes(project_root)
+    terminated_pids: list[int] = []
+    seen: set[int] = set()
+    for item in processes:
+        try:
+            pid = int(item.get("ProcessId", -1))
+        except (TypeError, ValueError):
+            continue
+        if pid <= 0 or pid in seen:
+            continue
+        seen.add(pid)
+        subprocess_run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        terminated_pids.append(pid)
+    if terminated_pids:
+        sleep(1.0)
+    remaining = list_project_processes(project_root)
+    return {
+        "status": "cleared" if not remaining else "remaining_processes",
+        "targeted_process_count": len(processes),
+        "terminated_pids": terminated_pids,
+        "remaining_process_count": len(remaining),
+        "remaining_processes": remaining,
     }

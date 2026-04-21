@@ -26,6 +26,7 @@ from .process_probe import (
     is_pid_running as probe_is_pid_running,
     list_project_editor_processes as probe_list_project_editor_processes,
     list_project_processes as probe_list_project_processes,
+    terminate_project_processes as probe_terminate_project_processes,
 )
 from .teardown_verification import (
     acquire_flow_lock as teardown_acquire_flow_lock,
@@ -103,6 +104,21 @@ def is_editor_process_running(
     list_project_editor_processes: Callable[[Path], list[dict[str, Any]]],
 ) -> bool:
     return probe_is_editor_process_running(project_root, list_project_editor_processes=list_project_editor_processes)
+
+
+def terminate_project_processes(
+    project_root: Path,
+    *,
+    list_project_processes: Callable[[Path], list[dict[str, Any]]],
+    subprocess_run: Callable[..., Any] = subprocess.run,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    return probe_terminate_project_processes(
+        project_root,
+        list_project_processes=list_project_processes,
+        subprocess_run=subprocess_run,
+        sleep=sleep,
+    )
 
 
 def request_auto_enter_play(project_root: Path) -> Path:
@@ -197,7 +213,7 @@ def verify_teardown(
     project_root: Path,
     *,
     read_runtime_gate: Callable[[Path], dict[str, Any]],
-    list_project_editor_processes: Callable[[Path], list[dict[str, Any]]],
+    list_project_processes: Callable[[Path], list[dict[str, Any]]],
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     timeout_ms: int = 10000,
@@ -206,12 +222,38 @@ def verify_teardown(
     return teardown_verify_teardown(
         project_root,
         read_runtime_gate=read_runtime_gate,
-        list_project_editor_processes=list_project_editor_processes,
+        list_project_processes=list_project_processes,
         monotonic=monotonic,
         sleep=sleep,
         timeout_ms=timeout_ms,
         stable_ms=stable_ms,
     )
+
+
+def clear_runtime_markers(project_root: Path) -> None:
+    for name in (
+        "runtime_gate.json",
+        "runtime_session.json",
+        "auto_enter_play_mode.flag",
+        "auto_stop_play_mode.flag",
+        "command.json",
+        "response.json",
+    ):
+        (bridge_dir(project_root) / name).unlink(missing_ok=True)
+
+
+def force_cleanup_project_runtime(
+    project_root: Path,
+    *,
+    terminate_project_processes: Callable[[Path], dict[str, Any]],
+    clear_runtime_markers: Callable[[Path], None],
+    verify_teardown: Callable[[Path], dict[str, Any]],
+) -> dict[str, Any]:
+    termination = terminate_project_processes(project_root)
+    clear_runtime_markers(project_root)
+    teardown = verify_teardown(project_root)
+    teardown["forced_process_cleanup"] = termination
+    return teardown
 
 
 def read_flow_lock(project_root: Path) -> dict[str, Any]:
@@ -325,6 +367,8 @@ def run_basic_flow_tool(
     run_basic_flow: Callable[[Path, Path], dict[str, Any]],
     verify_isolated_runtime_stopped: Callable[[Any], dict[str, Any]],
     verify_teardown: Callable[[Path], dict[str, Any]],
+    terminate_project_processes: Callable[[Path], dict[str, Any]],
+    clear_runtime_markers: Callable[[Path], None],
     mark_basicflow_run_success: Callable[[Path], dict[str, Any]],
     basicflow_paths: Callable[[Path], Any],
     close_isolated_runtime_session: Callable[[Any], None],
@@ -362,6 +406,11 @@ def run_basic_flow_tool(
             False,
         )
     try:
+        response_payload: dict[str, Any] | None = None
+        exit_code = 2
+        mark_success = False
+        play_session_started = False
+        teardown_meta: dict[str, Any] | None = None
         if execution_mode == "isolated_runtime":
             isolated_session = launch_isolated_runtime(project_root, load_godot_executable(project_root))
             play_meta = {
@@ -374,105 +423,136 @@ def run_basic_flow_tool(
                 },
             }
         else:
-            play_meta = ensure_play_mode(project_root)
+            play_session_started = True
+            try:
+                play_meta = ensure_play_mode(project_root)
+            except TimeoutError as exc:
+                teardown_meta = force_cleanup_project_runtime(
+                    project_root,
+                    terminate_project_processes=terminate_project_processes,
+                    clear_runtime_markers=clear_runtime_markers,
+                    verify_teardown=verify_teardown,
+                )
+                return (
+                    2,
+                    build_error_payload(
+                        ERR_TIMEOUT,
+                        str(exc),
+                        {"project_close": teardown_meta},
+                    ),
+                    False,
+                )
             play_meta["execution_mode"] = execution_mode
         try:
             run_result = run_basic_flow(project_root, flow_file)
         except FlowExecutionStepFailed as exc:
-            return (
-                2,
-                build_error_payload(
-                    ERR_STEP_FAILED,
-                    str(exc),
-                    {"run_id": exc.run_id, "step_index": exc.step_index, "step_id": exc.step_id, "play_mode": play_meta},
-                ),
-                False,
+            response_payload = build_error_payload(
+                ERR_STEP_FAILED,
+                str(exc),
+                {"run_id": exc.run_id, "step_index": exc.step_index, "step_id": exc.step_id, "play_mode": play_meta},
             )
         except FlowExecutionTimeout as exc:
-            return (
-                2,
-                build_error_payload(
-                    ERR_TIMEOUT,
-                    str(exc),
-                    {"run_id": exc.run_id, "step_index": exc.step_index, "step_id": exc.step_id, "play_mode": play_meta},
-                ),
-                False,
+            response_payload = build_error_payload(
+                ERR_TIMEOUT,
+                str(exc),
+                {"run_id": exc.run_id, "step_index": exc.step_index, "step_id": exc.step_id, "play_mode": play_meta},
             )
         except FlowExecutionEngineStalled as exc:
-            return (
-                2,
-                build_error_payload(
-                    ERR_ENGINE_RUNTIME_STALLED,
-                    str(exc),
-                    {
-                        "run_id": exc.run_id,
-                        "step_index": exc.step_index,
-                        "step_id": exc.step_id,
-                        "runtime_diagnostics": exc.diagnostics,
-                        "play_mode": play_meta,
-                    },
-                ),
-                False,
+            response_payload = build_error_payload(
+                ERR_ENGINE_RUNTIME_STALLED,
+                str(exc),
+                {
+                    "run_id": exc.run_id,
+                    "step_index": exc.step_index,
+                    "step_id": exc.step_id,
+                    "runtime_diagnostics": exc.diagnostics,
+                    "play_mode": play_meta,
+                },
             )
-        teardown_meta: dict[str, Any] | None = None
-        if flow_requests_close(flow_payload):
-            teardown_meta = (
-                verify_isolated_runtime_stopped(isolated_session)
-                if execution_mode == "isolated_runtime" and isolated_session is not None
-                else verify_teardown(project_root)
-            )
-            if teardown_meta["status"] != "verified":
-                return (
-                    2,
-                    build_error_payload(
+        else:
+            if flow_requests_close(flow_payload) and execution_mode == "isolated_runtime" and isolated_session is not None:
+                teardown_meta = verify_isolated_runtime_stopped(isolated_session)
+                if teardown_meta["status"] != "verified":
+                    response_payload = build_error_payload(
                         ERR_TEARDOWN_VERIFICATION_FAILED,
                         "play mode did not fully stop after closeProject",
                         {"play_mode": play_meta, "execution": run_result, "project_close": teardown_meta},
-                    ),
-                    False,
-                )
-        isolation_meta: dict[str, Any] = {
-            "isolated": execution_mode == "isolated_runtime",
-            "surface": "windows_desktop" if execution_mode == "isolated_runtime" else "editor_play_mode",
-            "status": "isolated_desktop" if execution_mode == "isolated_runtime" else "shared_desktop",
-        }
-        if execution_mode == "isolated_runtime" and isolated_session is not None:
-            isolation_meta["desktop_name"] = isolated_session.desktop_name
-            isolation_meta["host_desktop_name"] = isolated_session.host_desktop_name
-            isolation_meta["runtime_pid"] = isolated_session.pid
-            isolation_meta["separate_desktop"] = bool(
-                isolated_session.desktop_name
-                and isolated_session.host_desktop_name
-                and isolated_session.desktop_name != isolated_session.host_desktop_name
-            )
-        payload = {
-            "play_mode": play_meta,
-            "execution": run_result,
-            "execution_mode": execution_mode,
-            "isolation": isolation_meta,
-            "plugin_sync": {"destination": str(plugin_destination)},
-        }
-        if teardown_meta is not None:
-            payload["project_close"] = teardown_meta
-        if flow_lock is not None:
-            payload["flow_guard"] = {
-                "recovered_stale_lock": bool(flow_lock.get("recovered_stale_lock", False)),
-                "stale_lock": flow_lock.get("stale_lock", {}),
-            }
-        if basicflow_context is not None:
-            project_basicflow = basicflow_paths(project_root).flow_file
-            if flow_file.resolve() == project_basicflow.resolve():
-                payload["basicflow"] = {
-                    "status": basicflow_context.get("status", "fresh"),
-                    "flow_summary": basicflow_context.get("flow_summary", ""),
-                    "used_project_basicflow": True,
+                    )
+            if response_payload is None:
+                isolation_meta: dict[str, Any] = {
+                    "isolated": execution_mode == "isolated_runtime",
+                    "surface": "windows_desktop" if execution_mode == "isolated_runtime" else "editor_play_mode",
+                    "status": "isolated_desktop" if execution_mode == "isolated_runtime" else "shared_desktop",
                 }
-                if basicflow_context.get("status") == "stale":
-                    payload["basicflow"]["warning"] = "ran stale basicflow because allow-stale-basicflow was set"
-                    payload["basicflow"]["staleness"] = basicflow_context
-                updated_meta = mark_basicflow_run_success(project_root)
-                payload["basicflow"]["last_successful_run_at"] = updated_meta.get("last_successful_run_at")
-        return 0, build_ok_payload(payload), True
+                if execution_mode == "isolated_runtime" and isolated_session is not None:
+                    isolation_meta["desktop_name"] = isolated_session.desktop_name
+                    isolation_meta["host_desktop_name"] = isolated_session.host_desktop_name
+                    isolation_meta["runtime_pid"] = isolated_session.pid
+                    isolation_meta["separate_desktop"] = bool(
+                        isolated_session.desktop_name
+                        and isolated_session.host_desktop_name
+                        and isolated_session.desktop_name != isolated_session.host_desktop_name
+                    )
+                payload = {
+                    "play_mode": play_meta,
+                    "execution": run_result,
+                    "execution_mode": execution_mode,
+                    "isolation": isolation_meta,
+                    "plugin_sync": {"destination": str(plugin_destination)},
+                }
+                if teardown_meta is not None:
+                    payload["project_close"] = teardown_meta
+                if flow_lock is not None:
+                    payload["flow_guard"] = {
+                        "recovered_stale_lock": bool(flow_lock.get("recovered_stale_lock", False)),
+                        "stale_lock": flow_lock.get("stale_lock", {}),
+                    }
+                if basicflow_context is not None:
+                    project_basicflow = basicflow_paths(project_root).flow_file
+                    if flow_file.resolve() == project_basicflow.resolve():
+                        payload["basicflow"] = {
+                            "status": basicflow_context.get("status", "fresh"),
+                            "flow_summary": basicflow_context.get("flow_summary", ""),
+                            "used_project_basicflow": True,
+                        }
+                        if basicflow_context.get("status") == "stale":
+                            payload["basicflow"]["warning"] = "ran stale basicflow because allow-stale-basicflow was set"
+                            payload["basicflow"]["staleness"] = basicflow_context
+                        updated_meta = mark_basicflow_run_success(project_root)
+                        payload["basicflow"]["last_successful_run_at"] = updated_meta.get("last_successful_run_at")
+                response_payload = build_ok_payload(payload)
+                exit_code = 0
+                mark_success = True
+        if execution_mode == "play_mode" and play_session_started:
+            teardown_meta = force_cleanup_project_runtime(
+                project_root,
+                terminate_project_processes=terminate_project_processes,
+                clear_runtime_markers=clear_runtime_markers,
+                verify_teardown=verify_teardown,
+            )
+            if response_payload is None:
+                response_payload = build_error_payload(
+                    ERR_TEARDOWN_VERIFICATION_FAILED,
+                    "play mode run ended without a response payload",
+                    {"project_close": teardown_meta},
+                )
+            elif response_payload.get("ok"):
+                response_payload.setdefault("result", {})
+                response_payload["result"]["project_close"] = teardown_meta
+            else:
+                response_payload.setdefault("error", {}).setdefault("details", {})
+                response_payload["error"]["details"]["project_close"] = teardown_meta
+            if teardown_meta["status"] != "verified":
+                if response_payload.get("ok"):
+                    response_payload = build_error_payload(
+                        ERR_TEARDOWN_VERIFICATION_FAILED,
+                        "play mode did not fully stop after the flow ended",
+                        {"play_mode": play_meta, "project_close": teardown_meta},
+                    )
+                exit_code = 2
+                mark_success = False
+        assert response_payload is not None
+        return exit_code, response_payload, mark_success
     finally:
         if isolated_session is not None:
             close_isolated_runtime_session(isolated_session)

@@ -8,20 +8,20 @@ from v2.mcp_core.teardown_verification import acquire_flow_lock, release_flow_lo
 
 
 class TeardownVerificationTests(unittest.TestCase):
-    def test_verify_teardown_passes_when_play_stopped_and_single_process(self) -> None:
+    def test_verify_teardown_passes_when_play_stopped_and_no_processes(self) -> None:
         project_root = Path.cwd()
         ticks = iter([0.0, 0.0, 0.1, 0.2, 0.4, 0.6])
         result = verify_teardown(
             project_root,
             read_runtime_gate=lambda _: {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-            list_project_editor_processes=lambda _: [{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
+            list_project_processes=lambda _: [],
             monotonic=lambda: next(ticks),
             sleep=lambda _: None,
             timeout_ms=1000,
             stable_ms=300,
         )
         self.assertEqual(result["status"], "verified")
-        self.assertEqual(result["project_process_count"], 1)
+        self.assertEqual(result["project_process_count"], 0)
 
     def test_verify_teardown_waits_for_stable_stop_window(self) -> None:
         project_root = Path.cwd()
@@ -38,7 +38,7 @@ class TeardownVerificationTests(unittest.TestCase):
         result = verify_teardown(
             project_root,
             read_runtime_gate=lambda _: next(gate_values),
-            list_project_editor_processes=lambda _: [{"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e"}],
+            list_project_processes=lambda _: [],
             monotonic=lambda: next(ticks),
             sleep=lambda _: None,
             timeout_ms=1000,
@@ -53,7 +53,7 @@ class TeardownVerificationTests(unittest.TestCase):
         result = verify_teardown(
             project_root,
             read_runtime_gate=lambda _: {"runtime_gate_passed": False, "runtime_mode": "editor_poll"},
-            list_project_editor_processes=lambda _: [
+            list_project_processes=lambda _: [
                 {"ProcessId": 1234, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
                 {"ProcessId": 5678, "Name": "Godot.exe", "CommandLine": "godot -e --path project"},
             ],

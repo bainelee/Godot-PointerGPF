@@ -80,7 +80,7 @@ def verify_teardown(
     project_root: Path,
     *,
     read_runtime_gate: Callable[[Path], dict[str, Any]],
-    list_project_editor_processes: Callable[[Path], list[dict[str, Any]]],
+    list_project_processes: Callable[[Path], list[dict[str, Any]]],
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     timeout_ms: int = 10000,
@@ -88,16 +88,16 @@ def verify_teardown(
 ) -> dict[str, Any]:
     deadline = monotonic() + max(1, timeout_ms) / 1000.0
     last_gate = read_runtime_gate(project_root)
-    last_processes = list_project_editor_processes(project_root)
+    last_processes = list_project_processes(project_root)
     stopped_since: float | None = None
     last_now = monotonic()
     while monotonic() < deadline:
         now = monotonic()
         last_now = now
         last_gate = read_runtime_gate(project_root)
-        last_processes = list_project_editor_processes(project_root)
+        last_processes = list_project_processes(project_root)
         play_stopped = not bool(last_gate.get("runtime_gate_passed", False))
-        process_count_ok = len(last_processes) <= 1
+        process_count_ok = len(last_processes) == 0
         if play_stopped and process_count_ok:
             if stopped_since is None:
                 stopped_since = now
