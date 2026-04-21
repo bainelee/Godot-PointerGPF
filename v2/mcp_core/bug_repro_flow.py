@@ -197,18 +197,42 @@ def _insert_steps_to_trigger_refinement(
 ) -> list[dict[str, Any]]:
     trigger_steps = _intake_steps_to_trigger(assertion_set)
     normalized_steps = [raw.lower() for raw in trigger_steps]
+    wants_launch_wait = any(token in raw for raw in normalized_steps for token in ("启动", "launch", "打开游戏", "开始运行"))
     wants_wait = any(token in raw for raw in normalized_steps for token in ("等待", "wait", "稍等", "停留"))
     wants_repeat_click = any(token in raw for raw in normalized_steps for token in ("再次点击", "连续点击", "双击", "double click", "click again"))
-    if not wants_wait and not wants_repeat_click:
-        return steps
+    refined_steps = list(steps)
 
-    for index, step in enumerate(steps):
+    if wants_launch_wait:
+        for index, step in enumerate(refined_steps):
+            if str(step.get("action", "")).strip().lower() != "launchgame":
+                continue
+            if index + 1 < len(refined_steps):
+                next_step = refined_steps[index + 1]
+                if (
+                    isinstance(next_step, dict)
+                    and str(next_step.get("action", "")).strip().lower() == "delay"
+                    and int(next_step.get("timeoutMs", 0) or 0) == 600
+                ):
+                    break
+            refined_steps.insert(
+                index + 1,
+                {
+                    "id": f"trigger_wait_after_launch_{index}",
+                    "action": "delay",
+                    "timeoutMs": 600,
+                },
+            )
+            break
+
+    if not wants_wait and not wants_repeat_click:
+        return refined_steps
+
+    for index, step in enumerate(refined_steps):
         if str(step.get("action", "")).strip().lower() != "click":
             continue
-        refined_steps = list(steps)
         inserted = False
         if wants_wait and index > 0:
-            previous_step = steps[index - 1]
+            previous_step = refined_steps[index - 1]
             if (
                 isinstance(previous_step, dict)
                 and str(previous_step.get("action", "")).strip().lower() == "delay"
@@ -262,8 +286,8 @@ def _insert_steps_to_trigger_refinement(
                     inserted = True
         if inserted:
             return refined_steps
-        return steps
-    return steps
+        return refined_steps
+    return refined_steps
 
 
 def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
