@@ -50,6 +50,15 @@ def _existing_runtime_hints(steps: list[dict[str, Any]]) -> set[str]:
     return hints
 
 
+def _step_hint(step: dict[str, Any]) -> str:
+    hint = ""
+    if isinstance(step.get("until"), dict):
+        hint = str(step["until"].get("hint", "")).strip()
+    if not hint:
+        hint = str(step.get("hint", "")).strip()
+    return hint
+
+
 def _assertion_step(assertion: dict[str, Any], index: int) -> dict[str, Any] | None:
     runtime_check = assertion.get("runtime_check", {})
     if not isinstance(runtime_check, dict) or not bool(runtime_check.get("supported", False)):
@@ -191,6 +200,22 @@ def _intake_steps_to_trigger(assertion_set: dict[str, Any]) -> list[str]:
     return [str(item).strip() for item in steps if str(item).strip()]
 
 
+def _runtime_hint_for_assertion(assertion_set: dict[str, Any], assertion_id: str) -> str:
+    assertions = assertion_set.get("assertions", [])
+    if not isinstance(assertions, list):
+        return ""
+    for item in assertions:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id", "")).strip() != assertion_id:
+            continue
+        runtime_check = item.get("runtime_check", {})
+        if not isinstance(runtime_check, dict):
+            return ""
+        return str(runtime_check.get("hint", "")).strip()
+    return ""
+
+
 def _insert_steps_to_trigger_refinement(
     steps: list[dict[str, Any]],
     assertion_set: dict[str, Any],
@@ -200,6 +225,7 @@ def _insert_steps_to_trigger_refinement(
     wants_launch_wait = any(token in raw for raw in normalized_steps for token in ("启动", "launch", "打开游戏", "开始运行"))
     wants_wait = any(token in raw for raw in normalized_steps for token in ("等待", "wait", "稍等", "停留"))
     wants_repeat_click = any(token in raw for raw in normalized_steps for token in ("再次点击", "连续点击", "双击", "double click", "click again"))
+    wants_scene_checkpoint = any(token in raw for raw in normalized_steps for token in ("进入", "前往", "返回", "关卡", "level", "menu", "界面"))
     refined_steps = list(steps)
 
     if wants_launch_wait:
@@ -223,6 +249,35 @@ def _insert_steps_to_trigger_refinement(
                 },
             )
             break
+
+    if wants_scene_checkpoint:
+        target_hint = _runtime_hint_for_assertion(assertion_set, "target_scene_reached") or _runtime_hint_for_assertion(
+            assertion_set, "target_runtime_anchor_present"
+        )
+        if target_hint:
+            existing_checkpoint = any(
+                isinstance(item, dict)
+                and str(item.get("id", "")).startswith("trigger_scene_checkpoint")
+                and str(item.get("hint", "")).strip() == target_hint
+                for item in refined_steps
+            )
+            if not existing_checkpoint:
+                insert_at = next(
+                    (
+                        index + 1
+                        for index, item in enumerate(refined_steps)
+                        if isinstance(item, dict) and _step_hint(item) == target_hint
+                    ),
+                    len(refined_steps),
+                )
+                refined_steps.insert(
+                    insert_at,
+                    {
+                        "id": f"trigger_scene_checkpoint_{insert_at}",
+                        "action": "check",
+                        "hint": target_hint,
+                    },
+                )
 
     if not wants_wait and not wants_repeat_click:
         return refined_steps
