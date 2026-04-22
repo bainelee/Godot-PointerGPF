@@ -1,0 +1,135 @@
+import argparse
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from v2.mcp_core.bug_observation import observe_bug_context
+
+
+class BugObservationTests(unittest.TestCase):
+    def test_observe_bug_context_returns_project_runtime_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "project.godot").write_text(
+                '\n'.join(
+                    [
+                        "[application]",
+                        'run/main_scene="res://scenes/main_scene_example.tscn"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            tmp_dir = project_root / "pointer_gpf" / "tmp"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            (project_root / "pointer_gpf" / "basicflow.json").write_text(
+                json.dumps(
+                    {
+                        "flowId": "project_basicflow",
+                        "steps": [
+                            {"id": "wait_startbutton", "action": "wait", "until": {"hint": "node_exists:StartButton"}},
+                            {"id": "click_startbutton", "action": "click", "target": {"hint": "node_name:StartButton"}},
+                            {"id": "check_gamelevel", "action": "check", "hint": "node_exists:GameLevel"},
+                            {"id": "close_project", "action": "closeProject"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "pointer_gpf" / "basicflow.meta.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-04-22T00:00:00+00:00",
+                        "generation_summary": "summary",
+                        "related_files": [
+                            "res://scenes/main_scene_example.tscn",
+                            "res://scripts/main_menu_flow.gd",
+                            "res://scenes/game_level.tscn",
+                        ],
+                        "project_file_summary": {
+                            "total_file_count": 3,
+                            "script_count": 1,
+                            "scene_count": 2,
+                        },
+                        "last_successful_run_at": None,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (tmp_dir / "runtime_diagnostics.json").write_text(
+                json.dumps(
+                    {
+                        "severity": "error",
+                        "items": [
+                            {"kind": "engine_log_error", "message": "scene change failed"},
+                            {"kind": "bridge_error", "message": "runtime stalled"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (tmp_dir / "last_bug_repro_result.json").write_text(
+                json.dumps(
+                    {
+                        "status": "bug_reproduced",
+                        "failed_phase": "postcondition",
+                        "next_action": "inspect_failure_before_fixing",
+                        "check_summary": {
+                            "failed_check_ids": ["postcondition_check_0_target_scene_reached"],
+                        },
+                        "artifact_file": str(tmp_dir / "last_bug_repro_result.json"),
+                        "blocking_point": "",
+                        "raw_run_result": {
+                            "error": {
+                                "details": {
+                                    "step_id": "wait_gamelevel",
+                                }
+                            }
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (tmp_dir / "last_bug_fix_verification_summary.json").write_text(
+                json.dumps(
+                    {
+                        "status": "fix_verified",
+                        "reason": "rerun and regression passed",
+                        "round_id": "round-001",
+                        "bug_id": "bug-001",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                bug_report="点击开始游戏没有反应",
+                bug_summary=None,
+                expected_behavior="应该进入游戏关卡",
+                steps_to_trigger="启动游戏|点击开始游戏",
+                location_scene="res://scenes/main_scene_example.tscn",
+                location_node="StartButton",
+                location_script="res://scripts/main_menu_flow.gd",
+                frequency_hint="always",
+                severity_hint="core_progression_blocker",
+                bug_case_file="",
+            )
+
+            payload = observe_bug_context(project_root, args)
+
+        self.assertEqual(payload["schema"], "pointer_gpf.v2.bug_observation.v1")
+        self.assertEqual(payload["startup_scene"], "res://scenes/main_scene_example.tscn")
+        self.assertTrue(payload["basicflow_summary"]["exists"])
+        self.assertEqual(payload["runtime_diagnostics"]["blocking_count"], 2)
+        self.assertEqual(payload["latest_repro_result"]["status"], "bug_reproduced")
+        self.assertEqual(payload["latest_repro_result"]["check_summary"]["failed_check_ids"], ["postcondition_check_0_target_scene_reached"])
+        self.assertEqual(payload["latest_fix_verification"]["status"], "fix_verified")
+        self.assertIn("res://scripts/main_menu_flow.gd", payload["candidate_file_read_order"])
+
+
+if __name__ == "__main__":
+    unittest.main()

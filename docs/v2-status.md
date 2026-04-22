@@ -7,9 +7,19 @@ V2 is in **phase 1.5**.
 Current goal:
 
 - keep the validated runtime chain stable
-- start productizing `basicflow` as an explicit asset rather than a one-off runtime file
-- define a real input-isolation path so flow execution does not depend on the user avoiding mouse/keyboard interaction on Windows
-- avoid inheriting old system features such as auto-fix, NL routing, orchestration, and Figma workflows
+- treat `input isolation` as a later TODO unless it directly blocks the next core loop
+- treat further `basicflow` productization expansion as a later TODO unless it directly blocks the next core loop
+- return focus to GPF's main product loop: bug report -> analysis -> correct-state assertion -> repro flow -> reproduction -> fix -> re-verify
+- the current bug-focused loop now also has persisted repro evidence, rerun support, and regression support after code changes
+- avoid inheriting old system features such as open-ended NL routing, broad orchestration, and Figma workflows
+
+Direction note:
+
+- the current preferred direction is recorded in [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
+- the first concrete core-loop contract slice is recorded in [2026-04-14-gpf-bug-intake-and-assertion-contract.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-bug-intake-and-assertion-contract.md)
+- the current rule for using real bugs in the test project is recorded in [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
+- the current next-step implementation plan is recorded in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
+- the current mainline follow-up after real-bug rounds is recorded in [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
 
 ## What Is Already Working
 
@@ -44,6 +54,152 @@ The following V2 capabilities are already implemented in `v2/`:
 - project-specific target inference now covers a broader button-to-scene pattern, not just one hard-coded testgame path
 - `run_basic_flow` now syncs the latest repository plugin into the target project before preflight and launch
 - experimental Windows `isolated_runtime` can launch the tested Godot runtime on a dedicated desktop and verify teardown against that runtime process
+- `collect_bug_report`
+- `analyze_bug_report`
+- `observe_bug_context`
+- `define_bug_checks`
+- `define_bug_assertions`
+- `plan_bug_investigation`
+- `plan_bug_repro_flow`
+- `run_bug_repro_flow`
+- `rerun_bug_repro_flow`
+- `plan_bug_fix`
+- `apply_bug_fix`
+- `run_bug_fix_regression`
+- `verify_bug_fix`
+- `start_test_project_bug_round`
+- `seed_test_project_bug`
+- `restore_test_project_bug_round`
+- bug-focused repro results are now persisted under `pointer_gpf/tmp/last_bug_repro_result.json`
+- bug-focused rerun verification is now persisted under `pointer_gpf/tmp/last_bug_fix_verification.json`
+- bug-fix regression results are now persisted under `pointer_gpf/tmp/last_bug_fix_regression.json`
+- bug-fix verification summary is now persisted under `pointer_gpf/tmp/last_bug_fix_verification_summary.json`
+- real-bug round state is now persisted under `pointer_gpf/tmp/bug_dev_rounds/<round_id>/`
+- bug rounds now write `baseline_manifest.json`, `bug_injection_plan.json`, `restore_plan.json`, and per-bug `bug_cases/<bug_id>.json`
+- the current injected real bug kinds include:
+  - `button_signal_or_callback_broken`
+  - `scene_transition_not_triggered`
+  - `button_node_renamed_in_scene`
+  - `pointer_hud_not_spawned`
+- bug-focused repro classification now separates:
+  - `precondition_failed`
+  - `trigger_failed`
+  - `bug_reproduced`
+  - `bug_not_reproduced`
+  - `runtime_invalid`
+- `observe_bug_context` now returns a model-usable summary of:
+  - startup scene
+  - bug intake and bug analysis
+  - current assertion set
+  - project-local basicflow hints
+  - latest runtime diagnostics summary
+  - latest persisted repro result summary
+  - latest fix verification summary
+  - candidate file read order
+- `plan_bug_investigation` now returns:
+  - grouped runtime actions
+  - executable check candidates
+  - a machine-readable `executable_check_set`
+  - failure branches by repro status
+  - repair focus candidates
+  - recommended next tools for the current bug workflow
+- `define_bug_checks` now returns a bounded executable check set with:
+  - assertion-linked check ids
+  - mapped flow step ids when a candidate flow step already exists
+  - explicit runtime actions such as `wait` and `check`
+- `run_bug_repro_flow` now persists:
+  - `executable_checks`
+  - `check_results`
+  - `check_summary`
+- `plan_bug_fix` now reads persisted repro check evidence and returns:
+  - `evidence_summary`
+  - `acceptance_checks`
+  - candidate files ordered with observation evidence
+  - fix goals derived from failed checks when possible
+- `plan_bug_fix` no longer reruns repro internally; it reads the persisted repro result for the current project
+
+## Current Limitation
+
+The repository now has stable real-bug round management, but the model still does not have enough structured observation and planning support to drive the full bug loop by itself.
+
+What is already implemented:
+
+- baseline recording for the external test project before bug injection
+- real bug injection tools
+- bug-case files that bind repair runs to a known injected bug
+- restore tools that return the test project to the recorded baseline
+- restore verification written to a durable result file
+
+What is still limited:
+
+- bug reasoning is still stronger than bug execution planning
+- the model still does not receive enough structured project/runtime evidence by default
+- the model still does not yet generate a rich executable investigation plan by default
+- `apply_bug_fix` still relies on a narrow set of constrained strategies instead of a broader evidence-backed edit workflow
+
+Current judgment:
+
+- the repository now has controlled test-project bug lifecycle management
+- the next implementation area inside bug work should be improving model-guided observation, executable checking, and fix planning within bounded execution rules
+
+## Deferred TODO
+
+These areas are not the current mainline, unless they directly block the new core bug loop:
+
+- stronger `input isolation` guarantees and validation
+- more `basicflow` productization work beyond the current already-working scope
+- regression-bundle final cleanup for `play_mode` runs: after the full module/CLI test set plus fixed regression finishes, exit all remaining Godot processes for the current project only
+- shared-desktop `play_mode` hang / `未响应` symptom after regression teardown, especially when the user manually interacts with the leftover project editor window
+
+Current judgment:
+
+- `input isolation` should be recorded as later-stage work
+- additional `basicflow` expansion should also be recorded as later-stage work
+- the regression final-cleanup issue should also be recorded as later-stage work
+- the real-bug round system should now be treated as validation infrastructure rather than as the main product center
+- the next mainline should move toward model-driven bug investigation, model-driven executable checks, and evidence-backed repair planning
+
+Deferred cleanup constraint:
+
+- when this cleanup work is implemented, it must target only Godot processes that belong to the current `--project-root`
+- if other Godot editors or runtimes from different projects are open on the same machine, they must not be terminated by this cleanup
+- the current observed behavior is that `closeProject` + teardown verification in shared `play_mode` accepts one remaining editor process for the project, so the fixed regression bundle can end with a leftover project editor window
+
+## Next Mainline Direction
+
+GPF should now be treated as:
+
+- a Godot gray-box testing tool
+- a bug reproduction tool
+- a bug fixing assistant
+
+The next core loop should be:
+
+1. the user describes a bug in natural language
+2. GPF analyzes likely causes and affected areas
+3. GPF defines the correct non-bug state as explicit assertions
+4. GPF designs or updates a flow that can reach the bug
+5. GPF runs the flow to confirm reproduction
+6. GPF applies a fix
+7. GPF reruns the same bug-focused flow after the code change
+8. GPF runs regression after the bug-focused rerun passes
+9. GPF reports one final verification result
+
+This should become the main product direction after the completed server split.
+
+The first concrete implementation slice inside that direction should be:
+
+1. `collect_bug_report`
+2. `analyze_bug_report`
+3. `define_bug_assertions`
+
+The next concrete implementation slice after the current repair-workflow code is now:
+
+1. strengthen structured project and runtime observation for bug work
+2. add a model-driven investigation-plan step that chooses actions and checks
+3. let the model generate bounded executable checks instead of relying only on a small fixed catalog
+4. move `apply_bug_fix` toward evidence-backed edit planning rather than default growth by fixed bug-kind handlers
+5. keep real-bug rounds as the validation method for the above work
 
 The current V2 structure lives under:
 
@@ -118,7 +274,7 @@ python -m unittest D:\AI\pointer_gpf\v2\tests\test_preflight.py D:\AI\pointer_gp
 
 Observed result:
 
-- latest fixed regression bundle currently exercises `Ran 66 tests`
+- the latest full V2 unit-test run in this workspace exercised `Ran 170 tests`
 - `OK`
 
 ### 4. V2 interactive flow

@@ -408,14 +408,16 @@ func _evaluate_hint_once(hint: String) -> Dictionary:
         return {"matched": true, "reason": "empty hint treated as pass"}
     if raw.to_lower() == "runtime_alive":
         return {"matched": true, "reason": "runtime bridge active"}
-    var expect_visible := raw.begins_with("node_visible:")
-    var expect_hidden := raw.begins_with("node_hidden:")
-    var node := _resolve_node_by_hint(raw)
-    if node == null:
-        return {"matched": false, "reason": "node not found"}
-    if expect_visible or expect_hidden:
-        if node is CanvasItem:
-            var vis := bool((node as CanvasItem).is_visible_in_tree())
+	var expect_visible := raw.begins_with("node_visible:")
+	var expect_hidden := raw.begins_with("node_hidden:")
+	var node := _resolve_node_by_hint(raw)
+	if node == null:
+		if expect_hidden:
+			return {"matched": true, "reason": "node not found treated as hidden"}
+		return {"matched": false, "reason": "node not found"}
+	if expect_visible or expect_hidden:
+		if node is CanvasItem:
+			var vis := bool((node as CanvasItem).is_visible_in_tree())
             if expect_visible:
                 return {"matched": vis, "reason": "node visibility"}
             return {"matched": not vis, "reason": "node hidden state"}

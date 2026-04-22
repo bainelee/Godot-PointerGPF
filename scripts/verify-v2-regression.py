@@ -435,34 +435,37 @@ def main() -> int:
     args = parser.parse_args()
 
     project_root = Path(args.project_root).resolve()
-    results = [
-        run_v2_unit_tests(),
-        run_preflight(project_root),
-        run_interactive_flow(project_root),
-        run_generation_questions(project_root),
-        run_basicflow_session_flow(project_root),
-        run_default_basicflow(project_root),
-        run_basicflow_stale_analysis(project_root),
-        run_stale_override_flow(project_root),
-        run_runtime_guards(project_root),
-    ]
-    if args.include_isolated_runtime:
-        results.extend(
-            [
-                run_isolated_runtime_flow(project_root, "basic_minimal_flow.json"),
-                run_isolated_runtime_flow(project_root, "basic_interactive_flow.json"),
-            ]
-        )
-    if args.include_host_activity:
-        results.extend(
-            [
-                run_isolated_runtime_host_activity_flow(project_root, "basic_minimal_flow.json"),
-                run_isolated_runtime_host_activity_flow(project_root, "basic_interactive_flow.json"),
-            ]
-        )
-    ok = all(item.get("ok", False) for item in results)
-    print(json.dumps({"ok": ok, "results": results}, ensure_ascii=False))
-    return 0 if ok else 2
+    try:
+        results = [
+            run_v2_unit_tests(),
+            run_preflight(project_root),
+            run_interactive_flow(project_root),
+            run_generation_questions(project_root),
+            run_basicflow_session_flow(project_root),
+            run_default_basicflow(project_root),
+            run_basicflow_stale_analysis(project_root),
+            run_stale_override_flow(project_root),
+            run_runtime_guards(project_root),
+        ]
+        if args.include_isolated_runtime:
+            results.extend(
+                [
+                    run_isolated_runtime_flow(project_root, "basic_minimal_flow.json"),
+                    run_isolated_runtime_flow(project_root, "basic_interactive_flow.json"),
+                ]
+            )
+        if args.include_host_activity:
+            results.extend(
+                [
+                    run_isolated_runtime_host_activity_flow(project_root, "basic_minimal_flow.json"),
+                    run_isolated_runtime_host_activity_flow(project_root, "basic_interactive_flow.json"),
+                ]
+            )
+        ok = all(item.get("ok", False) for item in results)
+        print(json.dumps({"ok": ok, "results": results}, ensure_ascii=False))
+        return 0 if ok else 2
+    finally:
+        _reset_runtime_state(project_root)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ Its current goal is intentionally narrow:
 
 - connect a Godot project to an executable test pipeline
 - generate and maintain a project-local `basicflow`
-- expose those capabilities through explicit tools and a bounded natural-language layer
+- drive bug reproduction, evidence collection, and repair planning through explicit tools and a bounded natural-language layer
 
 It is **not** trying to become an open-ended agent that understands everything.
 
@@ -30,6 +30,9 @@ The current V2 on `main` can:
 - verify teardown after the flow ends
 - reject overlapping flow runs and multiple-editor conflicts
 - provide a **bounded** natural-language entry layer
+- return bug observation summaries, investigation plans, and executable check sets
+- persist `executable_checks`, `check_results`, and `check_summary` into the repro artifact
+- return `evidence_summary`, `acceptance_checks`, candidate files, and fix goals from `plan_bug_fix`
 
 The supported high-frequency user request areas are currently:
 
@@ -38,6 +41,8 @@ The supported high-frequency user request areas are currently:
 - analyze why the basic flow is stale
 - run project preflight
 - configure the Godot executable path
+
+The current mainline has also shifted from “enumerate more fixed bug kinds” to “let the model decide how to inspect, check, and validate within explicit execution boundaries.”
 
 ## What It Is Not
 
@@ -52,6 +57,10 @@ For the current boundary, read:
 
 - [How to command GPF](./docs/v2-how-to-command-gpf.md)
 - [Natural-language boundary principles](./docs/v2-natural-language-boundary-principles.md)
+
+For the current product direction, read:
+
+- [2026-04-22 GPF Model-Driven Bug Loop Plan](./docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
 
 ## Recommended Starting Path
 
@@ -130,6 +139,37 @@ Run the basic flow:
 ```powershell
 python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame
 ```
+
+Generate bug observation, checks, and an investigation plan:
+
+```powershell
+python -m v2.mcp_core.server --tool observe_bug_context --project-root D:\AI\pointer_gpf_testgame --bug-report "clicking Start stays on the menu" --expected-behavior "the game should enter the level" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+python -m v2.mcp_core.server --tool define_bug_checks --project-root D:\AI\pointer_gpf_testgame --bug-report "clicking Start stays on the menu" --expected-behavior "the game should enter the level" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+python -m v2.mcp_core.server --tool plan_bug_investigation --project-root D:\AI\pointer_gpf_testgame --bug-report "clicking Start stays on the menu" --expected-behavior "the game should enter the level" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+```
+
+Run a bug repro in `play_mode` and read the evidence-backed fix plan:
+
+```powershell
+python -m v2.mcp_core.server --tool run_bug_repro_flow --project-root D:\AI\pointer_gpf_testgame --execution-mode play_mode --bug-report "clicking Start stays on the menu" --expected-behavior "the game should enter the level" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+python -m v2.mcp_core.server --tool plan_bug_fix --project-root D:\AI\pointer_gpf_testgame --bug-report "clicking Start stays on the menu" --expected-behavior "the game should enter the level" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+```
+
+## Current Practical Effect
+
+Today, after a user describes a bug, GPF can already:
+
+1. summarize project structure, runtime diagnostics, recent repro evidence, and recent verification evidence
+2. generate explicit checks instead of only giving a vague suggestion
+3. run the repro in real `play_mode` and persist which checks failed and which checks did not run
+4. build a repair plan from that evidence
+
+The current system is already useful for cases such as:
+
+- a UI click does not trigger a scene transition
+- a node is missing or renamed
+- a HUD does not appear after entering gameplay
+- a repro already fails reliably, but the team still needs clearer failure evidence and better candidate files
 
 ## Current Release Shape
 
