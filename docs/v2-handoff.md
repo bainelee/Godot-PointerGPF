@@ -19,6 +19,8 @@ When continuing V2 work in a new conversation, read these files first:
 13. [2026-04-14-gpf-bug-intake-and-assertion-contract.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-bug-intake-and-assertion-contract.md)
 14. [2026-04-21-gpf-stage-status-and-gap.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-stage-status-and-gap.md)
 15. [2026-04-21-gpf-next-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-next-development-plan.md)
+16. [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
+17. [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
 
 ## Current Repository Shape
 
@@ -97,6 +99,14 @@ Current bug-focused implementation status:
 - the combined verification summary is persisted under `pointer_gpf/tmp/last_bug_fix_verification_summary.json`
 - `plan_bug_fix` now reads persisted repro evidence instead of running a new repro internally
 - planner logic has been reduced to base flow reuse, explicit trigger insertion, and explicit precondition/postcondition steps
+
+Important current limitation:
+
+- the repository still does **not** yet implement baseline recording, bug injection, and restore for the external test project
+- there is currently no `pointer_gpf/tmp/bug_dev_rounds/` implementation in code
+- this means the repair-workflow tools exist, but the repository still lacks a stable real-bug round system
+- future development must follow [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
+- the next implementation order is defined in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
 
 ## Current Verification Commands
 
@@ -207,15 +217,15 @@ Fixed regression expectation:
 
 ## Next Implementation Target
 
-After the completed server split, the preferred next product-facing work is no longer more `basicflow` expansion by default.
+After the current repair-workflow implementation, the next target is no longer more planner or assertion refinement by default.
 
 Preferred next target:
 
-1. implement `collect_bug_report`
-2. implement `analyze_bug_report`
-3. implement `define_bug_assertions`
-4. then define how GPF chooses or patches a flow that can reproduce the bug
-5. then define the first reproduction -> fix -> re-verify slice
+1. implement test-project baseline recording
+2. implement real bug injection for the external test project
+3. implement bug-case files tied to injected bugs
+4. bind the existing repair tools to those bug cases
+5. implement restore and restore verification
 
 Latest implementation note:
 
@@ -306,5 +316,5 @@ Check in this order:
 Use this starter:
 
 ```text
-继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-14-gpf-core-direction.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出，再开始设计 bug 描述 -> 原因分析 -> 正确状态断言 -> repro flow -> 修复 -> 回归验证 的第一条主线切片，并同步补测试与文档。
+继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md、docs/2026-04-22-gpf-real-bug-development-plan.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出。接着先检查仓库里是否已经有 baseline 记录、bug 注入、restore 的实际实现；如果没有，就从 test-project bug round 管理开始做，不要继续扩 planner heuristic，并同步补测试与文档。
 ```

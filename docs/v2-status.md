@@ -17,6 +17,8 @@ Direction note:
 
 - the current preferred direction is recorded in [2026-04-14-gpf-core-direction.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-core-direction.md)
 - the first concrete core-loop contract slice is recorded in [2026-04-14-gpf-bug-intake-and-assertion-contract.md](/D:/AI/pointer_gpf/docs/2026-04-14-gpf-bug-intake-and-assertion-contract.md)
+- the current rule for using real bugs in the test project is recorded in [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
+- the current next-step implementation plan is recorded in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
 
 ## What Is Already Working
 
@@ -73,6 +75,23 @@ The following V2 capabilities are already implemented in `v2/`:
   - `runtime_invalid`
 - `plan_bug_fix` no longer reruns repro internally; it reads the persisted repro result for the current project
 
+## Current Limitation
+
+The current bug-focused repair workflow code is not yet enough for stable real-bug development rounds.
+
+What is still missing:
+
+- baseline recording for the external test project before bug injection
+- real bug injection tools
+- restore tools that return the test project to the recorded baseline
+- bug-case files that bind repair runs to a known injected bug
+
+Current judgment:
+
+- the repository already has repair-workflow execution code
+- the repository does **not** yet have controlled test-project bug lifecycle management
+- this is now the next required implementation area
+
 ## Deferred TODO
 
 These areas are not the current mainline, unless they directly block the new core bug loop:
@@ -87,7 +106,7 @@ Current judgment:
 - `input isolation` should be recorded as later-stage work
 - additional `basicflow` expansion should also be recorded as later-stage work
 - the regression final-cleanup issue should also be recorded as later-stage work
-- the next mainline should move back toward bug-focused gray-box testing and repair
+- the next mainline should move toward controlled real-bug rounds for bug-focused gray-box testing and repair
 
 Deferred cleanup constraint:
 
@@ -122,6 +141,13 @@ The first concrete implementation slice inside that direction should be:
 1. `collect_bug_report`
 2. `analyze_bug_report`
 3. `define_bug_assertions`
+
+The next concrete implementation slice after the current repair-workflow code should now be:
+
+1. record baseline state for the test project
+2. inject one or more real bugs into the test project
+3. bind the repair workflow to those real bug cases
+4. restore the test project after the development round
 
 The current V2 structure lives under:
 
