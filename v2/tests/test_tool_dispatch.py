@@ -241,6 +241,196 @@ class ToolDispatchTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.assertion_set.v1")
 
+    def test_dispatch_define_bug_checks_returns_check_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type(
+                "Args",
+                (),
+                {
+                    "tool": "define_bug_checks",
+                    "bug_report": "点击开始游戏没有反应",
+                    "bug_summary": None,
+                    "expected_behavior": "应该进入关卡",
+                    "steps_to_trigger": "启动游戏|点击开始游戏",
+                    "location_scene": "res://scenes/boot.tscn",
+                    "location_node": "StartButton",
+                    "location_script": "",
+                    "frequency_hint": "always",
+                    "severity_hint": "core_progression_blocker",
+                },
+            )()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+                define_bug_checks=lambda project_root_arg, args_arg: {
+                    "schema": "pointer_gpf.v2.check_set.v1",
+                    "project_root": str(project_root_arg),
+                    "bug_summary": args_arg.bug_report,
+                    "checks": [],
+                },
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.check_set.v1")
+
+    def test_dispatch_observe_bug_context_returns_observation_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type(
+                "Args",
+                (),
+                {
+                    "tool": "observe_bug_context",
+                    "bug_report": "点击开始游戏没有反应",
+                    "bug_summary": None,
+                    "expected_behavior": "应该进入关卡",
+                    "steps_to_trigger": "启动游戏|点击开始游戏",
+                    "location_scene": "res://scenes/boot.tscn",
+                    "location_node": "StartButton",
+                    "location_script": "",
+                    "frequency_hint": "always",
+                    "severity_hint": "core_progression_blocker",
+                },
+            )()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+                observe_bug_context=lambda project_root_arg, args_arg: {
+                    "schema": "pointer_gpf.v2.bug_observation.v1",
+                    "project_root": str(project_root_arg),
+                    "bug_summary": args_arg.bug_report,
+                },
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.bug_observation.v1")
+
+    def test_dispatch_plan_bug_investigation_returns_plan_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type(
+                "Args",
+                (),
+                {
+                    "tool": "plan_bug_investigation",
+                    "bug_report": "点击开始游戏没有反应",
+                    "bug_summary": None,
+                    "expected_behavior": "应该进入关卡",
+                    "steps_to_trigger": "启动游戏|点击开始游戏",
+                    "location_scene": "res://scenes/boot.tscn",
+                    "location_node": "StartButton",
+                    "location_script": "",
+                    "frequency_hint": "always",
+                    "severity_hint": "core_progression_blocker",
+                },
+            )()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+                plan_bug_investigation=lambda project_root_arg, args_arg: {
+                    "schema": "pointer_gpf.v2.bug_investigation_plan.v1",
+                    "project_root": str(project_root_arg),
+                    "bug_summary": args_arg.bug_report,
+                },
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.bug_investigation_plan.v1")
+
     def test_dispatch_plan_bug_repro_flow_returns_plan_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -746,6 +936,144 @@ class ToolDispatchTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["error"]["code"], "BASICFLOW_GENERATION_ANSWERS_REQUIRED")
+
+    def test_dispatch_start_test_project_bug_round_returns_round_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type("Args", (), {"tool": "start_test_project_bug_round"})()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+                start_test_project_bug_round=lambda *_: {"schema": "pointer_gpf.v2.test_project_bug_round_start.v1", "status": "round_started"},
+                seed_test_project_bug=lambda *_: {},
+                restore_test_project_bug_round=lambda *_: {},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "round_started")
+
+    def test_dispatch_seed_test_project_bug_returns_seed_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type("Args", (), {"tool": "seed_test_project_bug"})()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+                start_test_project_bug_round=lambda *_: {},
+                seed_test_project_bug=lambda *_: {"schema": "pointer_gpf.v2.test_project_bug_seed.v1", "status": "bug_seeded"},
+                restore_test_project_bug_round=lambda *_: {},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "bug_seeded")
+
+    def test_dispatch_restore_test_project_bug_round_returns_restore_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type("Args", (), {"tool": "restore_test_project_bug_round"})()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+                start_test_project_bug_round=lambda *_: {},
+                seed_test_project_bug=lambda *_: {},
+                restore_test_project_bug_round=lambda *_: {"schema": "pointer_gpf.v2.test_project_bug_restore.v1", "status": "restored_and_verified"},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "restored_and_verified")
 
 
 if __name__ == "__main__":

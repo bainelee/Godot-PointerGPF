@@ -181,6 +181,29 @@
 - 若是主动注入的，具体修改了哪些文件
 - 当前是否已经恢复测试项目
 
+## 功能继续建议格式
+
+以后凡是 agent 询问用户“是否继续做某一功能”“是否继续往下实现某一块能力”，不得只给功能名或一句简短提议。
+
+必须同时明确说明以下内容：
+
+1. **这一功能是什么**
+   - 要落到具体文件、工具入口、行为变化或命令层级
+   - 禁止只写抽象名词，不解释实际改动范围
+2. **完成之后会达成什么效果**
+   - 要说明用户实际如何使用
+   - 要说明输入什么，系统会输出什么，在哪类场景下能减少什么人工操作
+3. **为什么这件事有价值**
+   - 要分别说明对用户的价值
+   - 也要说明对 agent 后续继续开发、验证、排障的价值
+
+推荐汇报结构：
+
+- `功能`：这次准备继续做什么
+- `完成效果`：做完后用户实际能怎么用
+- `价值`：为什么对用户和后续开发都重要
+- `下一步范围`：本轮准备连续完成哪些内容，而不是只停在一个小点
+
 ## Superpowers 引用名（便于检索）
 
 执行计划类任务时优先使用：`superpowers:subagent-driven-development`、`superpowers:executing-plans`、`superpowers:verification-before-completion`、`superpowers:systematic-debugging`、`superpowers:test-driven-development`、`superpowers:writing-plans`。

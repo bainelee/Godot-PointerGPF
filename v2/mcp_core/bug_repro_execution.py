@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from .bug_checks import build_executable_checks, summarize_check_results
 from .contracts import ERR_ENGINE_RUNTIME_STALLED, ERR_STEP_FAILED, ERR_TEARDOWN_VERIFICATION_FAILED, ERR_TIMEOUT
 from .bug_repro_flow import plan_bug_repro_flow
 
@@ -182,6 +183,25 @@ def _bug_identity(plan_payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _bug_round_metadata(plan_payload: dict[str, Any]) -> dict[str, str]:
+    intake = plan_payload.get("assertion_set", {}).get("bug_analysis", {}).get("bug_intake", {})
+    if not isinstance(intake, dict):
+        return {
+            "round_id": "",
+            "bug_id": "",
+            "bug_source": "pre_existing",
+            "injected_bug_kind": "",
+            "bug_case_file": "",
+        }
+    return {
+        "round_id": str(intake.get("round_id", "")).strip(),
+        "bug_id": str(intake.get("bug_id", "")).strip(),
+        "bug_source": str(intake.get("bug_source", "pre_existing")).strip() or "pre_existing",
+        "injected_bug_kind": str(intake.get("injected_bug_kind", "")).strip(),
+        "bug_case_file": str(intake.get("bug_case_file", "")).strip(),
+    }
+
+
 def _classify_failed_phase(plan_payload: dict[str, Any], details: dict[str, Any]) -> str:
     contract = plan_payload.get("execution_contract", {})
     if not isinstance(contract, dict):
@@ -245,6 +265,19 @@ def _execute_repro_plan(
 
     repro_gap = _build_repro_gap(plan_payload, status)
     refinement_plan = _build_refinement_plan(plan_payload, status, repro_gap)
+    checks = build_executable_checks(
+        plan_payload.get("assertion_set", {}) if isinstance(plan_payload.get("assertion_set", {}), dict) else {},
+        plan_payload.get("candidate_flow", {}) if isinstance(plan_payload.get("candidate_flow", {}), dict) else {},
+    )
+    check_result_bundle = summarize_check_results(
+        plan_payload.get("candidate_flow", {}) if isinstance(plan_payload.get("candidate_flow", {}), dict) else {},
+        checks,
+        run_ok=bool(raw_payload.get("ok", False)),
+        failed_step_id=str(details.get("step_id", "")).strip(),
+        failure_status=status,
+        error_code=error_code,
+        error_message=error_message,
+    )
     payload = {
         "schema": schema,
         "project_root": str(project_root.resolve()),
@@ -258,6 +291,9 @@ def _execute_repro_plan(
         "failed_phase": failed_phase,
         "repro_gap": repro_gap,
         "refinement_plan": refinement_plan,
+        "executable_checks": checks,
+        "check_results": check_result_bundle.get("results", []),
+        "check_summary": check_result_bundle.get("summary", {}),
         "raw_run_result": raw_payload,
         "run_exit_code": exit_code,
         "blocking_point": error_message if status in {"precondition_failed", "trigger_failed", "runtime_invalid"} else "",
@@ -277,6 +313,7 @@ def _execute_repro_plan(
             )
         ),
     }
+    payload.update(_bug_round_metadata(plan_payload))
     if source_repro_artifact:
         payload["source_repro_artifact"] = source_repro_artifact
     artifact_file = write_artifact(project_root, payload)
@@ -318,6 +355,11 @@ def rerun_bug_repro_flow(
             "schema": "pointer_gpf.v2.repro_rerun.v1",
             "project_root": str(project_root.resolve()),
             "bug_summary": "",
+            "round_id": "",
+            "bug_id": "",
+            "bug_source": "pre_existing",
+            "injected_bug_kind": "",
+            "bug_case_file": "",
             "status": "verification_not_ready",
             "reproduction_confirmed": False,
             "execution_mode": normalize_execution_mode(getattr(args, "execution_mode", "play_mode")),
@@ -340,6 +382,11 @@ def rerun_bug_repro_flow(
             "schema": "pointer_gpf.v2.repro_rerun.v1",
             "project_root": str(project_root.resolve()),
             "bug_summary": str(source_payload.get("bug_summary", "")).strip(),
+            "round_id": str(source_payload.get("round_id", "")).strip(),
+            "bug_id": str(source_payload.get("bug_id", "")).strip(),
+            "bug_source": str(source_payload.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(source_payload.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(source_payload.get("bug_case_file", "")).strip(),
             "status": "verification_not_ready",
             "reproduction_confirmed": False,
             "execution_mode": normalize_execution_mode(getattr(args, "execution_mode", "play_mode")),

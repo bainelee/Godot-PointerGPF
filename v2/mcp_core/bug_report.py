@@ -4,6 +4,8 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+from .test_project_bug_case import bug_case_request_metadata, merged_bug_report_payload
+
 
 def _clean_text(raw: Any) -> str:
     return str(raw or "").strip()
@@ -20,13 +22,15 @@ def _first_sentence(text: str) -> str:
 
 
 def collect_bug_report(project_root: Path, args: Namespace) -> dict[str, Any]:
-    observed_behavior = _clean_text(getattr(args, "bug_report", None))
-    expected_behavior = _clean_text(getattr(args, "expected_behavior", None))
-    summary = _clean_text(getattr(args, "bug_summary", None)) or _first_sentence(observed_behavior)
-    steps_raw = _clean_text(getattr(args, "steps_to_trigger", None))
-    location_scene = _clean_text(getattr(args, "location_scene", None))
-    location_node = _clean_text(getattr(args, "location_node", None))
-    location_script = _clean_text(getattr(args, "location_script", None))
+    merged = merged_bug_report_payload(args)
+    observed_behavior = _clean_text(merged.get("bug_report", ""))
+    expected_behavior = _clean_text(merged.get("expected_behavior", ""))
+    summary = _clean_text(getattr(args, "bug_summary", None)) or _clean_text(merged.get("bug_summary", "")) or _first_sentence(observed_behavior)
+    steps_raw = _clean_text(merged.get("steps_to_trigger", ""))
+    location_scene = _clean_text(merged.get("location_scene", ""))
+    location_node = _clean_text(merged.get("location_node", ""))
+    location_script = _clean_text(merged.get("location_script", ""))
+    bug_case_metadata = bug_case_request_metadata(args)
 
     missing_fields: list[str] = []
     if not observed_behavior:
@@ -53,9 +57,14 @@ def collect_bug_report(project_root: Path, args: Namespace) -> dict[str, Any]:
             "node": location_node,
             "script": location_script,
         },
-        "frequency_hint": _clean_text(getattr(args, "frequency_hint", None)),
-        "severity_hint": _clean_text(getattr(args, "severity_hint", None)),
+        "frequency_hint": _clean_text(merged.get("frequency_hint", "")),
+        "severity_hint": _clean_text(merged.get("severity_hint", "")),
         "extra_context": {
             "user_words": observed_behavior,
         },
+        "bug_case_file": str(bug_case_metadata.get("bug_case_file", "")).strip(),
+        "round_id": str(bug_case_metadata.get("round_id", "")).strip(),
+        "bug_id": str(bug_case_metadata.get("bug_id", "")).strip(),
+        "bug_source": str(bug_case_metadata.get("bug_source", "pre_existing")).strip() or "pre_existing",
+        "injected_bug_kind": str(bug_case_metadata.get("injected_bug_kind", "")).strip(),
     }

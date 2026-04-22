@@ -149,6 +149,133 @@ class BugFixApplicationTests(unittest.TestCase):
         self.assertIn("strategy", payload["applied_changes"][0])
         self.assertEqual(payload["applied_changes"][0]["strategy"], "add_scene_transition_call")
 
+    def test_apply_bug_fix_does_not_treat_scene_constant_as_existing_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            script_path = project_root / "scripts" / "main_menu_flow.gd"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(
+                "\n".join(
+                    [
+                        "extends CanvasLayer",
+                        'const GAME_LEVEL := "res://scenes/game_level.tscn"',
+                        "",
+                        "func _on_start_button_pressed() -> void:",
+                        "\tvar err := OK",
+                        "\tif err != OK:",
+                        "\t\tprint(err)",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = apply_bug_fix(
+                project_root,
+                argparse.Namespace(),
+                plan_bug_fix_fn=lambda *_: {
+                    "bug_summary": "点击开始游戏没有反应",
+                    "status": "fix_ready",
+                    "candidate_files": [
+                        {
+                            "path": "res://scripts/main_menu_flow.gd",
+                            "absolute_path": str(script_path),
+                        }
+                    ],
+                    "repro_run": {
+                        "repro_flow_plan": {
+                            "assertion_set": {
+                                "assertions": [
+                                    {
+                                        "id": "target_scene_reached",
+                                        "target": {"scene": "res://scenes/game_level.tscn"},
+                                    }
+                                ],
+                                "bug_analysis": {
+                                    "bug_intake": {
+                                        "location_hint": {
+                                            "node": "StartButton",
+                                        }
+                                    },
+                                    "suspected_causes": [
+                                        {"kind": "scene_transition_not_triggered"},
+                                    ],
+                                }
+                            }
+                        }
+                    },
+                },
+            )
+
+            updated = script_path.read_text(encoding="utf-8")
+
+        self.assertEqual(payload["status"], "fix_applied")
+        self.assertIn("_gpf_change_to_expected_scene()", updated)
+
+    def test_apply_bug_fix_restores_seeded_scene_transition_placeholder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            script_path = project_root / "scripts" / "main_menu_flow.gd"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(
+                "\n".join(
+                    [
+                        "extends CanvasLayer",
+                        "",
+                        "func _on_start_button_pressed() -> void:",
+                        "\tvar tree := get_tree()",
+                        "\tvar err := OK  # gpf_seeded_bug:scene_transition_disabled",
+                        "\tif err != OK:",
+                        "\t\tprint(err)",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = apply_bug_fix(
+                project_root,
+                argparse.Namespace(),
+                plan_bug_fix_fn=lambda *_: {
+                    "bug_summary": "点击开始游戏没有反应",
+                    "status": "fix_ready",
+                    "candidate_files": [
+                        {
+                            "path": "res://scripts/main_menu_flow.gd",
+                            "absolute_path": str(script_path),
+                        }
+                    ],
+                    "repro_run": {
+                        "repro_flow_plan": {
+                            "assertion_set": {
+                                "assertions": [
+                                    {
+                                        "id": "target_scene_reached",
+                                        "target": {"scene": "res://scenes/game_level.tscn"},
+                                    }
+                                ],
+                                "bug_analysis": {
+                                    "bug_intake": {
+                                        "location_hint": {
+                                            "node": "StartButton",
+                                        }
+                                    },
+                                    "suspected_causes": [
+                                        {"kind": "scene_transition_not_triggered"},
+                                    ],
+                                }
+                            }
+                        }
+                    },
+                },
+            )
+
+            updated = script_path.read_text(encoding="utf-8")
+
+        self.assertEqual(payload["status"], "fix_applied")
+        self.assertIn('var err := tree.change_scene_to_file("res://scenes/game_level.tscn")', updated)
+        self.assertNotIn("gpf_seeded_bug:scene_transition_disabled", updated)
+
 
 if __name__ == "__main__":
     unittest.main()

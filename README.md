@@ -11,7 +11,7 @@ Pointer GPF 是一个面向 **Godot 灰盒测试** 的 MCP 工具链。
 它当前的目标很明确：
 
 - 帮你把 Godot 工程接入可执行的测试链路
-- 帮你围绕 Godot 游戏 bug 做灰盒测试、复现与修复
+- 帮你围绕 Godot 游戏 bug 做灰盒测试、复现、证据整理与修复
 - 帮你用受约束的自然语言和显式工具来驱动这些能力
 
 它当前**不是**一个“什么都能理解、什么都能自动处理”的开放式代理。
@@ -30,12 +30,16 @@ Pointer GPF 是一个面向 **Godot 灰盒测试** 的 MCP 工具链。
 - 在流程结束后验证 teardown 是否真的完成
 - 拒绝同工程并发 flow、拒绝多编辑器冲突
 - 提供一组**受约束的自然语言入口**
+- 围绕 bug 返回观察摘要、调查计划、可执行检查集合
+- 在 repro artifact 中持久化 `executable_checks`、`check_results`、`check_summary`
+- 在 fix plan 中返回 `evidence_summary`、`acceptance_checks`、候选文件和修复目标
 
 当前主线判断也已经调整为：
 
 - `input isolation` 的进一步完善记为后期 TODO
 - `basicflow` 的进一步补充增强记为后期 TODO
 - 下一阶段主线回到 GPF 的核心产品能力
+- 当前主线已经从“继续枚举更多固定 bug 类型”转向“让模型基于项目事实决定如何检查、如何验证、如何形成修复计划”
 
 如果你想看这个方向文档，请读：
 
@@ -67,8 +71,27 @@ GPF 后续应该主要围绕这条链路继续开发：
 3. GPF 定义“没有这个 bug 时应该成立”的显式断言
 4. GPF 设计或更新能够触及该 bug 的测试流
 5. GPF 自动运行测试流，确认 bug 可以复现
-6. GPF 修改项目代码尝试修复
-7. GPF 再次运行测试流与断言，确认修复生效
+6. GPF 先生成并执行受约束的检查集合，得到结构化证据
+7. GPF 基于这些证据形成修复计划
+8. GPF 修改项目代码尝试修复
+9. GPF 再次运行测试流与断言，确认修复生效
+
+当前已经实现的重点是：
+
+- bug 观察摘要
+- 调查计划
+- 可执行检查集合
+- repro 后的检查结果归档
+- 证据化修复计划
+
+当前还没有实现的是：
+
+- 完全通用的自动代码修复代理
+- 脱离受约束编辑边界的开放式修复
+
+如果你想了解当前产品方向，请读：
+
+- [2026-04-22 GPF Model-Driven Bug Loop Plan](./docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
 
 如果你想了解当前自然语言边界，请直接看：
 
@@ -152,6 +175,37 @@ python -m v2.mcp_core.server --tool get_basic_flow_generation_questions --projec
 ```powershell
 python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame
 ```
+
+围绕 bug 生成观察、检查与调查计划：
+
+```powershell
+python -m v2.mcp_core.server --tool observe_bug_context --project-root D:\AI\pointer_gpf_testgame --bug-report "点击开始后仍停留在开始界面" --expected-behavior "应该进入关卡" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+python -m v2.mcp_core.server --tool define_bug_checks --project-root D:\AI\pointer_gpf_testgame --bug-report "点击开始后仍停留在开始界面" --expected-behavior "应该进入关卡" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+python -m v2.mcp_core.server --tool plan_bug_investigation --project-root D:\AI\pointer_gpf_testgame --bug-report "点击开始后仍停留在开始界面" --expected-behavior "应该进入关卡" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+```
+
+运行 repro 并读取证据化修复计划：
+
+```powershell
+python -m v2.mcp_core.server --tool run_bug_repro_flow --project-root D:\AI\pointer_gpf_testgame --execution-mode play_mode --bug-report "点击开始后仍停留在开始界面" --expected-behavior "应该进入关卡" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+python -m v2.mcp_core.server --tool plan_bug_fix --project-root D:\AI\pointer_gpf_testgame --bug-report "点击开始后仍停留在开始界面" --expected-behavior "应该进入关卡" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
+```
+
+## 当前实际效果
+
+现在用户描述一个 bug 之后，GPF 已经会：
+
+1. 整理项目结构、运行诊断、最近 repro、最近 verification
+2. 生成一组明确检查，而不是只给一句笼统建议
+3. 在真实 `play_mode` 运行后，把失败检查和未执行检查写入 artifact
+4. 用这些检查证据形成修复计划
+
+它当前比较适合的场景是：
+
+- UI 点击后没有切换场景
+- 节点不存在或节点名不对
+- 进入关卡后 HUD 没有出现
+- 某条 repro 已经能稳定失败，但需要更明确的失败证据和候选修复文件
 
 ## 当前 release 形态
 

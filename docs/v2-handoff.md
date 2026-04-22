@@ -21,6 +21,7 @@ When continuing V2 work in a new conversation, read these files first:
 15. [2026-04-21-gpf-next-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-next-development-plan.md)
 16. [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
 17. [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
+18. [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
 
 ## Current Repository Shape
 
@@ -76,8 +77,8 @@ Verified:
 - V2 has an experimental Windows `isolated_runtime` mode for `run_basic_flow`
 - `run_basic_flow` now returns an `isolation` object so callers can distinguish shared desktop vs isolated desktop execution
 - isolated-runtime payloads now also include `host_desktop_name` and `separate_desktop`
-- V2 fixed regression now passes with `Ran 66 tests`, `OK`
-- after the server-split and test migration work, the fixed regression bundle now reports `v2_unit_tests` with `Ran 81 tests`, `OK`
+- the latest repository-wide V2 unit-test run in this workspace passed with `Ran 170 tests`, `OK`
+- the latest fixed regression bundle against `D:\AI\pointer_gpf_testgame` reported `v2_unit_tests` with `Ran 91 tests`, `OK`
 - V2 rejects overlapping flow runs for one project with `FLOW_ALREADY_RUNNING`
 - V2 rejects manual multi-editor runs for one project with `MULTIPLE_EDITOR_PROCESSES_DETECTED`
 - user language like `跑基础测试流程` should be interpreted as `run_basic_flow`
@@ -92,6 +93,8 @@ Current product-priority judgment:
 Current bug-focused implementation status:
 
 - `collect_bug_report`, `analyze_bug_report`, `define_bug_assertions`, `plan_bug_repro_flow`, `run_bug_repro_flow`, `rerun_bug_repro_flow`, `plan_bug_fix`, `apply_bug_fix`, `run_bug_fix_regression`, and `verify_bug_fix` now exist on the CLI/tool path
+- `observe_bug_context`, `define_bug_checks`, and `plan_bug_investigation` now also exist on the CLI/tool path
+- `start_test_project_bug_round`, `seed_test_project_bug`, and `restore_test_project_bug_round` now also exist on the CLI/tool path
 - bug-focused repro no longer classifies by failed step guessing; it now classifies by execution phase
 - bug-focused repro results are persisted under `pointer_gpf/tmp/last_bug_repro_result.json`
 - rerun verification after a code change is persisted under `pointer_gpf/tmp/last_bug_fix_verification.json`
@@ -99,14 +102,28 @@ Current bug-focused implementation status:
 - the combined verification summary is persisted under `pointer_gpf/tmp/last_bug_fix_verification_summary.json`
 - `plan_bug_fix` now reads persisted repro evidence instead of running a new repro internally
 - planner logic has been reduced to base flow reuse, explicit trigger insertion, and explicit precondition/postcondition steps
+- `observe_bug_context` now summarizes startup scene, current assertion set, project-local basicflow hints, runtime diagnostics, latest repro evidence, latest fix verification, and candidate file read order for model use
+- `define_bug_checks` now returns a bounded executable check set with assertion-linked check ids and mapped flow step ids where available
+- `plan_bug_investigation` now turns that observation into grouped runtime actions, executable check candidates, a machine-readable executable check set, failure branches, and repair focus candidates
+- bug-focused repro artifacts now also persist `executable_checks`, `check_results`, and `check_summary`
+- `plan_bug_fix` now reads persisted repro check evidence and returns `evidence_summary` plus `acceptance_checks` for rerun
+- real-bug rounds now persist under `pointer_gpf/tmp/bug_dev_rounds/<round_id>/`
+- each round now records `baseline_manifest.json`, `bug_injection_plan.json`, `restore_plan.json`, and per-bug `bug_cases/<bug_id>.json`
+- the current injected real bug kinds include:
+  - `button_signal_or_callback_broken`
+  - `scene_transition_not_triggered`
+  - `button_node_renamed_in_scene`
+  - `pointer_hud_not_spawned`
 
 Important current limitation:
 
-- the repository still does **not** yet implement baseline recording, bug injection, and restore for the external test project
-- there is currently no `pointer_gpf/tmp/bug_dev_rounds/` implementation in code
-- this means the repair-workflow tools exist, but the repository still lacks a stable real-bug round system
-- future development must follow [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
-- the next implementation order is defined in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
+- the repository now implements baseline recording, bug injection, bug-case files, and restore for the external test project
+- the current mainline limitation is broader than one missing fix strategy: the model still does not have enough structured observation and planning support to drive the whole bug loop by itself
+- `apply_bug_fix` is still narrower than the intended product direction because it relies on a small fixed strategy set instead of a broader evidence-backed edit workflow
+- newer injected bug kinds can be used for controlled real-bug rounds, but those rounds should now be treated mainly as evaluation infrastructure for model-driven bug work
+- future development must continue following [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
+- the implementation order that led to the current round system is defined in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
+- the mainline follow-up after that round system is defined in [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
 
 ## Current Verification Commands
 
@@ -221,11 +238,11 @@ After the current repair-workflow implementation, the next target is no longer m
 
 Preferred next target:
 
-1. implement test-project baseline recording
-2. implement real bug injection for the external test project
-3. implement bug-case files tied to injected bugs
-4. bind the existing repair tools to those bug cases
-5. implement restore and restore verification
+1. strengthen structured project and runtime observation for bug work
+2. add a model-driven investigation-plan step that chooses runtime actions and checks
+3. let the model generate bounded executable checks from project evidence
+4. move fix planning away from default growth by fixed bug-kind handlers
+5. keep the real-bug round system stable as validation infrastructure
 
 Latest implementation note:
 
@@ -316,5 +333,5 @@ Check in this order:
 Use this starter:
 
 ```text
-继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md、docs/2026-04-22-gpf-real-bug-development-plan.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出。接着先检查仓库里是否已经有 baseline 记录、bug 注入、restore 的实际实现；如果没有，就从 test-project bug round 管理开始做，不要继续扩 planner heuristic，并同步补测试与文档。
+继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md、docs/2026-04-22-gpf-real-bug-development-plan.md、docs/2026-04-22-gpf-model-driven-bug-loop-plan.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出。接着检查当前 real-bug round 工具、bug case 文件和恢复结果是否还与代码一致；如果一致，优先补模型可用的项目/运行观察、bug investigation plan 和 bounded executable checks，不要默认继续堆固定 bug 类型或固定修复分支。
 ```

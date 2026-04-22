@@ -46,6 +46,12 @@ class ToolDispatchApi:
     answer_basicflow_generation_session: Callable[[Path, str, str, str], dict[str, Any]]
     complete_basicflow_generation_session: Callable[[Path, str], dict[str, Any]]
     analyze_basicflow_staleness: Callable[[Path], dict[str, Any]]
+    define_bug_checks: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
+    observe_bug_context: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
+    plan_bug_investigation: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
+    start_test_project_bug_round: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
+    seed_test_project_bug: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
+    restore_test_project_bug_round: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
 
 
 def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[int, dict[str, Any]]:
@@ -100,6 +106,78 @@ def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[
     if args.tool == "define_bug_assertions":
         try:
             return 0, build_ok_payload(api.define_bug_assertions(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload(
+                ERR_BUG_REPORT_INCOMPLETE,
+                str(exc),
+                {
+                    "required_args": [
+                        "--bug-report",
+                        "--expected-behavior",
+                    ],
+                    "optional_args": [
+                        "--bug-summary",
+                        "--steps-to-trigger",
+                        "--location-scene",
+                        "--location-node",
+                        "--location-script",
+                        "--frequency-hint",
+                        "--severity-hint",
+                    ],
+                },
+            )
+
+    if args.tool == "define_bug_checks":
+        try:
+            return 0, build_ok_payload(api.define_bug_checks(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload(
+                ERR_BUG_REPORT_INCOMPLETE,
+                str(exc),
+                {
+                    "required_args": [
+                        "--bug-report",
+                        "--expected-behavior",
+                    ],
+                    "optional_args": [
+                        "--bug-summary",
+                        "--steps-to-trigger",
+                        "--location-scene",
+                        "--location-node",
+                        "--location-script",
+                        "--frequency-hint",
+                        "--severity-hint",
+                    ],
+                },
+            )
+
+    if args.tool == "observe_bug_context":
+        try:
+            return 0, build_ok_payload(api.observe_bug_context(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload(
+                ERR_BUG_REPORT_INCOMPLETE,
+                str(exc),
+                {
+                    "required_args": [
+                        "--bug-report",
+                        "--expected-behavior",
+                    ],
+                    "optional_args": [
+                        "--bug-summary",
+                        "--steps-to-trigger",
+                        "--location-scene",
+                        "--location-node",
+                        "--location-script",
+                        "--frequency-hint",
+                        "--severity-hint",
+                    ],
+                },
+            )
+
+    if args.tool == "plan_bug_investigation":
+        try:
+            return 0, build_ok_payload(api.plan_bug_investigation(project_root, args))
         except ValueError as exc:
             return 2, build_error_payload(
                 ERR_BUG_REPORT_INCOMPLETE,
@@ -258,6 +336,24 @@ def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[
                     ],
                 },
             )
+
+    if args.tool == "start_test_project_bug_round":
+        try:
+            return 0, build_ok_payload(api.start_test_project_bug_round(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload("INVALID_ARGUMENT", str(exc))
+
+    if args.tool == "seed_test_project_bug":
+        try:
+            return 0, build_ok_payload(api.seed_test_project_bug(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload("INVALID_ARGUMENT", str(exc))
+
+    if args.tool == "restore_test_project_bug_round":
+        try:
+            return 0, build_ok_payload(api.restore_test_project_bug_round(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload("INVALID_ARGUMENT", str(exc))
 
     if args.tool == "configure_godot_executable":
         if not args.godot_executable:

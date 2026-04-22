@@ -52,6 +52,18 @@ def _append_scene_transition_helper(script_text: str, target_scene: str, newline
     return script_text.rstrip() + helper
 
 
+def _restore_seeded_scene_transition(script_text: str, target_scene: str, newline: str) -> tuple[str, bool]:
+    pattern = re.compile(r"(?m)^(?P<indent>\s*)(?P<prefix>var\s+\w+\s*:=\s*)OK\s+#\s+gpf_seeded_bug:scene_transition_disabled\s*$")
+    match = pattern.search(script_text)
+    if match is None:
+        return script_text, False
+    indent = match.group("indent")
+    prefix = match.group("prefix")
+    replacement = f'{indent}{prefix}tree.change_scene_to_file("{target_scene}"){newline}'
+    updated = script_text[: match.start()] + replacement + script_text[match.end() :]
+    return updated, True
+
+
 def _inject_ready_call(script_text: str, newline: str) -> str:
     lines = script_text.splitlines()
     for index, line in enumerate(lines):
@@ -109,6 +121,14 @@ def _target_scene_from_fix_plan(fix_plan: dict[str, Any]) -> str:
     return ""
 
 
+def _handler_body(script_text: str, handler_name: str) -> str:
+    handler_pattern = re.compile(
+        rf"(?ms)^func\s+{re.escape(handler_name)}\s*\([^)]*\)\s*(?:->\s*[\w\.]+)?\s*:\s*\n(?P<body>.*?)(?=^func\s|\Z)"
+    )
+    match = handler_pattern.search(script_text)
+    return str(match.group("body")) if match is not None else ""
+
+
 def _apply_scene_transition_fix(script_path: Path, node_name: str, target_scene: str) -> dict[str, Any]:
     script_text = _read_text(script_path)
     handler_name = _handler_name(node_name)
@@ -130,14 +150,23 @@ def _apply_scene_transition_fix(script_path: Path, node_name: str, target_scene:
             "message": f"target script does not define handler {handler_name}",
             "applied": False,
         }
-    if target_scene in script_text or "change_scene_to_file(" in script_text:
+    handler_body = _handler_body(script_text, handler_name)
+    newline = "\r\n" if "\r\n" in script_text else "\n"
+    restored, restored_seeded = _restore_seeded_scene_transition(script_text, target_scene, newline)
+    if restored_seeded:
+        _write_text(script_path, restored)
+        return {
+            "status": "fix_applied",
+            "message": f"restored the disabled scene transition to {target_scene} inside {handler_name}",
+            "applied": True,
+        }
+    if "change_scene_to_file(" in handler_body or "_gpf_change_to_expected_scene()" in handler_body:
         return {
             "status": "already_aligned",
             "message": f"target script already contains a scene-transition call for {handler_name}",
             "applied": False,
         }
 
-    newline = "\r\n" if "\r\n" in script_text else "\n"
     handler_pattern = re.compile(rf"(func\s+{re.escape(handler_name)}\s*\([^)]*\)\s*->\s*void:\s*(?:\r?\n))")
     match = handler_pattern.search(script_text)
     if match is None:
@@ -170,6 +199,11 @@ def apply_bug_fix(
             "schema": "pointer_gpf.v2.fix_apply.v1",
             "project_root": str(project_root.resolve()),
             "bug_summary": fix_plan.get("bug_summary", ""),
+            "round_id": str(fix_plan.get("round_id", "")).strip(),
+            "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+            "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
             "status": "fix_not_applied",
             "reason": "code changes are blocked until plan_bug_fix returns fix_ready",
             "fix_plan": fix_plan,
@@ -198,6 +232,11 @@ def apply_bug_fix(
             "schema": "pointer_gpf.v2.fix_apply.v1",
             "project_root": str(project_root.resolve()),
             "bug_summary": fix_plan.get("bug_summary", ""),
+            "round_id": str(fix_plan.get("round_id", "")).strip(),
+            "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+            "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
             "status": "fix_not_supported",
             "reason": "no candidate GDScript file was available for the current fix strategy",
             "fix_plan": fix_plan,
@@ -211,6 +250,11 @@ def apply_bug_fix(
             "schema": "pointer_gpf.v2.fix_apply.v1",
             "project_root": str(project_root.resolve()),
             "bug_summary": fix_plan.get("bug_summary", ""),
+            "round_id": str(fix_plan.get("round_id", "")).strip(),
+            "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+            "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
             "status": "fix_not_supported",
             "reason": f"candidate script does not exist on disk: {target_script}",
             "fix_plan": fix_plan,
@@ -234,6 +278,11 @@ def apply_bug_fix(
             "schema": "pointer_gpf.v2.fix_apply.v1",
             "project_root": str(project_root.resolve()),
             "bug_summary": fix_plan.get("bug_summary", ""),
+            "round_id": str(fix_plan.get("round_id", "")).strip(),
+            "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+            "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
             "status": "fix_not_supported",
             "reason": "the current apply_bug_fix slice only supports button_signal_or_callback_broken and scene_transition_not_triggered",
             "fix_plan": fix_plan,
@@ -244,6 +293,11 @@ def apply_bug_fix(
         "schema": "pointer_gpf.v2.fix_apply.v1",
         "project_root": str(project_root.resolve()),
         "bug_summary": fix_plan.get("bug_summary", ""),
+        "round_id": str(fix_plan.get("round_id", "")).strip(),
+        "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+        "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+        "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+        "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
         "status": str(applied.get("status", "")),
         "reason": str(applied.get("message", "")),
         "fix_plan": fix_plan,

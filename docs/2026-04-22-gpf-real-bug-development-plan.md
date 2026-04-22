@@ -1,5 +1,15 @@
 # 2026-04-22 GPF Real Bug Development Plan
 
+## Status Note
+
+This document is now mainly a record of the implementation order that produced the current real-bug round system.
+
+It should no longer be treated as the mainline follow-up by itself.
+
+The current follow-up after this infrastructure is recorded in:
+
+- [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
+
 ## Purpose
 
 This document replaces the previous "continue refining the repair workflow directly against the current test project state" direction.

@@ -28,9 +28,12 @@ from .contracts import (
 )
 from .basicflow_assets import basicflow_paths, load_basicflow_assets, mark_basicflow_run_success
 from .bug_analysis import analyze_bug_report
+from .bug_checks import define_bug_checks
+from .bug_investigation import plan_bug_investigation
 from .bug_fix_application import apply_bug_fix
 from .bug_fix_verification import run_bug_fix_regression, verify_bug_fix
 from .bug_assertions import define_bug_assertions
+from .bug_observation import observe_bug_context
 from .bug_fix_planning import plan_bug_fix
 from .bug_repro_execution import rerun_bug_repro_flow, run_bug_repro_flow
 from .bug_repro_flow import plan_bug_repro_flow
@@ -67,6 +70,9 @@ from .request_layer import (
     resolve_project_readiness_user_request,
     user_request_command_guide,
 )
+from .test_project_bug_restore import restore_test_project_bug_round
+from .test_project_bug_round import start_test_project_bug_round
+from .test_project_bug_seed import seed_test_project_bug
 from .runtime_orchestration import (
     acquire_flow_lock as runtime_acquire_flow_lock,
     basicflow_missing_payload as runtime_basicflow_missing_payload,
@@ -129,6 +135,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--location-script")
     parser.add_argument("--frequency-hint")
     parser.add_argument("--severity-hint")
+    parser.add_argument("--bug-case-file")
+    parser.add_argument("--round-id")
+    parser.add_argument("--bug-id")
+    parser.add_argument("--bug-kind")
+    parser.add_argument("--files-to-record")
+    parser.add_argument("--handler-name")
     return parser.parse_args()
 
 
@@ -426,7 +438,10 @@ def _build_tool_dispatch_api() -> ToolDispatchApi:
     return ToolDispatchApi(
         collect_bug_report=collect_bug_report,
         analyze_bug_report=analyze_bug_report,
+        define_bug_checks=define_bug_checks,
+        observe_bug_context=observe_bug_context,
         define_bug_assertions=define_bug_assertions,
+        plan_bug_investigation=plan_bug_investigation,
         plan_bug_repro_flow=plan_bug_repro_flow,
         run_bug_repro_flow=lambda project_root, args, execution_mode: run_bug_repro_flow(
             project_root,
@@ -515,6 +530,9 @@ def _build_tool_dispatch_api() -> ToolDispatchApi:
             session_id=session_id,
         ),
         analyze_basicflow_staleness=analyze_basicflow_staleness,
+        start_test_project_bug_round=start_test_project_bug_round,
+        seed_test_project_bug=seed_test_project_bug,
+        restore_test_project_bug_round=restore_test_project_bug_round,
     )
 
 
