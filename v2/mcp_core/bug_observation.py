@@ -141,6 +141,9 @@ def _latest_repro_summary(project_root: Path) -> dict[str, Any]:
         "step_id": str(details.get("step_id", "")).strip(),
         "blocking_point": str(payload.get("blocking_point", "")).strip(),
         "check_summary": payload.get("check_summary", {}) if isinstance(payload.get("check_summary", {}), dict) else {},
+        "runtime_evidence_summary": payload.get("runtime_evidence_summary", {})
+        if isinstance(payload.get("runtime_evidence_summary", {}), dict)
+        else {},
     }
 
 
@@ -200,6 +203,15 @@ def observe_bug_context(project_root: Path, args: Any) -> dict[str, Any]:
         "basicflow_summary": basicflow_summary,
         "runtime_diagnostics": runtime_summary,
         "latest_repro_result": repro_summary,
+        "runtime_evidence_capabilities": {
+            "schema": "pointer_gpf.v2.runtime_evidence_capabilities.v1",
+            "actions": ["sample", "observe", "check"],
+            "record_types": ["read_result", "sample_result", "event_observer_result", "comparison_result"],
+            "status": "contract_defined_python_side",
+        },
+        "latest_runtime_evidence_summary": repro_summary.get("runtime_evidence_summary", {})
+        if isinstance(repro_summary.get("runtime_evidence_summary", {}), dict)
+        else {},
         "latest_fix_verification": verification_summary,
         "candidate_file_read_order": _candidate_file_read_order(assertion_set, basicflow_summary),
         "investigation_focus": list(bug_analysis.get("recommended_assertion_focus", []))[:5] if isinstance(bug_analysis, dict) else [],

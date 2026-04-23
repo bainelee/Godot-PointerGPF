@@ -276,6 +276,84 @@ class BugFixApplicationTests(unittest.TestCase):
         self.assertIn('var err := tree.change_scene_to_file("res://scenes/game_level.tscn")', updated)
         self.assertNotIn("gpf_seeded_bug:scene_transition_disabled", updated)
 
+    def test_apply_bug_fix_uses_bounded_fix_proposal_when_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            script_path = project_root / "scripts" / "enemy.gd"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("extends Node\n\nfunc take_damage():\n\tpass\n", encoding="utf-8")
+
+            payload = apply_bug_fix(
+                project_root,
+                argparse.Namespace(
+                    fix_proposal_json=(
+                        '{"candidate_file":"res://scripts/enemy.gd","edits":[{"kind":"insert_after",'
+                        '"find":"func take_damage():","text":"\\n\\tflash_hit_feedback()"}]}'
+                    ),
+                    fix_proposal_file="",
+                ),
+                plan_bug_fix_fn=lambda *_: {
+                    "bug_summary": "敌人受击后没有闪红",
+                    "status": "fix_ready",
+                    "candidate_files": [
+                        {
+                            "path": "res://scripts/enemy.gd",
+                            "absolute_path": str(script_path),
+                        }
+                    ],
+                    "repro_run": {
+                        "repro_flow_plan": {
+                            "assertion_set": {
+                                "bug_analysis": {
+                                    "bug_intake": {"location_hint": {"node": "Enemy"}},
+                                    "suspected_causes": [],
+                                }
+                            }
+                        }
+                    },
+                },
+            )
+            updated = script_path.read_text(encoding="utf-8")
+
+        self.assertEqual(payload["status"], "fix_applied")
+        self.assertIn("flash_hit_feedback()", updated)
+        self.assertEqual(payload["next_action"], "rerun_bug_repro_flow")
+
+    def test_apply_bug_fix_requires_bounded_proposal_when_fixed_strategies_do_not_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            script_path = project_root / "scripts" / "enemy.gd"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text("extends Node\n", encoding="utf-8")
+
+            payload = apply_bug_fix(
+                project_root,
+                argparse.Namespace(fix_proposal_json="", fix_proposal_file=""),
+                plan_bug_fix_fn=lambda *_: {
+                    "bug_summary": "敌人受击后没有闪红",
+                    "status": "fix_ready",
+                    "candidate_files": [
+                        {
+                            "path": "res://scripts/enemy.gd",
+                            "absolute_path": str(script_path),
+                        }
+                    ],
+                    "repro_run": {
+                        "repro_flow_plan": {
+                            "assertion_set": {
+                                "bug_analysis": {
+                                    "bug_intake": {"location_hint": {"node": "Enemy"}},
+                                    "suspected_causes": [],
+                                }
+                            }
+                        }
+                    },
+                },
+            )
+
+        self.assertEqual(payload["status"], "fix_not_supported")
+        self.assertEqual(payload["next_action"], "provide_bounded_fix_proposal")
+
 
 if __name__ == "__main__":
     unittest.main()

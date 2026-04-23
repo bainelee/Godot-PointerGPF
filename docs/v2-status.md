@@ -20,6 +20,19 @@ Direction note:
 - the current rule for using real bugs in the test project is recorded in [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
 - the current next-step implementation plan is recorded in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
 - the current mainline follow-up after real-bug rounds is recorded in [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
+- the current concrete user-scenario target for new-project bug auto-fix is recorded in [2026-04-22-gpf-new-project-natural-language-bug-auto-fix-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-new-project-natural-language-bug-auto-fix-plan.md)
+- the current runtime-evidence implementation plan is recorded in [2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md)
+- the current model-controlled repair execution plan and verification record is [2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
+- the current version summary is [2026-04-23-gpf-current-version-summary.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-current-version-summary.md)
+
+Authoritative current-doc order:
+
+1. [README.md](/D:/AI/pointer_gpf/README.md)
+2. [v2-status.md](/D:/AI/pointer_gpf/docs/v2-status.md)
+3. [v2-handoff.md](/D:/AI/pointer_gpf/docs/v2-handoff.md)
+4. [v2-how-to-command-gpf.md](/D:/AI/pointer_gpf/docs/v2-how-to-command-gpf.md)
+5. [2026-04-23-gpf-current-version-summary.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-current-version-summary.md)
+6. [2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
 
 ## What Is Already Working
 
@@ -67,6 +80,7 @@ The following V2 capabilities are already implemented in `v2/`:
 - `apply_bug_fix`
 - `run_bug_fix_regression`
 - `verify_bug_fix`
+- `repair_reported_bug`
 - `start_test_project_bug_round`
 - `seed_test_project_bug`
 - `restore_test_project_bug_round`
@@ -117,6 +131,10 @@ The following V2 capabilities are already implemented in `v2/`:
   - candidate files ordered with observation evidence
   - fix goals derived from failed checks when possible
 - `plan_bug_fix` no longer reruns repro internally; it reads the persisted repro result for the current project
+- `observe` can run as a cross-step event observer with `mode: "start"` and `mode: "collect"`
+- `plan_bug_repro_flow` can materialize a model `trigger_window` observe step around the trigger action
+- `apply_bug_fix` can apply a bounded model fix proposal from `--fix-proposal-json` or `--fix-proposal-file`
+- `repair_reported_bug` runs the explicit sequence for natural-language bug repair requests and stops with `blocking_point` plus `next_action` when the model still needs to provide an evidence plan or fix proposal
 
 ## Current Limitation
 
@@ -129,18 +147,28 @@ What is already implemented:
 - bug-case files that bind repair runs to a known injected bug
 - restore tools that return the test project to the recorded baseline
 - restore verification written to a durable result file
+- generic runtime evidence contracts for `sample`, `observe`, and evidence-backed `check`
+- runtime evidence records and summaries in flow reports, runtime orchestration results, and bug repro artifacts when evidence is present
+- real `play_mode` validation for a node-property `sample` flow
+- real `play_mode` validation for a cross-step `observe` flow
+- model-provided evidence plans can now be loaded from `--evidence-plan-json` or `--evidence-plan-file`
+- accepted model evidence `sample`, `observe`, and `check` steps are inserted into `plan_bug_repro_flow` candidate flows
+- model evidence `check` steps are now included in executable check sets
+- `plan_bug_fix` now preserves runtime evidence summaries, compact records, evidence refs, and evidence-backed acceptance checks
+- bounded model fix proposals can be applied inside candidate files without requiring a fixed strategy kind
+- natural-language bug repair requests can route to `repair_reported_bug`
 
 What is still limited:
 
 - bug reasoning is still stronger than bug execution planning
-- the model still does not receive enough structured project/runtime evidence by default
+- the model still does not reliably generate structured evidence plans from arbitrary bug reports without an external model step
 - the model still does not yet generate a rich executable investigation plan by default
-- `apply_bug_fix` still relies on a narrow set of constrained strategies instead of a broader evidence-backed edit workflow
+- the model still must provide the bounded fix proposal; the deterministic MCP layer does not invent arbitrary code edits
 
 Current judgment:
 
 - the repository now has controlled test-project bug lifecycle management
-- the next implementation area inside bug work should be improving model-guided observation, executable checking, and fix planning within bounded execution rules
+- the next implementation area inside bug work should validate the new generic workflow against a real behavior bug, then improve model-side evidence and edit proposal quality
 
 ## Deferred TODO
 
@@ -198,8 +226,43 @@ The next concrete implementation slice after the current repair-workflow code is
 1. strengthen structured project and runtime observation for bug work
 2. add a model-driven investigation-plan step that chooses actions and checks
 3. let the model generate bounded executable checks instead of relying only on a small fixed catalog
-4. move `apply_bug_fix` toward evidence-backed edit planning rather than default growth by fixed bug-kind handlers
+4. keep bounded fix proposal support as the primary broader edit path instead of default growth by fixed bug-kind handlers
 5. keep real-bug rounds as the validation method for the above work
+
+The concrete product target for those steps is now also explicit:
+
+1. the user installs GPF into a new project
+2. the user reports a real bug in natural language
+3. GPF reproduces it in real `play_mode`
+4. GPF applies a bounded fix
+5. GPF reruns the bug flow and regression before reporting the final result
+
+Important rule for that target:
+
+1. do not turn one user example into one product feature
+2. let the language model decide where the bug likely comes from, what should be checked, and what should be changed
+3. keep GPF focused on generic bounded tools for observation, execution, editing, and verification
+
+The next concrete runtime-side plan for that rule is:
+
+1. add generic runtime read, sample, and observe primitives
+2. persist timestamped evidence in repro artifacts
+3. let structured bug checks reference evidence ids instead of only one `hint`
+
+Current implementation status for that plan:
+
+1. `sample` and `observe` actions are accepted by flow contracts
+2. `runtime_bridge.gd` implements generic `sample` and `observe`
+3. `check` can evaluate an `evidenceRef` with a bounded predicate
+4. flow reports and `run_basic_flow_tool` results now include runtime evidence records and summaries
+5. a real `play_mode` sample flow has verified timestamped node-property sampling
+6. [runtime_evidence_sample_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_sample_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 1`
+7. [bug_evidence_plan.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_evidence_plan.py) validates bounded model evidence plans
+8. `plan_bug_repro_flow` can insert model-provided `sample`, `observe`, and `check` steps into candidate repro flows
+9. `plan_bug_fix` now carries evidence refs into `evidence_summary`, `candidate_files`, `fix_goals`, and `acceptance_checks`
+10. [runtime_evidence_observe_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_observe_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 1`
+11. [bug_fix_proposal.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_fix_proposal.py) supports bounded model edit proposal validation and application
+12. [bug_repair_workflow.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_repair_workflow.py) implements `repair_reported_bug`
 
 The current V2 structure lives under:
 
@@ -242,6 +305,16 @@ Observed bundle coverage:
 - isolated-desktop runs now report `isolation.status: isolated_desktop`
 - isolated-desktop runs now also report `host_desktop_name` and `separate_desktop: true`
 
+Latest observed fixed regression result:
+
+- `ok: true`
+- `v2_unit_tests`: `Ran 97 tests`, `OK`
+- `preflight_project`: `ok: true`
+- `basic_interactive_flow`: `ok: true`
+- `default_basicflow`: `ok: true`
+- `basicflow_stale_override`: `ok: true`
+- `runtime_guards`: `ok: true`
+
 ```powershell
 python -m v2.mcp_core.server --tool preflight_project --project-root D:\AI\pointer_gpf_testgame
 ```
@@ -274,8 +347,66 @@ python -m unittest D:\AI\pointer_gpf\v2\tests\test_preflight.py D:\AI\pointer_gp
 
 Observed result:
 
-- the latest full V2 unit-test run in this workspace exercised `Ran 170 tests`
+- the latest full V2 unit-test run in this workspace exercised `Ran 199 tests`
 - `OK`
+
+Model evidence plan CLI smoke:
+
+```powershell
+python -m v2.mcp_core.server --tool plan_bug_repro_flow --project-root D:\AI\pointer_gpf_testgame --bug-report "点击开始游戏后按钮状态没有变化" --expected-behavior "点击后按钮状态应该变化" --steps-to-trigger "启动游戏|点击开始按钮" --location-node StartButton --evidence-plan-file D:\AI\pointer_gpf\pointer_gpf\tmp\model_evidence_plan_cli_smoke.json
+```
+
+Observed result:
+
+- `ok: true`
+- `model_evidence_plan_status: accepted`
+- `planned_runtime_evidence_step_count: 2`
+- `evidence_refs_required: ["startbutton_visible_window"]`
+- `evidence_refs_produced: ["startbutton_visible_window"]`
+
+### 3.1 Runtime evidence sample flow
+
+```powershell
+python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame --flow-file D:\AI\pointer_gpf\v2\flows\runtime_evidence_sample_flow.json
+```
+
+Observed result:
+
+- `ok: true`
+- `execution.status: passed`
+- `runtime_evidence_summary.record_count: 1`
+- `runtime_evidence_refs: ["startbutton_visible_window"]`
+- `runtime_evidence_records[0].record_type: sample_result`
+- `project_close.status: verified`
+
+### 3.2 Runtime evidence observe flow
+
+```powershell
+python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame --flow-file D:\AI\pointer_gpf\v2\flows\runtime_evidence_observe_flow.json
+```
+
+Observed result:
+
+- `ok: true`
+- `execution.status: passed`
+- `runtime_evidence_summary.record_count: 1`
+- evidence id `scene_change_window`
+- observed event scene `res://scenes/game_level.tscn`
+- `project_close.status: verified`
+
+### 3.3 Top-level repair smoke
+
+```powershell
+python -m v2.mcp_core.server --tool repair_reported_bug --project-root D:\AI\pointer_gpf_testgame --bug-report "敌人在受击之后不会按照预期闪烁一次红色" --expected-behavior "敌人在受击之后应该闪烁一次红色" --steps-to-trigger "启动游戏|让敌人受击" --location-node Enemy
+```
+
+Observed result:
+
+- `ok: true`
+- `schema: pointer_gpf.v2.reported_bug_repair.v1`
+- `status: awaiting_model_evidence_plan`
+- `blocking_point: repair_reported_bug requires an accepted model evidence plan before running repro`
+- `next_action: provide_evidence_plan_json_or_file`
 
 ### 4. V2 interactive flow
 
@@ -514,10 +645,10 @@ Phase 1 minimal chain is already passing.
 
 Next phase should be:
 
-1. wire the new question contract or session flow into the final conversational UX layer
-2. update the fixed regression bundle so it covers question fetch, session flow, direct-answer `generate_basic_flow`, default `run_basic_flow`, stale analysis, and the stale override path
-3. expand isolated-runtime validation from experimental launch coverage into a stricter user-input-isolation contract
-4. decide whether generated default `basicflow` should evolve beyond the current generic visible-click probe when no conservative project-specific transition can be inferred
+1. add a real behavior-bug validation round that uses `repair_reported_bug` with a model evidence plan and bounded fix proposal
+2. improve model-facing project observation so the model can choose better evidence plans from real scenes, scripts, animations, signals, and node paths
+3. improve candidate-file ranking from runtime evidence refs and target node paths
+4. keep avoiding per-bug fixed branches; the model should choose the relevant checks and candidate files from project facts and runtime evidence
 
 ## Notes About External Project
 

@@ -1,0 +1,47 @@
+{
+  "flowId": "runtime_evidence_sample_flow",
+  "name": "Runtime Evidence Sample Flow",
+  "description": "Minimal flow that verifies generic runtime evidence sample and evidenceRef check actions.",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "wait_startbutton",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "sample_startbutton_visible",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:StartButton"
+      },
+      "metric": {
+        "kind": "node_property",
+        "property_path": "visible"
+      },
+      "windowMs": 100,
+      "intervalMs": 50,
+      "evidenceKey": "startbutton_visible_window"
+    },
+    {
+      "id": "check_startbutton_sample_exists",
+      "action": "check",
+      "checkType": "node_property_sample_exists",
+      "evidenceRef": "startbutton_visible_window",
+      "predicate": {
+        "operator": "sample_count_at_least",
+        "count": 1
+      }
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}

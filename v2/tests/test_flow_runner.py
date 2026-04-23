@@ -100,6 +100,44 @@ class FlowRunnerContractTests(unittest.TestCase):
         self.assertEqual(payload["steps"][1]["action"], "capture")
         self.assertEqual(payload["steps"][1]["captureKey"], "player_yaw")
 
+    def test_load_flow_accepts_generic_evidence_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            flow_file = Path(tmp) / "runtime_evidence_flow.json"
+            flow_file.write_text(
+                json.dumps(
+                    {
+                        "flowId": "runtime_evidence_flow",
+                        "steps": [
+                            {"id": "launch", "action": "launchGame"},
+                            {
+                                "id": "sample_value",
+                                "action": "sample",
+                                "target": {"hint": "node_name:Enemy"},
+                                "metric": {"kind": "node_property", "property_path": "modulate"},
+                                "windowMs": 250,
+                                "intervalMs": 50,
+                                "evidenceKey": "enemy_modulate_window",
+                            },
+                            {
+                                "id": "observe_signal",
+                                "action": "observe",
+                                "target": {"hint": "node_name:Enemy"},
+                                "event": {"kind": "signal_emitted", "signal_name": "hit_taken"},
+                                "windowMs": 250,
+                                "evidenceKey": "enemy_hit_signal_window",
+                            },
+                            {"id": "close", "action": "closeProject"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = load_flow(flow_file)
+
+        self.assertEqual(payload["steps"][1]["action"], "sample")
+        self.assertEqual(payload["steps"][2]["action"], "observe")
+
     def test_load_flow_accepts_utf8_bom(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             flow_file = Path(tmp) / "bom_flow.json"
@@ -153,6 +191,82 @@ class FlowRunnerContractTests(unittest.TestCase):
         self.assertTrue(observed["command_missing"])
         self.assertTrue(observed["response_missing"])
         self.assertTrue(observed["diagnostics_missing"])
+
+    def test_run_collects_runtime_evidence_from_step_responses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            report_dir = project_root / "pointer_gpf" / "gpf-exp" / "runtime"
+            runner = FlowRunner(
+                FlowRunOptions(
+                    project_root=project_root,
+                    flow_file=project_root / "basicflow.json",
+                    report_dir=report_dir,
+                )
+            )
+
+            def fake_run_step(self: FlowRunner, step_index: int, step: dict[str, object]) -> dict[str, object]:
+                response = {
+                    "ok": True,
+                    "runtime_evidence_refs": ["enemy_modulate_window"],
+                    "runtime_evidence_records": [
+                        {
+                            "evidence_id": "enemy_modulate_window",
+                            "record_type": "sample_result",
+                            "status": "passed",
+                            "samples": [],
+                        }
+                    ],
+                }
+                self._record_runtime_evidence_from_response(response)
+                return response
+
+            with mock.patch.object(FlowRunner, "_run_step", autospec=True, side_effect=fake_run_step):
+                report = runner.run({"flowId": "evidence", "steps": [{"id": "sample", "action": "sample"}]})
+
+        self.assertEqual(report["runtime_evidence_refs"], ["enemy_modulate_window"])
+        self.assertEqual(report["runtime_evidence_summary"]["record_count"], 1)
+        self.assertEqual(report["runtime_evidence_records"][0]["record_type"], "sample_result")
+
+    def test_run_deduplicates_runtime_evidence_records_by_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            report_dir = project_root / "pointer_gpf" / "gpf-exp" / "runtime"
+            runner = FlowRunner(
+                FlowRunOptions(
+                    project_root=project_root,
+                    flow_file=project_root / "basicflow.json",
+                    report_dir=report_dir,
+                )
+            )
+
+            def fake_run_step(self: FlowRunner, step_index: int, step: dict[str, object]) -> dict[str, object]:
+                response = {
+                    "ok": True,
+                    "runtime_evidence_refs": ["same_evidence"],
+                    "runtime_evidence_records": [
+                        {
+                            "evidence_id": "same_evidence",
+                            "record_type": "sample_result",
+                            "status": "passed",
+                        }
+                    ],
+                }
+                self._record_runtime_evidence_from_response(response)
+                return response
+
+            with mock.patch.object(FlowRunner, "_run_step", autospec=True, side_effect=fake_run_step):
+                report = runner.run(
+                    {
+                        "flowId": "evidence",
+                        "steps": [
+                            {"id": "sample", "action": "sample"},
+                            {"id": "check", "action": "check"},
+                        ],
+                    }
+                )
+
+        self.assertEqual(report["runtime_evidence_refs"], ["same_evidence"])
+        self.assertEqual(report["runtime_evidence_summary"]["record_count"], 1)
 
 
 if __name__ == "__main__":

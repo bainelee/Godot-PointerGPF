@@ -75,6 +75,9 @@ class FlowRunner:
     def __init__(self, options: FlowRunOptions) -> None:
         self.options = options
         self.run_id = uuid.uuid4().hex
+        self.runtime_evidence_records: list[dict[str, Any]] = []
+        self.runtime_evidence_refs: list[str] = []
+        self._runtime_evidence_record_ids: set[str] = set()
 
     def bridge_dir(self) -> Path:
         return (self.options.project_root / "pointer_gpf" / "tmp").resolve()
@@ -98,6 +101,44 @@ class FlowRunner:
         self.options.report_dir.mkdir(parents=True, exist_ok=True)
         with self.events_path().open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def _record_runtime_evidence_from_response(self, response: dict[str, Any]) -> None:
+        raw_records = response.get("runtime_evidence_records", [])
+        if isinstance(raw_records, list):
+            for item in raw_records:
+                if not isinstance(item, dict):
+                    continue
+                evidence_id = str(item.get("evidence_id", "") or item.get("id", "")).strip()
+                if evidence_id and evidence_id in self._runtime_evidence_record_ids:
+                    continue
+                if evidence_id:
+                    self._runtime_evidence_record_ids.add(evidence_id)
+                self.runtime_evidence_records.append(item)
+                if evidence_id and evidence_id not in self.runtime_evidence_refs:
+                    self.runtime_evidence_refs.append(evidence_id)
+        raw_refs = response.get("runtime_evidence_refs", [])
+        if isinstance(raw_refs, list):
+            for item in raw_refs:
+                evidence_id = str(item).strip()
+                if evidence_id and evidence_id not in self.runtime_evidence_refs:
+                    self.runtime_evidence_refs.append(evidence_id)
+
+    def _runtime_evidence_summary(self) -> dict[str, Any]:
+        failed: list[str] = []
+        inconclusive: list[str] = []
+        for record in self.runtime_evidence_records:
+            evidence_id = str(record.get("evidence_id", "") or record.get("id", "")).strip()
+            status = str(record.get("status", "")).strip().lower()
+            if evidence_id and status == "failed":
+                failed.append(evidence_id)
+            elif evidence_id and status == "inconclusive":
+                inconclusive.append(evidence_id)
+        return {
+            "record_count": len(self.runtime_evidence_records),
+            "failed_evidence_ids": failed,
+            "inconclusive_evidence_ids": inconclusive,
+            "evidence_by_check_id": {},
+        }
 
     def _read_blocking_diagnostics(self) -> dict[str, Any] | None:
         path = self.diagnostics_path()
@@ -187,6 +228,7 @@ class FlowRunner:
             exc.step_id = step_id
             raise
         ok = bool(response.get("ok", False))
+        self._record_runtime_evidence_from_response(response)
         self._append_event(
             {
                 "phase": "result",
@@ -196,6 +238,10 @@ class FlowRunner:
                 "ts": _utc_iso(),
                 "bridge_ok": ok,
                 "bridge_message": str(response.get("message", "")),
+                "bridge_details": response.get("details", {}) if isinstance(response.get("details", {}), dict) else {},
+                "runtime_evidence_refs": response.get("runtime_evidence_refs", [])
+                if isinstance(response.get("runtime_evidence_refs", []), list)
+                else [],
             }
         )
         self._append_event(
@@ -223,6 +269,9 @@ class FlowRunner:
         self.options.report_dir.mkdir(parents=True, exist_ok=True)
         if self.events_path().exists():
             self.events_path().unlink()
+        self.runtime_evidence_records = []
+        self.runtime_evidence_refs = []
+        self._runtime_evidence_record_ids = set()
         # Each run must start from a clean bridge state; otherwise a stale
         # diagnostics file from a previous failed run can incorrectly fail the
         # new run before its first step has actually executed.
@@ -252,6 +301,9 @@ class FlowRunner:
                 "report_file": str(self.report_path()),
                 "flow_file": str(self.options.flow_file.resolve()),
                 "flow_id": str(flow_payload.get("flowId", "")),
+                "runtime_evidence_records": self.runtime_evidence_records,
+                "runtime_evidence_refs": self.runtime_evidence_refs,
+                "runtime_evidence_summary": self._runtime_evidence_summary(),
             }
             self.report_path().write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         return report

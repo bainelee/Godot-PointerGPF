@@ -12,7 +12,7 @@ Its current goal is intentionally narrow:
 
 - connect a Godot project to an executable test pipeline
 - generate and maintain a project-local `basicflow`
-- drive bug reproduction, evidence collection, and repair planning through explicit tools and a bounded natural-language layer
+- drive bug reproduction, evidence collection, bounded repair, rerun, and regression through explicit tools and a bounded natural-language layer
 
 It is **not** trying to become an open-ended agent that understands everything.
 
@@ -33,6 +33,10 @@ The current V2 on `main` can:
 - return bug observation summaries, investigation plans, and executable check sets
 - persist `executable_checks`, `check_results`, and `check_summary` into the repro artifact
 - return `evidence_summary`, `acceptance_checks`, candidate files, and fix goals from `plan_bug_fix`
+- accept model-provided runtime evidence plans and insert `sample`, `observe`, and evidence-backed `check` steps into repro flows
+- collect time-window sample evidence and cross-trigger event observation evidence in real `play_mode`
+- accept bounded model fix proposals and apply only unique-match edits inside candidate files
+- route explicit natural-language bug repair requests to `repair_reported_bug`; when model input is still required, return `blocking_point` and `next_action`
 
 The supported high-frequency user request areas are currently:
 
@@ -41,6 +45,7 @@ The supported high-frequency user request areas are currently:
 - analyze why the basic flow is stale
 - run project preflight
 - configure the Godot executable path
+- report a concrete bug and enter `repair_reported_bug`
 
 The current mainline has also shifted from “enumerate more fixed bug kinds” to “let the model decide how to inspect, check, and validate within explicit execution boundaries.”
 
@@ -51,6 +56,7 @@ V2 does **not** currently promise:
 - open-domain natural-language understanding
 - one-shot orchestration for vague, broad requests
 - automatic repair of arbitrary project problems
+- arbitrary code edits without a model evidence plan and a bounded fix proposal
 - endless phrase expansion just to feel “smarter”
 
 For the current boundary, read:
@@ -61,6 +67,10 @@ For the current boundary, read:
 For the current product direction, read:
 
 - [2026-04-22 GPF Model-Driven Bug Loop Plan](./docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
+
+For the authoritative current-version summary, read:
+
+- [2026-04-23 GPF Current Version Summary](./docs/2026-04-23-gpf-current-version-summary.md)
 
 ## Recommended Starting Path
 
@@ -155,6 +165,18 @@ python -m v2.mcp_core.server --tool run_bug_repro_flow --project-root D:\AI\poin
 python -m v2.mcp_core.server --tool plan_bug_fix --project-root D:\AI\pointer_gpf_testgame --bug-report "clicking Start stays on the menu" --expected-behavior "the game should enter the level" --location-scene res://scenes/main_scene_example.tscn --location-node StartButton --location-script res://scripts/main_menu_flow.gd
 ```
 
+Run the top-level repair workflow for an explicit bug report:
+
+```powershell
+python -m v2.mcp_core.server --tool repair_reported_bug --project-root D:\AI\pointer_gpf_testgame --bug-report "the enemy does not flash red once after being hit" --expected-behavior "the enemy should flash red once after being hit" --steps-to-trigger "start the game|hit the enemy" --location-node Enemy
+```
+
+If no model evidence plan has been supplied yet, the expected result is:
+
+- `status: awaiting_model_evidence_plan`
+- `blocking_point: repair_reported_bug requires an accepted model evidence plan before running repro`
+- `next_action: provide_evidence_plan_json_or_file`
+
 ## Current Practical Effect
 
 Today, after a user describes a bug, GPF can already:
@@ -162,14 +184,24 @@ Today, after a user describes a bug, GPF can already:
 1. summarize project structure, runtime diagnostics, recent repro evidence, and recent verification evidence
 2. generate explicit checks instead of only giving a vague suggestion
 3. run the repro in real `play_mode` and persist which checks failed and which checks did not run
-4. build a repair plan from that evidence
+4. persist runtime evidence records and evidence summaries
+5. build a repair plan from that evidence
+6. apply a bounded candidate-file edit when the model supplies a valid fix proposal
+7. rerun the same bug-focused flow and run regression
 
 The current system is already useful for cases such as:
 
 - a UI click does not trigger a scene transition
 - a node is missing or renamed
 - a HUD does not appear after entering gameplay
+- a behavior bug that needs node-property, shader-parameter, animation-state, or event-window evidence
 - a repro already fails reliably, but the team still needs clearer failure evidence and better candidate files
+
+Current limitations remain explicit:
+
+- `repair_reported_bug` does not invent runtime evidence when no model evidence plan is supplied
+- `apply_bug_fix` does not edit arbitrary code when no bounded fix proposal is supplied
+- full behavior-bug auto-repair still needs a real seeded behavior-bug validation round
 
 ## Current Release Shape
 
@@ -201,10 +233,13 @@ If this is your first time in the repo, read in this order:
 
 1. [docs/v2-status.md](./docs/v2-status.md)
 2. [docs/v2-how-to-command-gpf.md](./docs/v2-how-to-command-gpf.md)
-3. [docs/v2-natural-language-boundary-principles.md](./docs/v2-natural-language-boundary-principles.md)
-4. [docs/v2-basic-flow-user-intent.md](./docs/v2-basic-flow-user-intent.md)
-5. [docs/v2-basic-flow-staleness-and-generation.md](./docs/v2-basic-flow-staleness-and-generation.md)
-6. [docs/v2-plugin-runtime-map.md](./docs/v2-plugin-runtime-map.md)
+3. [docs/v2-handoff.md](./docs/v2-handoff.md)
+4. [docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](./docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
+5. [docs/2026-04-23-gpf-current-version-summary.md](./docs/2026-04-23-gpf-current-version-summary.md)
+6. [docs/v2-natural-language-boundary-principles.md](./docs/v2-natural-language-boundary-principles.md)
+7. [docs/v2-basic-flow-user-intent.md](./docs/v2-basic-flow-user-intent.md)
+8. [docs/v2-basic-flow-staleness-and-generation.md](./docs/v2-basic-flow-staleness-and-generation.md)
+9. [docs/v2-plugin-runtime-map.md](./docs/v2-plugin-runtime-map.md)
 
 If you only want to use the project rather than extend it, prioritize:
 

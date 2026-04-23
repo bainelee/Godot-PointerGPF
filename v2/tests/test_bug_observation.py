@@ -80,6 +80,10 @@ class BugObservationTests(unittest.TestCase):
                         "check_summary": {
                             "failed_check_ids": ["postcondition_check_0_target_scene_reached"],
                         },
+                        "runtime_evidence_summary": {
+                            "record_count": 1,
+                            "failed_evidence_ids": ["enemy_modulate_window"],
+                        },
                         "artifact_file": str(tmp_dir / "last_bug_repro_result.json"),
                         "blocking_point": "",
                         "raw_run_result": {
@@ -127,6 +131,8 @@ class BugObservationTests(unittest.TestCase):
         self.assertEqual(payload["runtime_diagnostics"]["blocking_count"], 2)
         self.assertEqual(payload["latest_repro_result"]["status"], "bug_reproduced")
         self.assertEqual(payload["latest_repro_result"]["check_summary"]["failed_check_ids"], ["postcondition_check_0_target_scene_reached"])
+        self.assertEqual(payload["latest_runtime_evidence_summary"]["record_count"], 1)
+        self.assertIn("sample", payload["runtime_evidence_capabilities"]["actions"])
         self.assertEqual(payload["latest_fix_verification"]["status"], "fix_verified")
         self.assertIn("res://scripts/main_menu_flow.gd", payload["candidate_file_read_order"])
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .bug_fix_planning import plan_bug_fix
+from .bug_fix_proposal import apply_validated_fix_proposal, load_fix_proposal
 
 
 def _snake_case(name: str) -> str:
@@ -211,6 +212,43 @@ def apply_bug_fix(
             "next_action": str(fix_plan.get("next_action", "refine_repro_flow_or_assertions")),
         }
 
+    proposal_payload = load_fix_proposal(project_root, args)
+    if str(proposal_payload.get("status", "")).strip() == "rejected":
+        return {
+            "schema": "pointer_gpf.v2.fix_apply.v1",
+            "project_root": str(project_root.resolve()),
+            "bug_summary": fix_plan.get("bug_summary", ""),
+            "round_id": str(fix_plan.get("round_id", "")).strip(),
+            "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+            "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
+            "status": "fix_proposal_rejected",
+            "reason": "; ".join(proposal_payload.get("rejected_reasons", [])),
+            "fix_plan": fix_plan,
+            "applied_changes": [],
+            "next_action": "provide_valid_fix_proposal",
+        }
+    if str(proposal_payload.get("status", "")).strip() == "loaded":
+        proposal_result = apply_validated_fix_proposal(project_root, fix_plan, proposal_payload.get("proposal", {}))
+        return {
+            "schema": "pointer_gpf.v2.fix_apply.v1",
+            "project_root": str(project_root.resolve()),
+            "bug_summary": fix_plan.get("bug_summary", ""),
+            "round_id": str(fix_plan.get("round_id", "")).strip(),
+            "bug_id": str(fix_plan.get("bug_id", "")).strip(),
+            "bug_source": str(fix_plan.get("bug_source", "pre_existing")).strip() or "pre_existing",
+            "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
+            "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
+            "status": str(proposal_result.get("status", "")).strip(),
+            "reason": str(proposal_result.get("message", "")).strip(),
+            "fix_plan": fix_plan,
+            "applied_changes": proposal_result.get("applied_changes", []),
+            "proposal_artifact": str(proposal_result.get("proposal_artifact", "")).strip(),
+            "application_artifact": str(proposal_result.get("application_artifact", "")).strip(),
+            "next_action": "rerun_bug_repro_flow" if bool(proposal_result.get("applied", False)) else "provide_valid_fix_proposal",
+        }
+
     repro_analysis = fix_plan.get("repro_run", {}).get("repro_flow_plan", {}).get("assertion_set", {}).get("bug_analysis", {})
     suspected_causes = repro_analysis.get("suspected_causes", [])
     bug_intake = repro_analysis.get("bug_intake", {})
@@ -284,10 +322,10 @@ def apply_bug_fix(
             "injected_bug_kind": str(fix_plan.get("injected_bug_kind", "")).strip(),
             "bug_case_file": str(fix_plan.get("bug_case_file", "")).strip(),
             "status": "fix_not_supported",
-            "reason": "the current apply_bug_fix slice only supports button_signal_or_callback_broken and scene_transition_not_triggered",
+            "reason": "the current apply_bug_fix fixed strategies do not match this bug and no bounded fix proposal was provided",
             "fix_plan": fix_plan,
             "applied_changes": [],
-            "next_action": "implement_another_fix_strategy",
+            "next_action": "provide_bounded_fix_proposal",
         }
     return {
         "schema": "pointer_gpf.v2.fix_apply.v1",

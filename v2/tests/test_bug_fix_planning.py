@@ -174,6 +174,90 @@ class BugFixPlanningTests(unittest.TestCase):
         self.assertEqual(payload["bug_case_file"], "D:/tmp/bug.json")
         self.assertEqual(payload["acceptance_checks"][0]["assertion_id"], "target_scene_reached")
 
+    def test_plan_bug_fix_summarizes_runtime_evidence_and_preserves_evidence_acceptance_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            payload = plan_bug_fix(
+                project_root,
+                argparse.Namespace(
+                    bug_report="敌人受击后没有闪红",
+                    bug_summary=None,
+                    location_node="Enemy",
+                    location_scene="res://scenes/battle.tscn",
+                ),
+                load_repro_result_fn=lambda _: {
+                    "bug_summary": "敌人受击后没有闪红",
+                    "bug_identity": {"node": "Enemy", "scene": "res://scenes/battle.tscn"},
+                    "status": "bug_reproduced",
+                    "failed_phase": "postcondition",
+                    "repro_flow_plan": {
+                        "assertion_set": {
+                            "bug_analysis": {
+                                "bug_intake": {"location_hint": {"node": "Enemy", "scene": "res://scenes/battle.tscn", "script": ""}},
+                                "suspected_causes": [],
+                                "affected_artifacts": {"scripts": [], "scenes": []},
+                            }
+                        }
+                    },
+                    "executable_checks": [
+                        {
+                            "check_id": "model_evidence_check_0_enemy_flash",
+                            "source_assertion_id": "model_evidence_plan",
+                            "action": "check",
+                            "check_type": "node_property_changes_within_window",
+                            "evidence_ref": "enemy_modulate_window",
+                            "predicate": {"operator": "changed_from_baseline"},
+                            "mapped_step_id": "check_enemy_flash",
+                        }
+                    ],
+                    "check_summary": {
+                        "failed_check_ids": ["model_evidence_check_0_enemy_flash"],
+                        "failed_checks": [
+                            {
+                                "check_id": "model_evidence_check_0_enemy_flash",
+                                "source_assertion_id": "model_evidence_plan",
+                                "check_type": "node_property_changes_within_window",
+                                "evidence_ref": "enemy_modulate_window",
+                            }
+                        ],
+                    },
+                    "runtime_evidence_summary": {
+                        "record_count": 1,
+                        "failed_evidence_ids": ["enemy_modulate_window"],
+                    },
+                    "runtime_evidence_records": [
+                        {
+                            "evidence_id": "enemy_modulate_window",
+                            "record_type": "sample_result",
+                            "status": "failed",
+                            "target": {"hint": "node_name:Enemy"},
+                            "metric": {"kind": "node_property", "property_path": "modulate"},
+                            "samples": [{"timestamp_ms": 0, "value": "white"}],
+                        }
+                    ],
+                },
+                observe_bug_context_fn=lambda *_: {
+                    "candidate_file_read_order": [
+                        "res://scripts/enemy.gd",
+                        "res://scenes/battle.tscn",
+                    ],
+                    "runtime_diagnostics": {
+                        "blocking_count": 0,
+                        "blocking_items": [],
+                    },
+                    "latest_repro_result": {
+                        "step_id": "check_enemy_flash",
+                    },
+                },
+            )
+
+        self.assertEqual(payload["status"], "fix_ready")
+        self.assertEqual(payload["evidence_summary"]["runtime_evidence_summary"]["record_count"], 1)
+        self.assertEqual(payload["evidence_summary"]["runtime_evidence_records"][0]["sample_count"], 1)
+        self.assertEqual(payload["acceptance_checks"][0]["evidence_ref"], "enemy_modulate_window")
+        self.assertTrue(any("enemy_modulate_window" in item["reason"] for item in payload["candidate_files"]))
+        self.assertTrue(any("enemy_modulate_window" in goal for goal in payload["fix_goals"]))
+
 
 if __name__ == "__main__":
     unittest.main()

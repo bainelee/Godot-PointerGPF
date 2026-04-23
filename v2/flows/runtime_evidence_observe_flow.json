@@ -1,0 +1,56 @@
+{
+  "flowId": "runtime_evidence_observe_flow",
+  "name": "Runtime Evidence Observe Flow",
+  "description": "Verifies cross-step observe start/collect with a scene_changed event and evidenceRef check.",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "wait_startbutton",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "observe_scene_change_start",
+      "action": "observe",
+      "mode": "start",
+      "event": {
+        "kind": "scene_changed"
+      },
+      "windowMs": 1000,
+      "evidenceKey": "scene_change_window"
+    },
+    {
+      "id": "click_startbutton",
+      "action": "click",
+      "target": {
+        "hint": "node_name:StartButton"
+      }
+    },
+    {
+      "id": "observe_scene_change_collect",
+      "action": "observe",
+      "mode": "collect",
+      "evidenceRef": "scene_change_window"
+    },
+    {
+      "id": "check_scene_change_event",
+      "action": "check",
+      "checkType": "scene_changed_event",
+      "evidenceRef": "scene_change_window",
+      "predicate": {
+        "operator": "event_count_at_least",
+        "count": 1
+      }
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}

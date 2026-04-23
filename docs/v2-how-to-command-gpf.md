@@ -27,6 +27,7 @@ Prefer requests that clearly map to one of these current user goals:
 - analyze why the project basicflow is stale
 - run project preflight
 - configure the Godot executable path
+- report a bug for the repair workflow
 
 Do not assume GPF currently supports broad conversational interpretation for unrelated engineering tasks.
 
@@ -121,12 +122,46 @@ Current behavior:
 - if the request contains a concrete `.exe` path, the upper layer can route directly to `configure_godot_executable`
 - if the request does not contain a path, the upper layer should ask for that missing input first
 
+### 6. Report A Bug For Repair
+
+Recommended requests:
+
+- `敌人在受击之后不会按照预期闪烁一次红色，帮我自动修复这个 bug`
+- `点击开始按钮后没有进入关卡，帮我修复`
+- `HUD 进入关卡后没有出现，帮我查并修`
+- `repair this bug: after clicking start, the level does not load`
+
+Current behavior:
+
+- the upper layer routes toward `repair_reported_bug`
+- `repair_reported_bug` normalizes the bug report, observes project context, and plans the repro path
+- if no model evidence plan is available yet, it stops at `status: awaiting_model_evidence_plan`
+- the returned `blocking_point` explains why it stopped
+- the returned `next_action` tells the model-facing layer to provide `--evidence-plan-json` or `--evidence-plan-file`
+- after a reproduced bug and fix planning, if no bounded fix proposal is available yet, it stops at `status: bug_reproduced_awaiting_fix_proposal`
+- the returned `next_action` tells the model-facing layer to provide `--fix-proposal-json` or `--fix-proposal-file`
+
+Important boundary:
+
+- the deterministic MCP layer does not guess arbitrary runtime evidence or arbitrary code edits by itself
+- the language model should choose evidence targets and propose bounded edits
+- GPF validates, runs, applies, reruns, and runs regression
+
+Expected final behavior when the model provides the required inputs:
+
+- real `play_mode` repro
+- persisted evidence artifacts
+- bounded edit applied only inside candidate files
+- rerun of the same bug-focused flow
+- regression before reporting `fixed_and_verified`
+
 ## Current Product Boundary
 
 V2 currently supports:
 
 - a bounded set of explicit high-frequency phrases
 - project-aware interpretation for `basicflow`
+- bug repair requests through `repair_reported_bug`, with explicit stops when model input is still required
 - a thin top-level planner and handler for selected domains
 
 V2 does not currently promise:
@@ -135,6 +170,7 @@ V2 does not currently promise:
 - arbitrary paraphrase support
 - automatic execution of every routed tool
 - silent play-mode execution from every natural-language request
+- arbitrary code edits without a bounded fix proposal
 
 This boundary is intentional.
 

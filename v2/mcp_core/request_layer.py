@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import Namespace
 import re
 from pathlib import Path
 from typing import Any, Callable
@@ -84,6 +85,44 @@ _PROJECT_READINESS_REQUEST_SPECS = [
     },
 ]
 
+_BUG_REPAIR_REQUEST_SPECS = [
+    {
+        "id": "repair_reported_bug",
+        "domain": "bug_repair",
+        "tool": "repair_reported_bug",
+        "user_phrases": [
+            "帮我修复这个 bug",
+            "帮我修复这个bug",
+            "帮我自动修复这个 bug",
+            "帮我自动修复这个bug",
+            "自动修复这个 bug",
+            "自动修复这个bug",
+            "修这个 bug",
+            "修这个bug",
+            "修复这个 bug",
+            "修复这个bug",
+            "自动排查并修复",
+            "fix this bug",
+            "repair this bug",
+            "automatically fix this bug",
+        ],
+        "purpose": "turn one explicit bug-fix request into a structured bug intake payload for the bug workflow",
+        "notes": [
+            "the current safe automatic next step is collect_bug_report, not a direct code edit",
+        ],
+    },
+]
+
+_EMPTY_BUG_REQUEST_MARKERS = {
+    "",
+    "bug",
+    "this bug",
+    "这个bug",
+    "这个 bug",
+    "这个问题",
+    "bug please",
+}
+
 
 def normalize_user_request(text: str) -> str:
     normalized = str(text).strip().lower()
@@ -108,6 +147,142 @@ def matches_user_phrase(request_text: str, phrases: list[str]) -> bool:
         if normalized_phrase and normalized_phrase in normalized_request:
             return True
     return False
+
+
+def _collapse_spaces(text: str) -> str:
+    return " ".join(str(text or "").replace("\r", " ").replace("\n", " ").split()).strip()
+
+
+def _first_sentence(text: str) -> str:
+    normalized = _collapse_spaces(text)
+    for separator in ("。", ".", "！", "!", "？", "?"):
+        if separator in normalized:
+            head = normalized.split(separator, 1)[0].strip()
+            if head:
+                return head
+    return normalized
+
+
+def _strip_bug_repair_prefix(text: str) -> str:
+    patterns = [
+        r"^\s*(?:请\s*)?(?:帮我\s*)?(?:自动\s*)?(?:排查并\s*)?(?:修复|修一下|修下|修)\s*(?:这个\s*)?(?:bug|问题)?\s*[:：,，]?\s*",
+        r"^\s*(?:fix|repair)\s+(?:this\s+)?bug\s*[:：,，]?\s*",
+        r"^\s*(?:please\s+)?(?:automatically\s+)?(?:fix|repair)\s+(?:this\s+)?bug\s*[:：,，]?\s*",
+    ]
+    out = str(text or "").strip()
+    for pattern in patterns:
+        updated = re.sub(pattern, "", out, flags=re.IGNORECASE)
+        if updated != out:
+            return updated.strip()
+    return out
+
+
+def _strip_bug_repair_suffix(text: str) -> str:
+    patterns = [
+        r"\s*[,，]?\s*(?:请\s*)?(?:帮我\s*)?(?:自动\s*)?(?:排查并\s*)?(?:修复|修一下|修下|修)\s*(?:这个\s*)?(?:bug|问题)?\s*$",
+        r"\s*[,，]?\s*(?:please\s+)?(?:automatically\s+)?(?:fix|repair)\s+(?:this\s+)?bug\s*$",
+    ]
+    out = str(text or "").strip()
+    for pattern in patterns:
+        updated = re.sub(pattern, "", out, flags=re.IGNORECASE)
+        if updated != out:
+            return updated.strip()
+    return out
+
+
+def _sanitize_bug_repair_body(user_request: str) -> str:
+    cleaned = _collapse_spaces(user_request)
+    cleaned = _strip_bug_repair_prefix(cleaned)
+    cleaned = _strip_bug_repair_suffix(cleaned)
+    cleaned = cleaned.strip("，,：:；;。.!? ")
+    return cleaned
+
+
+def _extract_expected_behavior_from_bug_text(text: str) -> str:
+    cleaned = _collapse_spaces(text)
+    replacement_pairs = [
+        ("不会按照预期", "应该"),
+        ("没有按照预期", "应该"),
+        ("未按照预期", "应该"),
+        ("没有按预期", "应该"),
+        ("未按预期", "应该"),
+        ("不按预期", "应该"),
+    ]
+    for old, new in replacement_pairs:
+        if old in cleaned:
+            return cleaned.replace(old, new, 1).strip("，,：:；;。.!? ")
+
+    expected_match = re.search(
+        r"(?P<prefix>.*?)(?:应该|应当|本该)(?P<rest>.+?)(?:[,，。.!?]|$)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if expected_match is not None:
+        prefix = expected_match.group("prefix").strip("，,：:；;。.!? ")
+        rest = expected_match.group("rest").strip("，,：:；;。.!? ")
+        if rest:
+            return f"{prefix}应该{rest}".strip()
+
+    english_match = re.search(
+        r"(?P<prefix>.*?)(?:should)(?P<rest>\s+.+?)(?:[,，。.!?]|$)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if english_match is not None:
+        prefix = english_match.group("prefix").strip("，,：:；;。.!? ")
+        rest = english_match.group("rest").strip("，,：:；;。.!? ")
+        if rest:
+            joined = f"{prefix} should {rest}".strip()
+            return re.sub(r"\s+", " ", joined)
+    return ""
+
+
+def _build_bug_summary(text: str) -> str:
+    summary = _first_sentence(text)
+    return summary[:120].strip()
+
+
+def bug_repair_request_catalog(project_root: Path) -> dict[str, Any]:
+    intents: list[dict[str, Any]] = []
+    for spec in _BUG_REPAIR_REQUEST_SPECS:
+        intents.append(
+            {
+                "id": str(spec.get("id", "")).strip(),
+                "domain": str(spec.get("domain", "")).strip(),
+                "tool": str(spec.get("tool", "")).strip(),
+                "user_phrases": list(spec.get("user_phrases", [])),
+                "purpose": str(spec.get("purpose", "")).strip(),
+                "notes": list(spec.get("notes", [])),
+            }
+        )
+    return {
+        "status": "bug_repair_catalog_ready",
+        "project_root": str(project_root.resolve()),
+        "intents": intents,
+    }
+
+
+def extract_bug_repair_request(user_request: str) -> dict[str, Any]:
+    body = _sanitize_bug_repair_body(user_request)
+    normalized_body = normalize_user_request(body)
+    bug_report = "" if normalized_body in _EMPTY_BUG_REQUEST_MARKERS else body
+    expected_behavior = _extract_expected_behavior_from_bug_text(bug_report)
+    missing_fields: list[str] = []
+    if not bug_report:
+        missing_fields.append("bug_report")
+    if not expected_behavior:
+        missing_fields.append("expected_behavior")
+    return {
+        "raw_user_request": str(user_request or "").strip(),
+        "bug_report": bug_report,
+        "bug_summary": _build_bug_summary(bug_report) if bug_report else "",
+        "expected_behavior": expected_behavior,
+        "steps_to_trigger": "",
+        "location_scene": "",
+        "location_node": "",
+        "location_script": "",
+        "missing_fields": missing_fields,
+    }
 
 
 def basicflow_user_intent_payload(
@@ -245,6 +420,7 @@ def user_request_command_guide(
         detect_basicflow_staleness=detect_basicflow_staleness,
     )
     readiness_catalog = project_readiness_request_catalog(project_root)
+    bug_repair_catalog = bug_repair_request_catalog(project_root)
     command_groups: list[dict[str, Any]] = []
     for intent in basicflow_catalog["intents"]:
         command_groups.append(
@@ -270,10 +446,21 @@ def user_request_command_guide(
                 "notes": intent.get("notes", []),
             }
         )
+    for intent in bug_repair_catalog["intents"]:
+        command_groups.append(
+            {
+                "id": str(intent.get("id", "")).strip(),
+                "domain": str(intent.get("domain", "")).strip(),
+                "tool": str(intent.get("tool", "")).strip(),
+                "user_phrases": intent.get("user_phrases", []),
+                "purpose": str(intent.get("purpose", "")).strip(),
+                "notes": intent.get("notes", []),
+            }
+        )
     return {
         "status": "command_guide_ready",
         "project_root": str(project_root.resolve()),
-        "supported_domains": ["basicflow", "project_readiness"],
+        "supported_domains": ["basicflow", "project_readiness", "bug_repair"],
         "core_rule": "use one short explicit request for one concrete action",
         "command_groups": command_groups,
         "unsupported_style_examples": [
@@ -281,6 +468,60 @@ def user_request_command_guide(
             "做你觉得最合适的 basicflow 操作",
             "顺便把 stale、预检、启动和截图都处理一下",
         ],
+    }
+
+
+def resolve_bug_repair_user_request(project_root: Path, user_request: str) -> dict[str, Any]:
+    catalog = bug_repair_request_catalog(project_root)
+    for intent in catalog["intents"]:
+        phrases = intent.get("user_phrases", [])
+        if isinstance(phrases, list) and matches_user_phrase(user_request, [str(item) for item in phrases]):
+            extracted = extract_bug_repair_request(user_request)
+            project_root_str = str(project_root.resolve())
+            args: dict[str, Any] = {"project_root": project_root_str}
+            for key in (
+                "bug_report",
+                "bug_summary",
+                "expected_behavior",
+                "steps_to_trigger",
+                "location_scene",
+                "location_node",
+                "location_script",
+            ):
+                value = str(extracted.get(key, "")).strip()
+                if value:
+                    args[key] = value
+            missing_fields = [str(item).strip() for item in extracted.get("missing_fields", []) if str(item).strip()]
+            ready_to_execute = len(missing_fields) == 0
+            message = (
+                "structure the explicit bug-fix request into a bug intake payload"
+                if ready_to_execute
+                else "ask the user to describe the expected behavior in one sentence before starting the bug workflow"
+            )
+            return {
+                "status": "bug_repair_request_resolved",
+                "resolved": True,
+                "domain": "bug_repair",
+                "tool": str(intent.get("tool", "")).strip(),
+                "args": args,
+                "ready_to_execute": ready_to_execute,
+                "ask_confirmation": not ready_to_execute,
+                "message": message,
+                "missing_fields": missing_fields,
+                "matched_intent": intent,
+                "extracted_request": extracted,
+                "catalog": catalog,
+            }
+    return {
+        "status": "no_bug_repair_request_match",
+        "resolved": False,
+        "domain": "",
+        "tool": "",
+        "args": {},
+        "ready_to_execute": False,
+        "ask_confirmation": False,
+        "message": "the request did not match the current bug-repair phrase set",
+        "catalog": catalog,
     }
 
 
@@ -489,6 +730,19 @@ def plan_user_request(
     *,
     detect_basicflow_staleness: Callable[[Path], dict[str, Any]],
 ) -> dict[str, Any]:
+    bug_repair_resolution = resolve_bug_repair_user_request(project_root, user_request)
+    if bool(bug_repair_resolution.get("resolved", False)):
+        return {
+            "status": "user_request_planned",
+            "resolved": True,
+            "domain": str(bug_repair_resolution.get("domain", "")).strip(),
+            "tool": str(bug_repair_resolution.get("tool", "")).strip(),
+            "args": bug_repair_resolution.get("args", {}),
+            "ready_to_execute": bool(bug_repair_resolution.get("ready_to_execute", False)),
+            "ask_confirmation": bool(bug_repair_resolution.get("ask_confirmation", False)),
+            "message": str(bug_repair_resolution.get("message", "")).strip(),
+            "plan": bug_repair_resolution,
+        }
     basicflow_plan = plan_basicflow_user_request(
         project_root,
         user_request,
@@ -537,10 +791,12 @@ def handle_user_request(
     user_request: str,
     *,
     detect_basicflow_staleness: Callable[[Path], dict[str, Any]],
+    collect_bug_report: Callable[[Path, Namespace], dict[str, Any]],
     run_preflight: Callable[[Path], Any],
     configure_godot_executable: Callable[[Path, str], Path],
     get_basicflow_generation_questions: Callable[[Path], dict[str, Any]],
     analyze_basicflow_staleness: Callable[[Path], dict[str, Any]],
+    repair_reported_bug: Callable[[Path, Namespace], dict[str, Any]] = lambda *_: {},
 ) -> dict[str, Any]:
     plan = plan_user_request(
         project_root,
@@ -569,6 +825,36 @@ def handle_user_request(
             "plan": plan,
         }
     tool = str(plan.get("tool", "")).strip()
+    if tool == "collect_bug_report":
+        bug_args = Namespace(**plan.get("args", {}))
+        intake = collect_bug_report(project_root, bug_args)
+        return {
+            "status": "user_request_handled",
+            "resolved": True,
+            "executed": True,
+            "domain": str(plan.get("domain", "")).strip(),
+            "tool": tool,
+            "args": plan.get("args", {}),
+            "message": str(plan.get("message", "")).strip(),
+            "result": intake,
+            "follow_up_tools": ["analyze_bug_report", "plan_bug_investigation"],
+            "plan": plan,
+        }
+    if tool == "repair_reported_bug":
+        bug_args = Namespace(**plan.get("args", {}))
+        result = repair_reported_bug(project_root, bug_args)
+        return {
+            "status": "user_request_handled",
+            "resolved": True,
+            "executed": True,
+            "domain": str(plan.get("domain", "")).strip(),
+            "tool": tool,
+            "args": plan.get("args", {}),
+            "message": str(plan.get("message", "")).strip(),
+            "result": result,
+            "follow_up_tools": [str(result.get("next_action", "")).strip()] if str(result.get("next_action", "")).strip() else [],
+            "plan": plan,
+        }
     if tool == "preflight_project":
         result = run_preflight(project_root)
         return {

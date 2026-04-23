@@ -8,6 +8,61 @@ from v2.mcp_core.tool_dispatch import ToolDispatchApi, dispatch_tool
 
 
 class ToolDispatchTests(unittest.TestCase):
+    def test_dispatch_repair_reported_bug_returns_workflow_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = type(
+                "Args",
+                (),
+                {
+                    "tool": "repair_reported_bug",
+                    "bug_report": "敌人受击后没有闪红",
+                    "expected_behavior": "敌人受击后应该闪红一次",
+                },
+            )()
+            api = ToolDispatchApi(
+                collect_bug_report=lambda *_: {},
+                analyze_bug_report=lambda *_: {},
+                define_bug_assertions=lambda *_: {},
+                plan_bug_repro_flow=lambda *_: {},
+                run_bug_repro_flow=lambda *_: {},
+                rerun_bug_repro_flow=lambda *_: {},
+                plan_bug_fix=lambda *_: {},
+                apply_bug_fix=lambda *_: {},
+                run_bug_fix_regression=lambda *_: {},
+                verify_bug_fix=lambda *_: {},
+                repair_reported_bug=lambda *_: {
+                    "schema": "pointer_gpf.v2.reported_bug_repair.v1",
+                    "status": "awaiting_model_evidence_plan",
+                },
+                configure_godot_executable=lambda *_: project_root / "cfg.json",
+                sync_project_plugin=lambda *_: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda *_: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                resolve_requested_flow_file=lambda *_: (None, None, None),
+                run_basic_flow_tool=lambda *_: (0, {"ok": True, "result": {}}, True),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+                collect_inline_generation_answers=lambda *_: None,
+                generate_basicflow_from_answers_file=lambda *_: {},
+                generate_basicflow_from_answers=lambda *_: {},
+                get_basicflow_generation_questions=lambda *_: {},
+                get_basicflow_user_intents=lambda *_: {},
+                get_user_request_command_guide=lambda *_: {},
+                resolve_basicflow_user_request=lambda *_: {},
+                plan_basicflow_user_request=lambda *_: {},
+                plan_user_request=lambda *_: {},
+                handle_user_request=lambda *_: {},
+                start_basicflow_generation_session=lambda *_: {},
+                answer_basicflow_generation_session=lambda *_: {},
+                complete_basicflow_generation_session=lambda *_: {},
+                analyze_basicflow_staleness=lambda *_: {},
+            )
+
+            exit_code, payload = dispatch_tool(args, project_root, api)
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["schema"], "pointer_gpf.v2.reported_bug_repair.v1")
+
     def test_dispatch_collect_bug_report_returns_normalized_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

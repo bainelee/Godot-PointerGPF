@@ -29,6 +29,8 @@ ALLOWED_FLOW_ACTIONS = frozenset(
         "click",
         "wait",
         "check",
+        "sample",
+        "observe",
         "snapshot",
         "closeProject",
     }

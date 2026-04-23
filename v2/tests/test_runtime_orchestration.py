@@ -125,6 +125,55 @@ class RuntimeOrchestrationTests(unittest.TestCase):
         self.assertFalse(response["result"]["isolation"]["isolated"])
         self.assertEqual(response["result"]["project_close"]["project_process_count"], 0)
 
+    def test_run_basic_flow_tool_exposes_runtime_evidence_from_execution_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            flow_file = project_root / "pointer_gpf" / "basicflow.json"
+            flow_file.parent.mkdir(parents=True, exist_ok=True)
+            flow_file.write_text(
+                json.dumps({"flowId": "project_basicflow", "steps": [{"id": "sample", "action": "sample"}]}),
+                encoding="utf-8",
+            )
+
+            exit_code, response, _ = run_basic_flow_tool(
+                project_root,
+                flow_file,
+                execution_mode="play_mode",
+                load_flow=lambda _: {"flowId": "project_basicflow", "steps": [{"id": "sample", "action": "sample"}]},
+                sync_project_plugin=lambda _: project_root / "addons" / "pointer_gpf",
+                run_preflight=lambda _: type("PreflightResult", (), {"ok": True, "to_dict": lambda self: {"ok": True}})(),
+                detect_multiple_project_processes=lambda _: None,
+                acquire_flow_lock=lambda _: {"token": "token", "recovered_stale_lock": False},
+                ensure_play_mode=lambda _: {"status": "entered_play_mode"},
+                launch_isolated_runtime=lambda _root, _exe: None,
+                load_godot_executable=lambda _: "D:/GODOT/Godot.exe",
+                run_basic_flow=lambda _root, _flow: {
+                    "status": "passed",
+                    "step_count": 1,
+                    "runtime_evidence_records": [
+                        {
+                            "evidence_id": "enemy_modulate_window",
+                            "record_type": "sample_result",
+                            "status": "passed",
+                        }
+                    ],
+                    "runtime_evidence_summary": {"record_count": 1, "failed_evidence_ids": [], "inconclusive_evidence_ids": []},
+                },
+                verify_isolated_runtime_stopped=lambda _: {"status": "verified"},
+                verify_teardown=lambda _: {"status": "verified", "project_process_count": 0},
+                terminate_project_processes=lambda _: {"status": "cleared", "terminated_pids": [1234], "remaining_process_count": 0},
+                clear_runtime_markers=lambda _: None,
+                mark_basicflow_run_success=lambda _: {"last_successful_run_at": ""},
+                basicflow_paths=lambda _: type("Paths", (), {"flow_file": flow_file})(),
+                close_isolated_runtime_session=lambda _: None,
+                release_flow_lock=lambda _root, _token: None,
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["runtime_evidence_summary"]["record_count"], 1)
+        self.assertEqual(response["result"]["runtime_evidence_records"][0]["evidence_id"], "enemy_modulate_window")
+
     def test_run_basic_flow_tool_cleans_up_current_project_on_step_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

@@ -72,6 +72,94 @@ class BugReproExecutionTests(unittest.TestCase):
             self.assertTrue(repro_result_path(project_root).is_file())
             self.assertEqual(load_repro_result(project_root)["status"], "bug_not_reproduced")
 
+    def test_run_bug_repro_flow_persists_runtime_evidence_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            args = argparse.Namespace(execution_mode="play_mode")
+            payload = run_bug_repro_flow(
+                project_root,
+                args,
+                plan_bug_repro_flow_fn=lambda *_: {
+                    "bug_summary": "summary",
+                    "assertion_coverage": [],
+                    "unsupported_assertions": [],
+                    "assertion_set": {
+                        "postconditions": [
+                            {
+                                "id": "visible_state_changed",
+                                "kind": "runtime_evidence",
+                                "target": {"hint": "node_name:Enemy"},
+                                "expected": True,
+                                "reason": "model requested generic runtime evidence",
+                                "runtime_check": {
+                                    "supported": True,
+                                    "action": "check",
+                                    "check_type": "node_property_changes_within_window",
+                                    "metric": {"kind": "node_property", "property_path": "modulate"},
+                                    "predicate": {"operator": "not_equals", "compare_to": "baseline_first_sample"},
+                                    "evidence_ref": "enemy_modulate_window",
+                                },
+                            }
+                        ]
+                    },
+                    "candidate_flow": {
+                        "steps": [
+                            {"id": "launch_game", "action": "launchGame"},
+                            {
+                                "id": "sample_enemy_modulate",
+                                "action": "sample",
+                                "target": {"hint": "node_name:Enemy"},
+                                "metric": {"kind": "node_property", "property_path": "modulate"},
+                                "windowMs": 400,
+                                "intervalMs": 50,
+                                "evidenceKey": "enemy_modulate_window",
+                            },
+                            {
+                                "id": "check_enemy_modulate_changed",
+                                "action": "check",
+                                "checkType": "node_property_changes_within_window",
+                                "evidenceRef": "enemy_modulate_window",
+                            },
+                            {"id": "close_project", "action": "closeProject"},
+                        ]
+                    },
+                    "execution_contract": {
+                        "setup_step_ids": ["launch_game"],
+                        "precondition_step_ids": [],
+                        "trigger_step_ids": [],
+                        "postcondition_step_ids": ["check_enemy_modulate_changed"],
+                        "close_step_ids": ["close_project"],
+                    },
+                },
+                run_basic_flow_tool=lambda *_: (
+                    0,
+                    {
+                        "ok": True,
+                        "result": {
+                            "execution": {"status": "passed"},
+                            "runtime_evidence_records": [
+                                {
+                                    "evidence_id": "enemy_modulate_window",
+                                    "record_type": "sample_result",
+                                    "status": "passed",
+                                    "samples": [{"timestamp_ms": 0, "value": "white"}],
+                                }
+                            ],
+                        },
+                    },
+                    True,
+                ),
+                normalize_execution_mode=lambda raw: str(raw or "play_mode"),
+            )
+
+            stored = load_repro_result(project_root)
+
+        self.assertEqual(payload["runtime_evidence_summary"]["record_count"], 1)
+        self.assertEqual(payload["runtime_evidence_records"][0]["evidence_id"], "enemy_modulate_window")
+        self.assertEqual(payload["runtime_evidence_catalog"][0]["evidence_ref"], "enemy_modulate_window")
+        self.assertEqual(payload["check_results"][0]["runtime_evidence"][0]["record_type"], "sample_result")
+        self.assertEqual(stored["runtime_evidence_summary"]["record_count"], 1)
+
     def test_run_bug_repro_flow_carries_round_metadata_from_bug_case(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

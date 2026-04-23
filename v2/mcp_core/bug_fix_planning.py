@@ -50,6 +50,25 @@ def _suggest_fix_goals_from_evidence(repro_payload: dict[str, Any], observation:
             goals.append("restore the post-trigger UI state so the original interaction target no longer remains visible after success")
         elif "GamePointerHud" in hint:
             goals.append("restore the gameplay HUD path so the expected HUD anchor exists after the scene transition")
+        check_type = str(failed.get("check_type", "")).strip()
+        evidence_ref = str(failed.get("evidence_ref", "")).strip()
+        if evidence_ref and "changes_within_window" in check_type:
+            goals.append(f"make the observed runtime value change during the evidence window {evidence_ref}")
+        elif evidence_ref and "returns_to_baseline" in check_type:
+            goals.append(f"make the observed runtime value return to baseline for evidence window {evidence_ref}")
+        elif evidence_ref and "signal" in check_type:
+            goals.append(f"make the expected runtime event occur during evidence window {evidence_ref}")
+        elif evidence_ref:
+            goals.append(f"repair the code path that failed evidence-backed check {evidence_ref}")
+
+    runtime_evidence_summary = repro_payload.get("runtime_evidence_summary", {})
+    if isinstance(runtime_evidence_summary, dict):
+        failed_evidence_ids = runtime_evidence_summary.get("failed_evidence_ids", [])
+        if isinstance(failed_evidence_ids, list):
+            for evidence_id in failed_evidence_ids[:3]:
+                cleaned = str(evidence_id).strip()
+                if cleaned:
+                    goals.append(f"inspect and repair the runtime path behind failed evidence {cleaned}")
 
     runtime_diagnostics = observation.get("runtime_diagnostics", {})
     if isinstance(runtime_diagnostics, dict) and int(runtime_diagnostics.get("blocking_count", 0) or 0) > 0:
@@ -108,11 +127,22 @@ def _candidate_files_from_observation(project_root: Path, repro_payload: dict[st
     failed_checks = check_summary.get("failed_checks", []) if isinstance(check_summary, dict) else []
     failed_text = " ".join(
         [
-            str(item.get("source_assertion_id", "")).strip() + " " + str(item.get("hint", "")).strip()
+            str(item.get("source_assertion_id", "")).strip()
+            + " "
+            + str(item.get("hint", "")).strip()
+            + " "
+            + str(item.get("check_type", "")).strip()
+            + " "
+            + str(item.get("evidence_ref", "")).strip()
             for item in failed_checks
             if isinstance(item, dict)
         ]
     ).lower()
+    evidence_refs = [
+        str(item.get("evidence_ref", "")).strip()
+        for item in failed_checks
+        if isinstance(item, dict) and str(item.get("evidence_ref", "")).strip()
+    ]
 
     for path_text in observation_files:
         normalized = str(path_text).strip()
@@ -127,6 +157,8 @@ def _candidate_files_from_observation(project_root: Path, repro_payload: dict[st
             elif "target_scene_reached" in failed_text or "gamelevel" in failed_text:
                 if "menu" in lowered or "main" in lowered or "game_level" in lowered:
                     reason = "script is related to the failed scene-transition checks"
+            elif evidence_refs:
+                reason = "script is a candidate from bug observation and the repro has failed runtime evidence refs: " + ", ".join(evidence_refs[:3])
         elif normalized.endswith(".tscn"):
             if "gamepointerhud" in failed_text or "hud" in failed_text:
                 if "hud" in lowered or "game_level" in lowered:
@@ -134,6 +166,8 @@ def _candidate_files_from_observation(project_root: Path, repro_payload: dict[st
             elif "target_scene_reached" in failed_text or "gamelevel" in failed_text:
                 if "main" in lowered or "game_level" in lowered:
                     reason = "scene is related to the failed scene-transition checks"
+            elif evidence_refs:
+                reason = "scene is a candidate from bug observation and the repro has failed runtime evidence refs: " + ", ".join(evidence_refs[:3])
         absolute = project_root / normalized.replace("res://", "").replace("/", "\\") if normalized.startswith("res://") else None
         out.append(
             {
@@ -158,11 +192,34 @@ def _evidence_summary(repro_payload: dict[str, Any], observation: dict[str, Any]
     latest_repro = observation.get("latest_repro_result", {})
     if not isinstance(latest_repro, dict):
         latest_repro = {}
+    runtime_evidence_summary = repro_payload.get("runtime_evidence_summary", {})
+    if not isinstance(runtime_evidence_summary, dict):
+        runtime_evidence_summary = {}
+    runtime_evidence_records = repro_payload.get("runtime_evidence_records", [])
+    if not isinstance(runtime_evidence_records, list):
+        runtime_evidence_records = []
+    compact_records: list[dict[str, Any]] = []
+    for record in runtime_evidence_records[:5]:
+        if not isinstance(record, dict):
+            continue
+        compact_records.append(
+            {
+                "evidence_id": str(record.get("evidence_id", "") or record.get("id", "")).strip(),
+                "record_type": str(record.get("record_type", "") or record.get("type", "")).strip(),
+                "status": str(record.get("status", "")).strip(),
+                "target": record.get("target", {}) if isinstance(record.get("target", {}), dict) else {},
+                "metric": record.get("metric", {}) if isinstance(record.get("metric", {}), dict) else {},
+                "sample_count": len(record.get("samples", [])) if isinstance(record.get("samples", []), list) else 0,
+                "event_count": len(record.get("events", [])) if isinstance(record.get("events", []), list) else 0,
+            }
+        )
     return {
         "repro_status": str(repro_payload.get("status", "")).strip(),
         "failed_phase": str(repro_payload.get("failed_phase", "")).strip(),
         "failed_check_ids": list(check_summary.get("failed_check_ids", []))[:5] if isinstance(check_summary.get("failed_check_ids", []), list) else [],
         "failed_checks": list(check_summary.get("failed_checks", []))[:5] if isinstance(check_summary.get("failed_checks", []), list) else [],
+        "runtime_evidence_summary": runtime_evidence_summary,
+        "runtime_evidence_records": compact_records,
         "blocking_runtime_items": list(runtime_diagnostics.get("blocking_items", []))[:3] if isinstance(runtime_diagnostics.get("blocking_items", []), list) else [],
         "latest_repro_step_id": str(latest_repro.get("step_id", "")).strip(),
     }
@@ -182,6 +239,9 @@ def _acceptance_checks(repro_payload: dict[str, Any]) -> list[dict[str, str]]:
                 "assertion_id": str(item.get("source_assertion_id", "")).strip(),
                 "action": str(item.get("action", "")).strip(),
                 "hint": str(item.get("hint", "")).strip(),
+                "check_type": str(item.get("check_type", "")).strip(),
+                "evidence_ref": str(item.get("evidence_ref", "")).strip(),
+                "predicate": item.get("predicate", {}) if isinstance(item.get("predicate", {}), dict) else {},
                 "mapped_step_id": str(item.get("mapped_step_id", "")).strip(),
             }
         )

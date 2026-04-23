@@ -38,6 +38,7 @@ from .bug_fix_planning import plan_bug_fix
 from .bug_repro_execution import rerun_bug_repro_flow, run_bug_repro_flow
 from .bug_repro_flow import plan_bug_repro_flow
 from .bug_report import collect_bug_report
+from .bug_repair_workflow import repair_reported_bug
 from .basicflow_generation import (
     generate_basicflow_from_answers,
     generate_basicflow_from_answers_file,
@@ -135,6 +136,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--location-script")
     parser.add_argument("--frequency-hint")
     parser.add_argument("--severity-hint")
+    parser.add_argument("--evidence-plan-json")
+    parser.add_argument("--evidence-plan-file")
+    parser.add_argument("--fix-proposal-json")
+    parser.add_argument("--fix-proposal-file")
     parser.add_argument("--bug-case-file")
     parser.add_argument("--round-id")
     parser.add_argument("--bug-id")
@@ -427,6 +432,39 @@ def _handle_user_request(project_root: Path, user_request: str) -> dict[str, Any
         project_root,
         user_request,
         detect_basicflow_staleness=detect_basicflow_staleness,
+        collect_bug_report=collect_bug_report,
+        repair_reported_bug=lambda root, args: repair_reported_bug(
+            root,
+            args,
+            collect_bug_report_fn=collect_bug_report,
+            observe_bug_context_fn=observe_bug_context,
+            plan_bug_repro_flow_fn=plan_bug_repro_flow,
+            run_bug_repro_flow_fn=lambda inner_root, current_args: run_bug_repro_flow(
+                inner_root,
+                current_args,
+                run_basic_flow_tool=lambda flow_root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                    flow_root,
+                    flow_file,
+                    basicflow_context=basicflow_context,
+                    execution_mode=mode,
+                ),
+                normalize_execution_mode=_normalize_execution_mode,
+            ),
+            plan_bug_fix_fn=plan_bug_fix,
+            apply_bug_fix_fn=lambda inner_root, current_args: apply_bug_fix(inner_root, current_args, plan_bug_fix_fn=plan_bug_fix),
+            rerun_bug_repro_flow_fn=lambda inner_root, current_args: rerun_bug_repro_flow(
+                inner_root,
+                current_args,
+                run_basic_flow_tool=lambda flow_root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                    flow_root,
+                    flow_file,
+                    basicflow_context=basicflow_context,
+                    execution_mode=mode,
+                ),
+                normalize_execution_mode=_normalize_execution_mode,
+            ),
+            run_bug_fix_regression_fn=run_bug_fix_regression,
+        ),
         run_preflight=run_preflight,
         configure_godot_executable=configure_godot_executable,
         get_basicflow_generation_questions=get_basicflow_generation_questions,
@@ -470,6 +508,38 @@ def _build_tool_dispatch_api() -> ToolDispatchApi:
             project_root,
             args,
             plan_bug_fix_fn=plan_bug_fix,
+        ),
+        repair_reported_bug=lambda project_root, args: repair_reported_bug(
+            project_root,
+            args,
+            collect_bug_report_fn=collect_bug_report,
+            observe_bug_context_fn=observe_bug_context,
+            plan_bug_repro_flow_fn=plan_bug_repro_flow,
+            run_bug_repro_flow_fn=lambda root, current_args: run_bug_repro_flow(
+                root,
+                current_args,
+                run_basic_flow_tool=lambda inner_root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                    inner_root,
+                    flow_file,
+                    basicflow_context=basicflow_context,
+                    execution_mode=mode,
+                ),
+                normalize_execution_mode=_normalize_execution_mode,
+            ),
+            plan_bug_fix_fn=plan_bug_fix,
+            apply_bug_fix_fn=lambda root, current_args: apply_bug_fix(root, current_args, plan_bug_fix_fn=plan_bug_fix),
+            rerun_bug_repro_flow_fn=lambda root, current_args: rerun_bug_repro_flow(
+                root,
+                current_args,
+                run_basic_flow_tool=lambda inner_root, flow_file, basicflow_context, mode: _run_basic_flow_tool(
+                    inner_root,
+                    flow_file,
+                    basicflow_context=basicflow_context,
+                    execution_mode=mode,
+                ),
+                normalize_execution_mode=_normalize_execution_mode,
+            ),
+            run_bug_fix_regression_fn=run_bug_fix_regression,
         ),
         run_bug_fix_regression=run_bug_fix_regression,
         verify_bug_fix=lambda project_root, args: verify_bug_fix(

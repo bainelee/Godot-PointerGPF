@@ -6,6 +6,7 @@ from typing import Any
 
 from .basicflow_assets import BasicFlowAssetError, basicflow_paths, load_basicflow_assets
 from .bug_assertions import define_bug_assertions
+from .bug_evidence_plan import load_model_evidence_plan
 
 
 def _load_base_flow(project_root: Path) -> tuple[dict[str, Any], str]:
@@ -105,7 +106,7 @@ def _build_execution_contract(candidate_steps: list[dict[str, Any]]) -> dict[str
         elif action == "click":
             trigger_step_ids.append(step_id)
         elif first_trigger_index is None or index < first_trigger_index:
-            if action in {"wait", "check"}:
+            if action in {"wait", "check", "sample", "observe"}:
                 precondition_step_ids.append(step_id)
             else:
                 setup_step_ids.append(step_id)
@@ -139,8 +140,102 @@ def _explicit_trigger_step(args: Any) -> dict[str, Any] | None:
     }
 
 
+def _model_evidence_steps_by_phase(evidence_plan_payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    plan = evidence_plan_payload.get("plan", {}) if isinstance(evidence_plan_payload, dict) else {}
+    raw_steps = plan.get("steps", []) if isinstance(plan, dict) else []
+    out = {
+        "pre_trigger": [],
+        "trigger_window": [],
+        "post_trigger": [],
+        "final_check": [],
+    }
+    if not isinstance(raw_steps, list):
+        return out
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        phase = str(raw_step.get("phase", "") or raw_step.get("modelEvidencePhase", "") or "post_trigger").strip()
+        if phase not in out:
+            phase = "post_trigger"
+        out[phase].append(deepcopy(raw_step))
+    return out
+
+
+def _materialize_trigger_window_steps(raw_steps: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    before_trigger: list[dict[str, Any]] = []
+    after_trigger: list[dict[str, Any]] = []
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        action = str(raw_step.get("action", "")).strip().lower()
+        if action != "observe":
+            after_trigger.append(deepcopy(raw_step))
+            continue
+        evidence_key = str(raw_step.get("evidenceKey", "") or raw_step.get("evidence_key", "") or raw_step.get("evidenceRef", "") or raw_step.get("evidence_ref", "")).strip()
+        step_id = str(raw_step.get("id", "")).strip() or f"observe_{evidence_key}"
+        start_step = deepcopy(raw_step)
+        start_step["id"] = f"{step_id}_start"
+        start_step["mode"] = "start"
+        start_step["phase"] = "pre_trigger"
+        start_step["modelEvidencePhase"] = "trigger_window"
+        collect_step = {
+            "id": f"{step_id}_collect",
+            "action": "observe",
+            "mode": "collect",
+            "phase": "post_trigger",
+            "modelEvidencePhase": "trigger_window",
+            "source": "model_evidence_plan",
+            "evidenceRef": evidence_key,
+            "evidenceKey": evidence_key,
+        }
+        before_trigger.append(start_step)
+        after_trigger.append(collect_step)
+    return before_trigger, after_trigger
+
+
+def _evidence_refs_for_steps(steps: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    produced: list[str] = []
+    required: list[str] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        action = str(step.get("action", "")).strip().lower()
+        evidence_key = str(step.get("evidenceKey", "") or step.get("evidence_key", "")).strip()
+        evidence_ref = str(step.get("evidenceRef", "") or step.get("evidence_ref", "")).strip()
+        mode = str(step.get("mode", "")).strip().lower()
+        if action in {"sample", "observe"} and mode != "collect" and evidence_key and evidence_key not in produced:
+            produced.append(evidence_key)
+        if action == "observe" and mode == "collect" and evidence_ref and evidence_ref not in produced:
+            produced.append(evidence_ref)
+        if action == "check" and evidence_ref and evidence_ref not in required:
+            required.append(evidence_ref)
+    return produced, required
+
+
+def _model_step_coverage(steps: list[dict[str, Any]]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        out.append(
+            {
+                "step_id": str(step.get("id", "")).strip(),
+                "phase": str(step.get("phase", "") or step.get("modelEvidencePhase", "")).strip(),
+                "action": str(step.get("action", "")).strip(),
+                "status": "planned",
+                "evidence_ref": str(step.get("evidenceRef", "") or step.get("evidence_ref", "") or step.get("evidenceKey", "") or step.get("evidence_key", "")).strip(),
+            }
+        )
+    return out
+
+
 def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
     assertion_set = define_bug_assertions(project_root, args)
+    evidence_plan_payload = load_model_evidence_plan(project_root, args)
+    evidence_steps_by_phase = _model_evidence_steps_by_phase(evidence_plan_payload)
+    trigger_window_start_steps, trigger_window_collect_steps = _materialize_trigger_window_steps(
+        evidence_steps_by_phase["trigger_window"]
+    )
     base_flow, strategy = _load_base_flow(project_root)
     steps = [step for step in base_flow.get("steps", []) if isinstance(step, dict)]
     close_index = _find_close_index(steps)
@@ -220,20 +315,37 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
         first_trigger_index = len(core_steps) + len(planned_precondition_steps) if planned_trigger is not None else None
 
     if first_trigger_index is None:
-        candidate_core = core_steps + planned_precondition_steps + planned_postcondition_steps
+        candidate_core = (
+            core_steps
+            + planned_precondition_steps
+            + evidence_steps_by_phase["pre_trigger"]
+            + trigger_window_start_steps
+            + planned_postcondition_steps
+            + trigger_window_collect_steps
+            + evidence_steps_by_phase["post_trigger"]
+            + evidence_steps_by_phase["final_check"]
+        )
     else:
         trigger_insert_index = _find_first_trigger_index(core_steps)
         if trigger_insert_index is None:
-            candidate_core = core_steps + planned_precondition_steps
+            candidate_core = core_steps + planned_precondition_steps + evidence_steps_by_phase["pre_trigger"] + trigger_window_start_steps
             if planned_trigger is not None:
                 candidate_core.append(planned_trigger)
             candidate_core.extend(planned_postcondition_steps)
+            candidate_core.extend(trigger_window_collect_steps)
+            candidate_core.extend(evidence_steps_by_phase["post_trigger"])
+            candidate_core.extend(evidence_steps_by_phase["final_check"])
         else:
             candidate_core = (
                 core_steps[:trigger_insert_index]
                 + planned_precondition_steps
+                + evidence_steps_by_phase["pre_trigger"]
+                + trigger_window_start_steps
                 + core_steps[trigger_insert_index:]
                 + planned_postcondition_steps
+                + trigger_window_collect_steps
+                + evidence_steps_by_phase["post_trigger"]
+                + evidence_steps_by_phase["final_check"]
             )
 
     candidate_steps = candidate_core + close_steps
@@ -245,7 +357,18 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
         "steps": candidate_steps,
     }
 
+    model_evidence_steps = (
+        evidence_steps_by_phase["pre_trigger"]
+        + trigger_window_start_steps
+        + trigger_window_collect_steps
+        + evidence_steps_by_phase["post_trigger"]
+        + evidence_steps_by_phase["final_check"]
+    )
+    evidence_refs_produced, evidence_refs_required = _evidence_refs_for_steps(model_evidence_steps)
     planned_step_count = len(planned_precondition_steps) + len(planned_postcondition_steps) + (1 if planned_trigger is not None else 0)
+    repro_readiness = "blocked_by_unsupported_assertions" if unsupported_assertions else "ready_for_repro_run"
+    if str(evidence_plan_payload.get("status", "")).strip() == "rejected":
+        repro_readiness = "blocked_by_rejected_evidence_plan"
     return {
         "schema": "pointer_gpf.v2.repro_flow_plan.v1",
         "project_root": str(project_root.resolve()),
@@ -259,8 +382,16 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
         "planned_assertion_step_count": planned_step_count,
         "unsupported_assertions": unsupported_assertions,
         "assertion_coverage": assertion_coverage,
-        "needs_flow_patch": bool(planned_step_count),
-        "repro_readiness": "blocked_by_unsupported_assertions" if unsupported_assertions else "ready_for_repro_run",
+        "model_evidence_plan_status": str(evidence_plan_payload.get("status", "")).strip(),
+        "model_evidence_plan": evidence_plan_payload.get("plan", {}) if isinstance(evidence_plan_payload.get("plan", {}), dict) else {},
+        "rejected_evidence_plan_reasons": evidence_plan_payload.get("rejected_reasons", []) if isinstance(evidence_plan_payload.get("rejected_reasons", []), list) else [],
+        "planned_runtime_evidence_step_count": len(model_evidence_steps),
+        "model_planned_step_ids": [str(step.get("id", "")).strip() for step in model_evidence_steps if str(step.get("id", "")).strip()],
+        "evidence_step_coverage": _model_step_coverage(model_evidence_steps),
+        "evidence_refs_required": evidence_refs_required,
+        "evidence_refs_produced": evidence_refs_produced,
+        "needs_flow_patch": bool(planned_step_count or model_evidence_steps),
+        "repro_readiness": repro_readiness,
         "candidate_flow": candidate_flow,
         "execution_contract": _build_execution_contract(candidate_steps),
         "next_action": "review_or_materialize_repro_flow",

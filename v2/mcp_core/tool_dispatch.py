@@ -52,6 +52,7 @@ class ToolDispatchApi:
     start_test_project_bug_round: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
     seed_test_project_bug: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
     restore_test_project_bug_round: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
+    repair_reported_bug: Callable[[Path, Any], dict[str, Any]] = lambda *_: {}
 
 
 def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[int, dict[str, Any]]:
@@ -306,6 +307,31 @@ def dispatch_tool(args: Any, project_root: Path, api: ToolDispatchApi) -> tuple[
                         "--location-script",
                         "--frequency-hint",
                         "--severity-hint",
+                    ],
+                },
+            )
+
+    if args.tool == "repair_reported_bug":
+        try:
+            return 0, build_ok_payload(api.repair_reported_bug(project_root, args))
+        except ValueError as exc:
+            return 2, build_error_payload(
+                ERR_BUG_REPORT_INCOMPLETE,
+                str(exc),
+                {
+                    "required_args": [
+                        "--bug-report",
+                        "--expected-behavior",
+                    ],
+                    "optional_args": [
+                        "--steps-to-trigger",
+                        "--location-scene",
+                        "--location-node",
+                        "--location-script",
+                        "--evidence-plan-json",
+                        "--evidence-plan-file",
+                        "--fix-proposal-json",
+                        "--fix-proposal-file",
                     ],
                 },
             )

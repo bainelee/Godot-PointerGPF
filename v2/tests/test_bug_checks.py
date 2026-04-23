@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from v2.mcp_core.bug_checks import define_bug_checks, summarize_check_results
+from v2.mcp_core.bug_checks import build_executable_checks, define_bug_checks, summarize_check_results
 
 
 class BugChecksTests(unittest.TestCase):
@@ -116,6 +116,69 @@ class BugChecksTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["status"], "passed")
         self.assertEqual(payload["results"][1]["status"], "failed")
         self.assertEqual(payload["results"][2]["status"], "not_run")
+
+    def test_build_executable_checks_preserves_structured_runtime_check(self) -> None:
+        assertion_set = {
+            "postconditions": [
+                {
+                    "id": "visible_state_changed",
+                    "kind": "runtime_evidence",
+                    "target": {"hint": "node_name:Enemy"},
+                    "expected": True,
+                    "reason": "model requested a generic sampled-state check",
+                    "runtime_check": {
+                        "supported": True,
+                        "action": "check",
+                        "check_type": "node_property_changes_within_window",
+                        "target": {"hint": "node_name:Enemy"},
+                        "metric": {"kind": "node_property", "property_path": "modulate"},
+                        "sample_plan": {"window_ms": 400, "interval_ms": 50},
+                        "predicate": {"operator": "not_equals", "compare_to": "baseline_first_sample"},
+                        "evidence_ref": "enemy_modulate_window",
+                    },
+                }
+            ]
+        }
+        candidate_flow = {
+            "steps": [
+                {
+                    "id": "check_enemy_modulate_changed",
+                    "action": "check",
+                    "checkType": "node_property_changes_within_window",
+                    "evidenceRef": "enemy_modulate_window",
+                }
+            ]
+        }
+
+        checks = build_executable_checks(assertion_set, candidate_flow)
+
+        self.assertEqual(checks[0]["check_type"], "node_property_changes_within_window")
+        self.assertEqual(checks[0]["metric"]["property_path"], "modulate")
+        self.assertEqual(checks[0]["predicate"]["operator"], "not_equals")
+        self.assertEqual(checks[0]["evidence_ref"], "enemy_modulate_window")
+        self.assertEqual(checks[0]["mapped_step_id"], "check_enemy_modulate_changed")
+
+    def test_build_executable_checks_includes_model_evidence_plan_check_step(self) -> None:
+        candidate_flow = {
+            "steps": [
+                {
+                    "id": "check_enemy_modulate_changed",
+                    "action": "check",
+                    "source": "model_evidence_plan",
+                    "phase": "final_check",
+                    "checkType": "node_property_changes_within_window",
+                    "evidenceRef": "enemy_modulate_window",
+                    "predicate": {"operator": "changed_from_baseline"},
+                }
+            ]
+        }
+
+        checks = build_executable_checks({"preconditions": [], "postconditions": []}, candidate_flow)
+
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["source_assertion_id"], "model_evidence_plan")
+        self.assertEqual(checks[0]["evidence_ref"], "enemy_modulate_window")
+        self.assertEqual(checks[0]["mapped_step_id"], "check_enemy_modulate_changed")
 
 
 if __name__ == "__main__":

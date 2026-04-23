@@ -1061,10 +1061,12 @@ class ServerCliTests(unittest.TestCase):
         self.assertEqual(payload["result"]["status"], "command_guide_ready")
         self.assertIn("basicflow", payload["result"]["supported_domains"])
         self.assertIn("project_readiness", payload["result"]["supported_domains"])
+        self.assertIn("bug_repair", payload["result"]["supported_domains"])
         tools = {group["tool"] for group in payload["result"]["command_groups"]}
         self.assertIn("run_basic_flow", tools)
         self.assertIn("preflight_project", tools)
         self.assertIn("configure_godot_executable", tools)
+        self.assertIn("repair_reported_bug", tools)
 
     def test_main_resolve_basic_flow_user_request_routes_run_phrase_to_run_when_fresh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1629,6 +1631,47 @@ class ServerCliTests(unittest.TestCase):
         self.assertEqual(payload["result"]["tool"], "preflight_project")
         self.assertTrue(payload["result"]["ready_to_execute"])
 
+    def test_main_plan_user_request_routes_bug_repair_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "plan_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "敌人在受击之后不会按照预期闪烁一次红色，帮我自动修复这个 bug",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["domain"], "bug_repair")
+        self.assertEqual(payload["result"]["tool"], "repair_reported_bug")
+        self.assertTrue(payload["result"]["ready_to_execute"])
+        self.assertEqual(payload["result"]["args"]["expected_behavior"], "敌人在受击之后应该闪烁一次红色")
+
     def test_main_plan_user_request_routes_configure_godot_without_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -1752,6 +1795,48 @@ class ServerCliTests(unittest.TestCase):
         self.assertEqual(payload["result"]["tool"], "preflight_project")
         self.assertEqual(payload["result"]["result"]["status"], "ready")
 
+    def test_main_handle_user_request_executes_bug_repair_intake(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "敌人在受击之后不会按照预期闪烁一次红色，帮我自动修复这个 bug",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_handled")
+        self.assertEqual(payload["result"]["tool"], "repair_reported_bug")
+        self.assertEqual(payload["result"]["result"]["schema"], "pointer_gpf.v2.reported_bug_repair.v1")
+        self.assertEqual(payload["result"]["result"]["status"], "awaiting_model_evidence_plan")
+        self.assertIn("provide_evidence_plan_json_or_file", payload["result"]["follow_up_tools"])
+
     def test_main_handle_user_request_returns_needs_input_for_configure_without_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -1790,6 +1875,46 @@ class ServerCliTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"]["status"], "user_request_needs_input")
         self.assertEqual(payload["result"]["tool"], "configure_godot_executable")
+        self.assertTrue(payload["result"]["ask_confirmation"])
+
+    def test_main_handle_user_request_returns_needs_input_for_bug_repair_without_expected_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            stdout = StringIO()
+            with patch(
+                "v2.mcp_core.server._parse_args",
+                return_value=type(
+                    "Args",
+                    (),
+                    {
+                        "tool": "handle_user_request",
+                        "project_root": str(project_root),
+                        "flow_file": None,
+                        "godot_executable": None,
+                        "plugin_source": None,
+                        "answers_file": None,
+                        "allow_stale_basicflow": False,
+                        "main_scene_is_entry": None,
+                        "tested_features": None,
+                        "include_screenshot_evidence": None,
+                        "entry_scene_path": None,
+                        "session_id": None,
+                        "question_id": None,
+                        "answer": None,
+                        "user_request": "帮我修复这个 bug：敌人状态不对",
+                    },
+                )(),
+            ), patch(
+                "v2.mcp_core.server.detect_basicflow_staleness",
+                return_value={"status": "fresh", "is_stale": False, "reasons": [], "message": "fresh"},
+            ), redirect_stdout(stdout):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"]["status"], "user_request_needs_input")
+        self.assertEqual(payload["result"]["tool"], "repair_reported_bug")
         self.assertTrue(payload["result"]["ask_confirmation"])
 
     def test_main_handle_user_request_executes_configure_with_path(self) -> None:

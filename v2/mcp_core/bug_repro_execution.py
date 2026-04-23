@@ -169,6 +169,93 @@ def _extract_error(raw_payload: dict[str, Any]) -> tuple[str, str, dict[str, Any
     return str(error.get("code", "")).strip(), str(error.get("message", "")).strip(), details
 
 
+def _runtime_evidence_payload(raw_payload: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not isinstance(raw_payload, dict):
+        return [], {}
+    sources: list[dict[str, Any]] = [raw_payload]
+    result = raw_payload.get("result", {})
+    if isinstance(result, dict):
+        sources.append(result)
+
+    records: list[dict[str, Any]] = []
+    summary: dict[str, Any] = {}
+    for source in sources:
+        raw_records = source.get("runtime_evidence_records", [])
+        if isinstance(raw_records, list):
+            records.extend([dict(item) for item in raw_records if isinstance(item, dict)])
+        if not summary and isinstance(source.get("runtime_evidence_summary", {}), dict):
+            summary = dict(source.get("runtime_evidence_summary", {}))
+
+    if not summary:
+        failed = [
+            str(item.get("evidence_id", "") or item.get("id", "")).strip()
+            for item in records
+            if isinstance(item, dict) and str(item.get("status", "")).strip().lower() in {"failed", "inconclusive"}
+        ]
+        summary = {
+            "record_count": len(records),
+            "failed_evidence_ids": [item for item in failed if item],
+            "inconclusive_evidence_ids": [
+                str(item.get("evidence_id", "") or item.get("id", "")).strip()
+                for item in records
+                if isinstance(item, dict) and str(item.get("status", "")).strip().lower() == "inconclusive"
+            ],
+            "evidence_by_check_id": {},
+        }
+    return records, summary
+
+
+def _runtime_evidence_catalog(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    catalog: list[dict[str, Any]] = []
+    for check in checks:
+        evidence_ref = str(check.get("evidence_ref", "")).strip()
+        check_type = str(check.get("check_type", "")).strip()
+        if not evidence_ref and not check_type:
+            continue
+        catalog.append(
+            {
+                "check_id": str(check.get("check_id", "")).strip(),
+                "evidence_ref": evidence_ref,
+                "check_type": check_type,
+                "action": str(check.get("action", "")).strip(),
+                "target": check.get("target", {}) if isinstance(check.get("target", {}), dict) else {},
+                "metric": check.get("metric", {}) if isinstance(check.get("metric", {}), dict) else {},
+                "predicate": check.get("predicate", {}) if isinstance(check.get("predicate", {}), dict) else {},
+                "sample_plan": check.get("sample_plan", {}) if isinstance(check.get("sample_plan", {}), dict) else {},
+            }
+        )
+    return catalog
+
+
+def _attach_evidence_to_check_results(
+    check_result_bundle: dict[str, Any],
+    evidence_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    by_ref: dict[str, list[dict[str, Any]]] = {}
+    for record in evidence_records:
+        evidence_id = str(record.get("evidence_id", "") or record.get("id", "") or record.get("evidenceRef", "")).strip()
+        if not evidence_id:
+            continue
+        by_ref.setdefault(evidence_id, []).append(record)
+
+    results = check_result_bundle.get("results", [])
+    if not isinstance(results, list):
+        return check_result_bundle
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        evidence_ref = str(result.get("evidence_ref", "")).strip()
+        if not evidence_ref:
+            continue
+        result["evidence_ref"] = evidence_ref
+        result["runtime_evidence"] = by_ref.get(evidence_ref, [])
+        evidence = result.get("evidence", {})
+        if isinstance(evidence, dict):
+            evidence["evidence_ref"] = evidence_ref
+            evidence["runtime_evidence_count"] = len(by_ref.get(evidence_ref, []))
+    return check_result_bundle
+
+
 def _bug_identity(plan_payload: dict[str, Any]) -> dict[str, str]:
     intake = plan_payload.get("assertion_set", {}).get("bug_analysis", {}).get("bug_intake", {})
     if not isinstance(intake, dict):
@@ -269,6 +356,7 @@ def _execute_repro_plan(
         plan_payload.get("assertion_set", {}) if isinstance(plan_payload.get("assertion_set", {}), dict) else {},
         plan_payload.get("candidate_flow", {}) if isinstance(plan_payload.get("candidate_flow", {}), dict) else {},
     )
+    evidence_records, evidence_summary = _runtime_evidence_payload(raw_payload)
     check_result_bundle = summarize_check_results(
         plan_payload.get("candidate_flow", {}) if isinstance(plan_payload.get("candidate_flow", {}), dict) else {},
         checks,
@@ -278,6 +366,7 @@ def _execute_repro_plan(
         error_code=error_code,
         error_message=error_message,
     )
+    check_result_bundle = _attach_evidence_to_check_results(check_result_bundle, evidence_records)
     payload = {
         "schema": schema,
         "project_root": str(project_root.resolve()),
@@ -294,6 +383,9 @@ def _execute_repro_plan(
         "executable_checks": checks,
         "check_results": check_result_bundle.get("results", []),
         "check_summary": check_result_bundle.get("summary", {}),
+        "runtime_evidence_catalog": _runtime_evidence_catalog(checks),
+        "runtime_evidence_records": evidence_records,
+        "runtime_evidence_summary": evidence_summary,
         "raw_run_result": raw_payload,
         "run_exit_code": exit_code,
         "blocking_point": error_message if status in {"precondition_failed", "trigger_failed", "runtime_invalid"} else "",

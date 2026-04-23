@@ -496,6 +496,12 @@ def run_basic_flow_tool(
                 payload = {
                     "play_mode": play_meta,
                     "execution": run_result,
+                    "runtime_evidence_records": run_result.get("runtime_evidence_records", [])
+                    if isinstance(run_result.get("runtime_evidence_records", []), list)
+                    else [],
+                    "runtime_evidence_summary": run_result.get("runtime_evidence_summary", {})
+                    if isinstance(run_result.get("runtime_evidence_summary", {}), dict)
+                    else {},
                     "execution_mode": execution_mode,
                     "isolation": isolation_meta,
                     "plugin_sync": {"destination": str(plugin_destination)},

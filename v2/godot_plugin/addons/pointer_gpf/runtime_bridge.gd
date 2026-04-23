@@ -15,6 +15,8 @@ var _last_seq: int = -1
 var _poll_accum: float = 0.0
 var _automation_input_guard_active: bool = false
 var _run_captures: Dictionary = {}
+var _run_evidence_records: Dictionary = {}
+var _active_observers: Dictionary = {}
 
 
 func _ready() -> void:
@@ -79,6 +81,8 @@ func _poll_bridge() -> void:
         _automation_input_guard_active = true
     if run_id != _last_run_id:
         _run_captures.clear()
+        _run_evidence_records.clear()
+        _active_observers.clear()
     _diag_writer.reset_for_run(run_id)
     var seq := _coerce_int(d.get("seq", null))
     if seq < 0:
@@ -122,6 +126,10 @@ func _dispatch_action(action: String, seq: int, run_id: String, command: Diction
             }
         "capture":
             return _capture_runtime_value(command, step, seq, run_id)
+        "sample":
+            return _sample_runtime_value(command, step, seq, run_id)
+        "observe":
+            return _observe_runtime_event(command, step, seq, run_id)
         "click":
             var click_result := _perform_click(_extract_target(command, step), _extract_position(command, step))
             if not bool(click_result.get("ok", false)):
@@ -143,7 +151,12 @@ func _dispatch_action(action: String, seq: int, run_id: String, command: Diction
             }
         "check":
             var check_result := _evaluate_check(command, step)
-            return {"ok": bool(check_result.get("passed", false)), "seq": seq, "run_id": run_id, "message": "check acknowledged", "details": check_result}
+            var check_rsp := {"ok": bool(check_result.get("passed", false)), "seq": seq, "run_id": run_id, "message": "check acknowledged", "details": check_result}
+            var evidence_ref := str(check_result.get("evidence_ref", "")).strip_edges()
+            if evidence_ref != "" and _run_evidence_records.has(evidence_ref):
+                check_rsp["runtime_evidence_refs"] = [evidence_ref]
+                check_rsp["runtime_evidence_records"] = [_run_evidence_records[evidence_ref]]
+            return check_rsp
         "snapshot":
             return {"ok": true, "seq": seq, "run_id": run_id, "message": "snapshot acknowledged"}
         "closeproject":
@@ -181,6 +194,9 @@ func _extract_wait_hint(command: Dictionary, step: Dictionary) -> String:
 func _evaluate_check(command: Dictionary, step: Dictionary) -> Dictionary:
     var hint := str(step.get("hint", command.get("hint", ""))).strip_edges()
     var target := _extract_target(command, step)
+    var evidence_ref := str(step.get("evidenceRef", step.get("evidence_ref", command.get("evidenceRef", command.get("evidence_ref", ""))))).strip_edges()
+    if evidence_ref != "":
+        return _evaluate_evidence_check(evidence_ref, _extract_predicate(command, step))
     var capture_key := str(step.get("captureKey", command.get("captureKey", ""))).strip_edges()
     var metric := str(step.get("metric", command.get("metric", "rotation_y"))).strip_edges()
     if capture_key != "":
@@ -199,6 +215,301 @@ func _evaluate_check(command: Dictionary, step: Dictionary) -> Dictionary:
             passed = bool(eval_target.get("matched", false))
             reason = str(eval_target.get("reason", "target evaluation"))
     return {"status": "ok" if passed else "failed", "hint": hint, "passed": passed, "reason": reason}
+
+
+func _extract_evidence_key(command: Dictionary, step: Dictionary) -> String:
+    return str(step.get("evidenceKey", step.get("evidence_ref", step.get("evidenceRef", command.get("evidenceKey", ""))))).strip_edges()
+
+
+func _extract_metric(command: Dictionary, step: Dictionary) -> Variant:
+    if step.has("metric"):
+        return step.get("metric")
+    return command.get("metric", "rotation_y")
+
+
+func _extract_predicate(command: Dictionary, step: Dictionary) -> Dictionary:
+    var predicate := step.get("predicate", command.get("predicate", {}))
+    return predicate if typeof(predicate) == TYPE_DICTIONARY else {}
+
+
+func _sample_runtime_value(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
+    var evidence_key := _extract_evidence_key(command, step)
+    if evidence_key == "":
+        return _error_payload("INVALID_ARGUMENT", "evidenceKey is required for sample action", seq, run_id)
+    var target := _extract_target(command, step)
+    var metric := _extract_metric(command, step)
+    var window_ms := max(0, _coerce_int(step.get("windowMs", command.get("windowMs", 0))))
+    var interval_ms := max(16, _coerce_int(step.get("intervalMs", command.get("intervalMs", 50))))
+    var node := _resolve_target_node_with_retry(target, 1200)
+    if node == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve sample target", seq, run_id)
+    var samples: Array = []
+    var start := Time.get_ticks_msec()
+    var elapsed := 0
+    while elapsed <= window_ms:
+        var read_result := _read_runtime_metric(node, metric)
+        var sample := {
+            "timestamp_ms": elapsed,
+            "ok": bool(read_result.get("ok", false)),
+            "value": read_result.get("value", null),
+            "value_type": str(read_result.get("value_type", "")),
+        }
+        if not bool(read_result.get("ok", false)):
+            sample["message"] = str(read_result.get("message", "read failed"))
+        samples.append(sample)
+        if elapsed >= window_ms:
+            break
+        OS.delay_msec(interval_ms)
+        elapsed = Time.get_ticks_msec() - start
+    var status := "passed"
+    for item in samples:
+        if typeof(item) == TYPE_DICTIONARY and not bool((item as Dictionary).get("ok", false)):
+            status = "inconclusive"
+            break
+    var record := {
+        "evidence_id": evidence_key,
+        "record_type": "sample_result",
+        "status": status,
+        "target": _target_description(target, node),
+        "metric": _metric_description(metric),
+        "window_ms": window_ms,
+        "interval_ms": interval_ms,
+        "samples": samples,
+    }
+    _run_evidence_records[evidence_key] = record
+    return {
+        "ok": status == "passed",
+        "seq": seq,
+        "run_id": run_id,
+        "message": "sample acknowledged",
+        "runtime_evidence_refs": [evidence_key],
+        "runtime_evidence_records": [record],
+    }
+
+
+func _observe_runtime_event(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
+    var evidence_key := _extract_evidence_key(command, step)
+    if evidence_key == "":
+        return _error_payload("INVALID_ARGUMENT", "evidenceKey is required for observe action", seq, run_id)
+    var mode := str(step.get("mode", command.get("mode", "window"))).strip_edges().to_lower()
+    if mode == "collect":
+        if not _active_observers.has(evidence_key):
+            return _error_payload("EVENT_OBSERVER_NOT_FOUND", "no active observer exists for evidence key: %s" % evidence_key, seq, run_id)
+        var observer_for_collect_any = _active_observers.get(evidence_key, {})
+        if typeof(observer_for_collect_any) != TYPE_DICTIONARY:
+            return _error_payload("EVENT_OBSERVER_INVALID", "active observer state is invalid", seq, run_id)
+        var observer_for_collect: Dictionary = observer_for_collect_any
+        var setup_for_collect: Dictionary = observer_for_collect.get("setup", {})
+        _stop_observer(evidence_key, setup_for_collect)
+        var collected_record := _build_observer_record(evidence_key, observer_for_collect)
+        _run_evidence_records[evidence_key] = collected_record
+        _active_observers.erase(evidence_key)
+        return {
+            "ok": true,
+            "seq": seq,
+            "run_id": run_id,
+            "message": "observe collect acknowledged",
+            "runtime_evidence_refs": [evidence_key],
+            "runtime_evidence_records": [collected_record],
+        }
+    var event_spec := step.get("event", command.get("event", {}))
+    if typeof(event_spec) != TYPE_DICTIONARY:
+        return _error_payload("INVALID_ARGUMENT", "event object is required for observe action", seq, run_id)
+    var event_dict: Dictionary = event_spec
+    var event_kind := str(event_dict.get("kind", "")).strip_edges()
+    var window_ms := max(16, _coerce_int(step.get("windowMs", command.get("windowMs", 250))))
+    if _active_observers.has(evidence_key):
+        return _error_payload("EVENT_OBSERVER_ALREADY_ACTIVE", "an observer already exists for evidence key: %s" % evidence_key, seq, run_id)
+    _active_observers[evidence_key] = {
+        "events": [],
+        "kind": event_kind,
+        "event_kind": event_kind,
+        "window_ms": window_ms,
+        "started_at_ms": Time.get_ticks_msec(),
+    }
+    var setup := _start_observer(evidence_key, event_dict, _extract_target(command, step))
+    if not bool(setup.get("ok", false)):
+        _active_observers.erase(evidence_key)
+        return _error_payload("EVENT_NOT_SUPPORTED", str(setup.get("message", "event not supported")), seq, run_id)
+    var active_observer: Dictionary = _active_observers[evidence_key]
+    active_observer["setup"] = setup
+    _active_observers[evidence_key] = active_observer
+    if mode == "start":
+        return {
+            "ok": true,
+            "seq": seq,
+            "run_id": run_id,
+            "message": "observe start acknowledged",
+            "runtime_evidence_refs": [evidence_key],
+        }
+    OS.delay_msec(window_ms)
+    _stop_observer(evidence_key, setup)
+    var observer := _active_observers.get(evidence_key, {})
+    var record := _build_observer_record(evidence_key, observer if typeof(observer) == TYPE_DICTIONARY else {})
+    _run_evidence_records[evidence_key] = record
+    _active_observers.erase(evidence_key)
+    return {
+        "ok": true,
+        "seq": seq,
+        "run_id": run_id,
+        "message": "observe acknowledged",
+        "runtime_evidence_refs": [evidence_key],
+        "runtime_evidence_records": [record],
+    }
+
+
+func _build_observer_record(evidence_key: String, observer: Dictionary) -> Dictionary:
+    var events := observer.get("events", [])
+    var window_ms := max(0, _coerce_int(observer.get("window_ms", 0)))
+    var started_at_ms := max(0, _coerce_int(observer.get("started_at_ms", 0)))
+    return {
+        "evidence_id": evidence_key,
+        "record_type": "event_observer_result",
+        "status": "passed",
+        "event_kind": str(observer.get("event_kind", observer.get("kind", ""))).strip_edges(),
+        "window_ms": window_ms,
+        "started_at_ms": started_at_ms,
+        "collected_at_ms": Time.get_ticks_msec(),
+        "events": events if typeof(events) == TYPE_ARRAY else [],
+    }
+
+
+func _start_observer(evidence_key: String, event_spec: Dictionary, target: Variant) -> Dictionary:
+    var event_kind := str(event_spec.get("kind", "")).strip_edges()
+    if event_kind == "scene_changed":
+        var tree := get_tree()
+        if tree == null:
+            return {"ok": false, "message": "scene tree is not available"}
+        var cb := Callable(self, "_on_observed_scene_changed").bind(evidence_key)
+        if not tree.scene_changed.is_connected(cb):
+            tree.scene_changed.connect(cb)
+        return {"ok": true, "source": tree, "signal": "scene_changed", "callable": cb}
+    var node := _resolve_target_node_with_retry(target, 1200)
+    if node == null:
+        return {"ok": false, "message": "cannot resolve observe target"}
+    if event_kind == "animation_started" or event_kind == "animation_finished":
+        if not (node is AnimationPlayer):
+            return {"ok": false, "message": "animation observation requires an AnimationPlayer target"}
+        var signal_name := "animation_started" if event_kind == "animation_started" else "animation_finished"
+        var cb_anim := Callable(self, "_on_observed_animation_event").bind(evidence_key, event_kind)
+        if not node.is_connected(signal_name, cb_anim):
+            node.connect(signal_name, cb_anim)
+        return {"ok": true, "source": node, "signal": signal_name, "callable": cb_anim}
+    if event_kind == "signal_emitted":
+        var signal_name_any := str(event_spec.get("signal_name", "")).strip_edges()
+        if signal_name_any == "":
+            return {"ok": false, "message": "signal_name is required for signal_emitted observation"}
+        if not node.has_signal(signal_name_any):
+            return {"ok": false, "message": "target does not define signal: %s" % signal_name_any}
+        var cb_signal := Callable(self, "_on_observed_signal_event").bind(evidence_key, signal_name_any)
+        if not node.is_connected(signal_name_any, cb_signal):
+            node.connect(signal_name_any, cb_signal)
+        return {"ok": true, "source": node, "signal": signal_name_any, "callable": cb_signal}
+    return {"ok": false, "message": "unsupported event kind: %s" % event_kind}
+
+
+func _stop_observer(_evidence_key: String, setup: Dictionary) -> void:
+    var source = setup.get("source", null)
+    var signal_name := str(setup.get("signal", "")).strip_edges()
+    var cb: Callable = setup.get("callable", Callable())
+    if source != null and signal_name != "" and cb.is_valid() and source.is_connected(signal_name, cb):
+        source.disconnect(signal_name, cb)
+
+
+func _append_observed_event(evidence_key: String, payload: Dictionary) -> void:
+    if not _active_observers.has(evidence_key):
+        return
+    var observer: Dictionary = _active_observers[evidence_key]
+    var events: Array = observer.get("events", [])
+    payload["timestamp_ms"] = Time.get_ticks_msec()
+    events.append(payload)
+    observer["events"] = events
+    _active_observers[evidence_key] = observer
+
+
+func _on_observed_scene_changed(evidence_key: String) -> void:
+    var scene_path := ""
+    var tree := get_tree()
+    if tree != null and tree.current_scene != null:
+        scene_path = str(tree.current_scene.scene_file_path)
+    _append_observed_event(evidence_key, {"event": "scene_changed", "scene": scene_path})
+
+
+func _on_observed_animation_event(animation_name: StringName, evidence_key: String, event_kind: String) -> void:
+    _append_observed_event(evidence_key, {"event": event_kind, "animation_name": str(animation_name)})
+
+
+func _on_observed_signal_event(arg1: Variant = null, arg2: Variant = null, arg3: Variant = null, arg4: Variant = null, arg5: Variant = null, arg6: Variant = null, arg7: Variant = null) -> void:
+    var args := [arg1, arg2, arg3, arg4, arg5, arg6, arg7]
+    var evidence_key := ""
+    var signal_name := ""
+    var payload_args: Array = []
+    for i in range(args.size()):
+        var candidate := str(args[i])
+        if evidence_key == "" and _active_observers.has(candidate):
+            evidence_key = candidate
+            if i + 1 < args.size():
+                signal_name = str(args[i + 1])
+            payload_args = args.slice(0, i)
+            break
+    if evidence_key == "":
+        return
+    _append_observed_event(evidence_key, {"event": "signal_emitted", "signal_name": signal_name, "args": _serialize_array(payload_args)})
+
+
+func _evaluate_evidence_check(evidence_ref: String, predicate: Dictionary) -> Dictionary:
+    if not _run_evidence_records.has(evidence_ref):
+        return {"status": "failed", "passed": false, "reason": "evidence_ref not found", "evidence_ref": evidence_ref}
+    var record: Dictionary = _run_evidence_records[evidence_ref]
+    var passed := _evaluate_predicate(record, predicate)
+    var status := "ok" if passed else "failed"
+    return {"status": status, "passed": passed, "reason": "evidence predicate", "evidence_ref": evidence_ref, "predicate": predicate}
+
+
+func _evaluate_predicate(record: Dictionary, predicate: Dictionary) -> bool:
+    var operator := str(predicate.get("operator", "")).strip_edges()
+    if operator == "":
+        return str(record.get("status", "")).strip_edges() == "passed"
+    if operator == "event_count_at_least":
+        var events := record.get("events", [])
+        var min_count := max(0, _coerce_int(predicate.get("count", 1)))
+        return typeof(events) == TYPE_ARRAY and (events as Array).size() >= min_count
+    if operator == "sample_count_at_least":
+        var samples := record.get("samples", [])
+        var min_samples := max(0, _coerce_int(predicate.get("count", 1)))
+        return typeof(samples) == TYPE_ARRAY and (samples as Array).size() >= min_samples
+    if operator == "not_equals":
+        return _sample_value_changed(record)
+    if operator == "changed_from_baseline":
+        return _sample_value_changed(record)
+    if operator == "returned_to_baseline":
+        return _sample_value_returned(record)
+    return str(record.get("status", "")).strip_edges() == "passed"
+
+
+func _sample_value_changed(record: Dictionary) -> bool:
+    var samples := record.get("samples", [])
+    if typeof(samples) != TYPE_ARRAY or (samples as Array).size() < 2:
+        return false
+    var first: Variant = (samples as Array)[0]
+    if typeof(first) != TYPE_DICTIONARY:
+        return false
+    var baseline := JSON.stringify((first as Dictionary).get("value", null))
+    for item in samples:
+        if typeof(item) == TYPE_DICTIONARY and JSON.stringify((item as Dictionary).get("value", null)) != baseline:
+            return true
+    return false
+
+
+func _sample_value_returned(record: Dictionary) -> bool:
+    var samples := record.get("samples", [])
+    if typeof(samples) != TYPE_ARRAY or (samples as Array).size() < 3:
+        return false
+    var first: Variant = (samples as Array)[0]
+    var last: Variant = (samples as Array)[(samples as Array).size() - 1]
+    if typeof(first) != TYPE_DICTIONARY or typeof(last) != TYPE_DICTIONARY:
+        return false
+    return JSON.stringify((first as Dictionary).get("value", null)) == JSON.stringify((last as Dictionary).get("value", null)) and _sample_value_changed(record)
 
 
 func _capture_runtime_value(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
@@ -287,6 +598,142 @@ func _read_metric_from_node(node: Node, metric: String) -> Dictionary:
             return {"ok": false, "message": "global_rotation_y requires a Node3D target"}
         _:
             return {"ok": false, "message": "unsupported metric: %s" % metric}
+
+
+func _read_runtime_metric(node: Node, metric: Variant) -> Dictionary:
+    if typeof(metric) == TYPE_STRING:
+        var legacy := _read_metric_from_node(node, str(metric))
+        if bool(legacy.get("ok", false)):
+            legacy["value"] = _serialize_variant_value(legacy.get("value", null))
+            legacy["value_type"] = "float"
+        return legacy
+    if typeof(metric) != TYPE_DICTIONARY:
+        return {"ok": false, "message": "metric must be a string or object"}
+    var metric_dict: Dictionary = metric
+    var kind := str(metric_dict.get("kind", "")).strip_edges()
+    if kind == "node_property":
+        var property_path := str(metric_dict.get("property_path", metric_dict.get("propertyPath", ""))).strip_edges()
+        if property_path == "":
+            return {"ok": false, "message": "node_property metric requires property_path"}
+        var value = node.get_indexed(NodePath(property_path))
+        return {"ok": true, "value": _serialize_variant_value(value), "value_type": _variant_type_name(value)}
+    if kind == "shader_param":
+        var param_name := str(metric_dict.get("param_name", metric_dict.get("parameter", ""))).strip_edges()
+        if param_name == "":
+            return {"ok": false, "message": "shader_param metric requires param_name"}
+        if not (node is CanvasItem):
+            return {"ok": false, "message": "shader_param metric requires a CanvasItem target"}
+        var material := (node as CanvasItem).material
+        if not (material is ShaderMaterial):
+            return {"ok": false, "message": "target material is not a ShaderMaterial"}
+        var shader_value = (material as ShaderMaterial).get_shader_parameter(param_name)
+        return {"ok": true, "value": _serialize_variant_value(shader_value), "value_type": _variant_type_name(shader_value)}
+    if kind == "animation_state":
+        if not (node is AnimationPlayer):
+            return {"ok": false, "message": "animation_state metric requires an AnimationPlayer target"}
+        var player := node as AnimationPlayer
+        return {
+            "ok": true,
+            "value": {
+                "current_animation": str(player.current_animation),
+                "is_playing": bool(player.is_playing()),
+                "current_animation_position": float(player.current_animation_position),
+            },
+            "value_type": "dictionary",
+        }
+    if kind == "node_exists":
+        return {"ok": true, "value": true, "value_type": "bool"}
+    if kind == "signal_connection_exists":
+        var signal_name := str(metric_dict.get("signal_name", "")).strip_edges()
+        var method_name := str(metric_dict.get("method_name", "")).strip_edges()
+        if signal_name == "":
+            return {"ok": false, "message": "signal_connection_exists requires signal_name"}
+        var exists := false
+        for item in node.get_signal_connection_list(signal_name):
+            if typeof(item) != TYPE_DICTIONARY:
+                continue
+            var callable: Callable = (item as Dictionary).get("callable", Callable())
+            if method_name == "" or callable.get_method() == method_name:
+                exists = true
+                break
+        return {"ok": true, "value": exists, "value_type": "bool"}
+    return {"ok": false, "message": "unsupported metric kind: %s" % kind}
+
+
+func _target_description(target: Variant, node: Node) -> Dictionary:
+    return {
+        "hint": str((target as Dictionary).get("hint", "")) if typeof(target) == TYPE_DICTIONARY else str(target),
+        "node_path": str(node.get_path()) if node != null and node.is_inside_tree() else "",
+    }
+
+
+func _metric_description(metric: Variant) -> Variant:
+    if typeof(metric) == TYPE_DICTIONARY:
+        return metric
+    return str(metric)
+
+
+func _serialize_array(values: Array) -> Array:
+    var out: Array = []
+    for value in values:
+        out.append(_serialize_variant_value(value))
+    return out
+
+
+func _serialize_variant_value(value: Variant) -> Variant:
+    match typeof(value):
+        TYPE_NIL:
+            return null
+        TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+            return value
+        TYPE_STRING_NAME:
+            return str(value)
+        TYPE_VECTOR2:
+            var v2 := value as Vector2
+            return {"x": v2.x, "y": v2.y}
+        TYPE_VECTOR3:
+            var v3 := value as Vector3
+            return {"x": v3.x, "y": v3.y, "z": v3.z}
+        TYPE_COLOR:
+            var c := value as Color
+            return {"r": c.r, "g": c.g, "b": c.b, "a": c.a}
+        TYPE_ARRAY:
+            return _serialize_array(value as Array)
+        TYPE_DICTIONARY:
+            var out := {}
+            for key in (value as Dictionary).keys():
+                out[str(key)] = _serialize_variant_value((value as Dictionary)[key])
+            return out
+        _:
+            return str(value)
+
+
+func _variant_type_name(value: Variant) -> String:
+    match typeof(value):
+        TYPE_NIL:
+            return "nil"
+        TYPE_BOOL:
+            return "bool"
+        TYPE_INT:
+            return "int"
+        TYPE_FLOAT:
+            return "float"
+        TYPE_STRING:
+            return "string"
+        TYPE_STRING_NAME:
+            return "string_name"
+        TYPE_VECTOR2:
+            return "vector2"
+        TYPE_VECTOR3:
+            return "vector3"
+        TYPE_COLOR:
+            return "color"
+        TYPE_ARRAY:
+            return "array"
+        TYPE_DICTIONARY:
+            return "dictionary"
+        _:
+            return "variant"
 
 
 func _perform_click(target: Variant, fallback_pos: Vector2) -> Dictionary:
@@ -408,16 +855,16 @@ func _evaluate_hint_once(hint: String) -> Dictionary:
         return {"matched": true, "reason": "empty hint treated as pass"}
     if raw.to_lower() == "runtime_alive":
         return {"matched": true, "reason": "runtime bridge active"}
-	var expect_visible := raw.begins_with("node_visible:")
-	var expect_hidden := raw.begins_with("node_hidden:")
-	var node := _resolve_node_by_hint(raw)
-	if node == null:
-		if expect_hidden:
-			return {"matched": true, "reason": "node not found treated as hidden"}
-		return {"matched": false, "reason": "node not found"}
-	if expect_visible or expect_hidden:
-		if node is CanvasItem:
-			var vis := bool((node as CanvasItem).is_visible_in_tree())
+    var expect_visible := raw.begins_with("node_visible:")
+    var expect_hidden := raw.begins_with("node_hidden:")
+    var node := _resolve_node_by_hint(raw)
+    if node == null:
+        if expect_hidden:
+            return {"matched": true, "reason": "node not found treated as hidden"}
+        return {"matched": false, "reason": "node not found"}
+    if expect_visible or expect_hidden:
+        if node is CanvasItem:
+            var vis := bool((node as CanvasItem).is_visible_in_tree())
             if expect_visible:
                 return {"matched": vis, "reason": "node visibility"}
             return {"matched": not vis, "reason": "node hidden state"}

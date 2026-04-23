@@ -22,6 +22,10 @@ When continuing V2 work in a new conversation, read these files first:
 16. [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
 17. [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
 18. [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
+19. [2026-04-22-gpf-new-project-natural-language-bug-auto-fix-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-new-project-natural-language-bug-auto-fix-plan.md)
+20. [2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md)
+21. [2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
+22. [2026-04-23-gpf-current-version-summary.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-current-version-summary.md)
 
 ## Current Repository Shape
 
@@ -77,8 +81,18 @@ Verified:
 - V2 has an experimental Windows `isolated_runtime` mode for `run_basic_flow`
 - `run_basic_flow` now returns an `isolation` object so callers can distinguish shared desktop vs isolated desktop execution
 - isolated-runtime payloads now also include `host_desktop_name` and `separate_desktop`
-- the latest repository-wide V2 unit-test run in this workspace passed with `Ran 170 tests`, `OK`
-- the latest fixed regression bundle against `D:\AI\pointer_gpf_testgame` reported `v2_unit_tests` with `Ran 91 tests`, `OK`
+- the latest repository-wide V2 unit-test run in this workspace passed with `Ran 199 tests`, `OK`
+- the latest fixed regression bundle against `D:\AI\pointer_gpf_testgame` reported `ok: true`; its internal `v2_unit_tests` reported `Ran 97 tests`, `OK`
+- V2 now supports generic runtime evidence actions `sample` and `observe`
+- V2 now supports evidence-backed `check` steps through `evidenceRef`
+- V2 validated [runtime_evidence_sample_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_sample_flow.json) in real `play_mode`, with `runtime_evidence_summary.record_count: 1` and `project_close.status: verified`
+- V2 validated [runtime_evidence_observe_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_observe_flow.json) in real `play_mode`, with `runtime_evidence_summary.record_count: 1`, evidence id `scene_change_window`, and event scene `res://scenes/game_level.tscn`
+- V2 can now accept bounded model evidence plans through `--evidence-plan-json` and `--evidence-plan-file`
+- `plan_bug_repro_flow` now inserts accepted model evidence `sample`, `observe`, and `check` steps into candidate flows
+- `plan_bug_fix` now includes runtime evidence summaries, compact records, evidence refs, and evidence-backed acceptance checks
+- V2 can accept bounded model fix proposals through `--fix-proposal-json` and `--fix-proposal-file`
+- V2 exposes `repair_reported_bug` as a top-level tool for natural-language bug repair requests
+- the current `repair_reported_bug` smoke with the enemy red-flash scenario returned `status: awaiting_model_evidence_plan`, `blocking_point: repair_reported_bug requires an accepted model evidence plan before running repro`, and `next_action: provide_evidence_plan_json_or_file`
 - V2 rejects overlapping flow runs for one project with `FLOW_ALREADY_RUNNING`
 - V2 rejects manual multi-editor runs for one project with `MULTIPLE_EDITOR_PROCESSES_DETECTED`
 - user language like `跑基础测试流程` should be interpreted as `run_basic_flow`
@@ -92,7 +106,7 @@ Current product-priority judgment:
 
 Current bug-focused implementation status:
 
-- `collect_bug_report`, `analyze_bug_report`, `define_bug_assertions`, `plan_bug_repro_flow`, `run_bug_repro_flow`, `rerun_bug_repro_flow`, `plan_bug_fix`, `apply_bug_fix`, `run_bug_fix_regression`, and `verify_bug_fix` now exist on the CLI/tool path
+- `collect_bug_report`, `analyze_bug_report`, `define_bug_assertions`, `plan_bug_repro_flow`, `run_bug_repro_flow`, `rerun_bug_repro_flow`, `plan_bug_fix`, `apply_bug_fix`, `run_bug_fix_regression`, `verify_bug_fix`, and `repair_reported_bug` now exist on the CLI/tool path
 - `observe_bug_context`, `define_bug_checks`, and `plan_bug_investigation` now also exist on the CLI/tool path
 - `start_test_project_bug_round`, `seed_test_project_bug`, and `restore_test_project_bug_round` now also exist on the CLI/tool path
 - bug-focused repro no longer classifies by failed step guessing; it now classifies by execution phase
@@ -107,6 +121,11 @@ Current bug-focused implementation status:
 - `plan_bug_investigation` now turns that observation into grouped runtime actions, executable check candidates, a machine-readable executable check set, failure branches, and repair focus candidates
 - bug-focused repro artifacts now also persist `executable_checks`, `check_results`, and `check_summary`
 - `plan_bug_fix` now reads persisted repro check evidence and returns `evidence_summary` plus `acceptance_checks` for rerun
+- runtime evidence records are now persisted when present in flow or repro results
+- `observe_bug_context` now exposes runtime evidence capabilities and latest runtime evidence summaries for model use
+- model evidence plan support now lives in [bug_evidence_plan.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_evidence_plan.py)
+- bounded model fix proposal support now lives in [bug_fix_proposal.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_fix_proposal.py)
+- top-level repair workflow support now lives in [bug_repair_workflow.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_repair_workflow.py)
 - real-bug rounds now persist under `pointer_gpf/tmp/bug_dev_rounds/<round_id>/`
 - each round now records `baseline_manifest.json`, `bug_injection_plan.json`, `restore_plan.json`, and per-bug `bug_cases/<bug_id>.json`
 - the current injected real bug kinds include:
@@ -118,12 +137,16 @@ Current bug-focused implementation status:
 Important current limitation:
 
 - the repository now implements baseline recording, bug injection, bug-case files, and restore for the external test project
-- the current mainline limitation is broader than one missing fix strategy: the model still does not have enough structured observation and planning support to drive the whole bug loop by itself
-- `apply_bug_fix` is still narrower than the intended product direction because it relies on a small fixed strategy set instead of a broader evidence-backed edit workflow
+- the current mainline limitation is broader than one missing fix strategy: the model still does not reliably generate structured evidence plans from arbitrary bug reports without an external model step
+- `apply_bug_fix` can now apply bounded model proposals, but the model still has to generate a valid proposal
+- model evidence plans can now use `observe`, but the model still has to choose meaningful evidence targets from project facts
 - newer injected bug kinds can be used for controlled real-bug rounds, but those rounds should now be treated mainly as evaluation infrastructure for model-driven bug work
 - future development must continue following [2026-04-21-gpf-bug-seeding-and-restoration-rules.md](/D:/AI/pointer_gpf/docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md)
 - the implementation order that led to the current round system is defined in [2026-04-22-gpf-real-bug-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-real-bug-development-plan.md)
 - the mainline follow-up after that round system is defined in [2026-04-22-gpf-model-driven-bug-loop-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-model-driven-bug-loop-plan.md)
+- the concrete user-facing target for that follow-up is defined in [2026-04-22-gpf-new-project-natural-language-bug-auto-fix-plan.md](/D:/AI/pointer_gpf/docs/2026-04-22-gpf-new-project-natural-language-bug-auto-fix-plan.md)
+- the next runtime-side implementation plan for model-controlled evidence collection is defined in [2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md)
+- the current three-step repair workflow execution plan and results are defined in [2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
 
 ## Current Verification Commands
 
@@ -241,7 +264,7 @@ Preferred next target:
 1. strengthen structured project and runtime observation for bug work
 2. add a model-driven investigation-plan step that chooses runtime actions and checks
 3. let the model generate bounded executable checks from project evidence
-4. move fix planning away from default growth by fixed bug-kind handlers
+4. validate bounded model fix proposals against real behavior bugs
 5. keep the real-bug round system stable as validation infrastructure
 
 Latest implementation note:
@@ -307,8 +330,8 @@ Responsibility split:
 
 Do not re-expand V2 with:
 
-- auto-fix
-- repair loop
+- unbounded auto-fix that edits files without candidate-file and unique-match validation
+- legacy repair orchestration that bypasses `repair_reported_bug`
 - NL router
 - Figma tools
 - broad orchestration
@@ -333,5 +356,5 @@ Check in this order:
 Use this starter:
 
 ```text
-继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md、docs/2026-04-22-gpf-real-bug-development-plan.md、docs/2026-04-22-gpf-model-driven-bug-loop-plan.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出。接着检查当前 real-bug round 工具、bug case 文件和恢复结果是否还与代码一致；如果一致，优先补模型可用的项目/运行观察、bug investigation plan 和 bounded executable checks，不要默认继续堆固定 bug 类型或固定修复分支。
+继续 pointer_gpf 的 V2 工作。先读 docs/v2-status.md、docs/v2-architecture.md、docs/v2-plugin-runtime-map.md、docs/v2-handoff.md、docs/2026-04-21-gpf-bug-seeding-and-restoration-rules.md、docs/2026-04-22-gpf-real-bug-development-plan.md、docs/2026-04-22-gpf-model-driven-bug-loop-plan.md、docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md，然后按 AGENTS.md 要求先运行 python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame，复述关键输出。接着检查当前 `repair_reported_bug`、model evidence plan、bounded fix proposal、real-bug round 工具、bug case 文件和恢复结果是否还与代码一致；如果一致，优先做真实行为 bug 验证，不要默认继续堆固定 bug 类型或固定修复分支。
 ```
