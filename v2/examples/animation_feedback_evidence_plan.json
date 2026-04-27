@@ -1,0 +1,57 @@
+{
+  "schema": "pointer_gpf.v2.model_evidence_plan.v1",
+  "description": "Evidence plan shape for an animation feedback bug where a trigger should change an AnimationPlayer state.",
+  "steps": [
+    {
+      "id": "sample_animation_before",
+      "phase": "pre_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:AnimationPlayer"
+      },
+      "metric": {
+        "kind": "node_property",
+        "property_path": "current_animation"
+      },
+      "windowMs": 120,
+      "intervalMs": 40,
+      "evidenceKey": "animation_before_trigger"
+    },
+    {
+      "id": "call_feedback_trigger",
+      "phase": "trigger_window",
+      "action": "callMethod",
+      "target": {
+        "hint": "node_name:FeedbackOwner"
+      },
+      "method": "_play_feedback",
+      "args": []
+    },
+    {
+      "id": "sample_animation_after",
+      "phase": "post_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:AnimationPlayer"
+      },
+      "metric": {
+        "kind": "node_property",
+        "property_path": "current_animation"
+      },
+      "windowMs": 400,
+      "intervalMs": 40,
+      "evidenceKey": "animation_after_trigger"
+    },
+    {
+      "id": "check_animation_seen",
+      "phase": "final_check",
+      "action": "check",
+      "checkType": "node_property_value_seen",
+      "evidenceRef": "animation_after_trigger",
+      "predicate": {
+        "operator": "value_seen",
+        "value": "hit_feedback"
+      }
+    }
+  ]
+}

@@ -8,6 +8,29 @@ from v2.mcp_core.bug_evidence_plan import load_model_evidence_plan
 
 
 class BugEvidencePlanTests(unittest.TestCase):
+    def test_example_evidence_plans_are_accepted_by_loader(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        example_names = [
+            "scene_transition_evidence_plan.json",
+            "hud_spawn_evidence_plan.json",
+            "animation_feedback_evidence_plan.json",
+            "shader_feedback_evidence_plan.json",
+            "hit_feedback_evidence_plan.json",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            for example_name in example_names:
+                with self.subTest(example_name=example_name):
+                    payload = load_model_evidence_plan(
+                        Path(tmp),
+                        argparse.Namespace(
+                            evidence_plan_json="",
+                            evidence_plan_file=str(repo_root / "v2" / "examples" / example_name),
+                        ),
+                    )
+
+                    self.assertEqual(payload["status"], "accepted")
+                    self.assertTrue(payload["plan"]["steps"])
+
     def test_load_model_evidence_plan_accepts_bounded_sample_and_check_steps(self) -> None:
         plan = {
             "steps": [
@@ -109,6 +132,81 @@ class BugEvidencePlanTests(unittest.TestCase):
 
         self.assertEqual(payload["status"], "rejected")
         self.assertTrue(any("observe windowMs" in reason for reason in payload["rejected_reasons"]))
+
+    def test_load_model_evidence_plan_accepts_bounded_call_method(self) -> None:
+        plan = {
+            "steps": [
+                {
+                    "id": "call_enemy_hit",
+                    "phase": "post_trigger",
+                    "action": "callMethod",
+                    "target": {"hint": "node_name:TestEnemy"},
+                    "method": "_on_bullet_hit",
+                    "args": [
+                        {
+                            "kind": "node_global_position",
+                            "target": {"hint": "node_name:Sprite3D"},
+                        }
+                    ],
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = load_model_evidence_plan(
+                Path(tmp),
+                argparse.Namespace(evidence_plan_json=json.dumps(plan), evidence_plan_file=""),
+            )
+
+        self.assertEqual(payload["status"], "accepted")
+        self.assertEqual(payload["plan"]["steps"][0]["action"], "callMethod")
+
+    def test_load_model_evidence_plan_accepts_player_aim_and_shoot(self) -> None:
+        plan = {
+            "steps": [
+                {
+                    "id": "aim_at_enemy",
+                    "phase": "post_trigger",
+                    "action": "aimAt",
+                    "player": {"hint": "node_name:FPSController"},
+                    "target": {"hint": "node_name:Sprite3D"},
+                },
+                {
+                    "id": "shoot_enemy",
+                    "phase": "post_trigger",
+                    "action": "shoot",
+                    "player": {"hint": "node_name:FPSController"},
+                },
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = load_model_evidence_plan(
+                Path(tmp),
+                argparse.Namespace(evidence_plan_json=json.dumps(plan), evidence_plan_file=""),
+            )
+
+        self.assertEqual(payload["status"], "accepted")
+        self.assertEqual(payload["plan"]["steps"][0]["action"], "aimAt")
+        self.assertEqual(payload["plan"]["steps"][1]["action"], "shoot")
+
+    def test_load_model_evidence_plan_rejects_call_method_without_method(self) -> None:
+        plan = {
+            "steps": [
+                {
+                    "id": "call_enemy_hit",
+                    "phase": "post_trigger",
+                    "action": "callMethod",
+                    "target": {"hint": "node_name:TestEnemy"},
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = load_model_evidence_plan(
+                Path(tmp),
+                argparse.Namespace(evidence_plan_json=json.dumps(plan), evidence_plan_file=""),
+            )
+
+        self.assertEqual(payload["status"], "rejected")
+        self.assertTrue(any("callMethod requires method" in reason for reason in payload["rejected_reasons"]))
 
 
 if __name__ == "__main__":

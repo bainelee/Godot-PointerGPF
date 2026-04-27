@@ -173,6 +173,47 @@ class TestProjectBugSeedTests(unittest.TestCase):
             self.assertEqual(bug_case["injected_bug_kind"], "pointer_hud_not_spawned")
             self.assertEqual(bug_case["affected_files"][0]["project_relative_path"], "scripts/game_level.gd")
 
+    def test_seed_test_project_bug_disables_hit_feedback_shader_sync(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            script_path = project_root / "scripts" / "enemies" / "test_enemy.gd"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(
+                "extends Node3D\n\nfunc _sync_hits_to_shader() -> void:\n\t_hit_material.set_shader_parameter(\"hit_count\", _hits.size())\n",
+                encoding="utf-8",
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "round_id": "round-007",
+                    "bug_id": "bug-007",
+                    "bug_kind": "hit_feedback_shader_not_updated",
+                    "bug_report": "敌人受击后没有闪红",
+                    "bug_summary": "受击反馈没有更新 shader 状态",
+                    "expected_behavior": "敌人受击后 shader hit_count 应该增加",
+                    "steps_to_trigger": "启动游戏|让敌人受击",
+                    "location_scene": "res://scenes/game_level.tscn",
+                    "location_node": "TestEnemy",
+                    "location_script": "res://scripts/enemies/test_enemy.gd",
+                    "frequency_hint": "always",
+                    "severity_hint": "major",
+                    "files_to_record": "",
+                    "handler_name": "",
+                },
+            )()
+
+            payload = seed_test_project_bug(project_root, args)
+
+            self.assertEqual(payload["status"], "bug_seeded")
+            script_text = script_path.read_text(encoding="utf-8")
+            self.assertIn("gpf_seeded_bug:hit_feedback_shader_not_updated", script_text)
+            self.assertIn("func _sync_hits_to_shader() -> void:\n\treturn", script_text)
+            bug_case = load_bug_case(payload["bug_case_file"])
+            self.assertEqual(bug_case["injected_bug_kind"], "hit_feedback_shader_not_updated")
+            self.assertEqual(bug_case["expected_verification_target"]["expected_repro_status"], "bug_reproduced")
+            self.assertEqual(bug_case["affected_files"][0]["project_relative_path"], "scripts/enemies/test_enemy.gd")
+
 
 if __name__ == "__main__":
     unittest.main()

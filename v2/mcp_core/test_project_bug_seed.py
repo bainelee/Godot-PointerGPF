@@ -59,7 +59,7 @@ def _newline_for(text: str) -> str:
 
 def _inject_return_into_handler(script_text: str, handler_name: str, marker: str) -> tuple[str, bool]:
     pattern = re.compile(
-        rf"(?m)^(?P<indent>\s*)func\s+{re.escape(handler_name)}\s*\([^)]*\)\s*(?:->\s*[\w\.]+)?\s*:\s*\r?\n"
+        rf"(?m)^(?P<indent>[ \t]*)func\s+{re.escape(handler_name)}\s*\([^)]*\)[ \t]*(?:->\s*[\w\.]+)?[ \t]*:[ \t]*\r?\n"
     )
     match = pattern.search(script_text)
     if match is None:
@@ -204,6 +204,21 @@ def _seed_pointer_hud_not_spawned(script_path: Path) -> dict[str, Any]:
     }
 
 
+def _seed_hit_feedback_shader_not_updated(script_path: Path) -> dict[str, Any]:
+    script_text = _read_text(script_path)
+    marker = "gpf_seeded_bug:hit_feedback_shader_not_updated"
+    updated, changed = _inject_return_into_handler(script_text, "_sync_hits_to_shader", marker)
+    if not changed:
+        raise ValueError("could not disable _sync_hits_to_shader in the target script")
+    _write_text(script_path, updated)
+    return {
+        "mutation_kind": "hit_feedback_shader_not_updated",
+        "handler_name": "_sync_hits_to_shader",
+        "marker": marker,
+        "message": "inserted an early return into _sync_hits_to_shader",
+    }
+
+
 def _bug_report_payload_from_args(args: Any, location_script: str) -> dict[str, Any]:
     return {
         "bug_report": str(getattr(args, "bug_report", "") or "").strip(),
@@ -251,6 +266,11 @@ def _bug_expected_target(bug_kind: str) -> dict[str, Any]:
             "expected_repro_status": "trigger_failed",
             "verification_focus": "the target button node should no longer be reachable by its expected name",
         }
+    if bug_kind == "hit_feedback_shader_not_updated":
+        return {
+            "expected_repro_status": "bug_reproduced",
+            "verification_focus": "hit feedback should call the enemy hit method but the shader hit_count should remain unchanged",
+        }
     return {
         "expected_repro_status": "bug_reproduced",
         "verification_focus": "the gameplay HUD should remain absent after the scene loads",
@@ -264,17 +284,23 @@ def _validate_seed_args(args: Any) -> str:
         "scene_transition_not_triggered",
         "button_node_renamed_in_scene",
         "pointer_hud_not_spawned",
+        "hit_feedback_shader_not_updated",
     }
     if bug_kind not in supported_bug_kinds:
         raise ValueError(
             "--bug-kind must be one of: button_signal_or_callback_broken, scene_transition_not_triggered, "
-            "button_node_renamed_in_scene, pointer_hud_not_spawned"
+            "button_node_renamed_in_scene, pointer_hud_not_spawned, hit_feedback_shader_not_updated"
         )
     if not str(getattr(args, "bug_report", "") or "").strip():
         raise ValueError("--bug-report is required for seed_test_project_bug")
     if not str(getattr(args, "expected_behavior", "") or "").strip():
         raise ValueError("--expected-behavior is required for seed_test_project_bug")
-    if bug_kind in {"button_signal_or_callback_broken", "scene_transition_not_triggered", "pointer_hud_not_spawned"} and not str(
+    if bug_kind in {
+        "button_signal_or_callback_broken",
+        "scene_transition_not_triggered",
+        "pointer_hud_not_spawned",
+        "hit_feedback_shader_not_updated",
+    } and not str(
         getattr(args, "location_script", "") or ""
     ).strip():
         raise ValueError("--location-script is required for seed_test_project_bug")
@@ -346,9 +372,12 @@ def seed_test_project_bug(
         if not scene_path.is_file():
             raise ValueError(f"target scene does not exist: {project_relative_to_res_path(project_relative_scene)}")
         mutation = _seed_button_node_renamed_in_scene(scene_path, str(getattr(args, "location_node", "") or "").strip())
-    else:
+    elif bug_kind == "pointer_hud_not_spawned":
         assert script_path is not None
         mutation = _seed_pointer_hud_not_spawned(script_path)
+    else:
+        assert script_path is not None
+        mutation = _seed_hit_feedback_shader_not_updated(script_path)
 
     expected_target = _bug_expected_target(bug_kind)
     affected_files = [_affected_file_entry(project_root, item) for item in files_to_record]

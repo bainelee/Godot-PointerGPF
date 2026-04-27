@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-ALLOWED_EVIDENCE_ACTIONS = {"wait", "click", "sample", "observe", "check"}
+ALLOWED_EVIDENCE_ACTIONS = {"wait", "click", "callmethod", "aimat", "shoot", "sample", "observe", "check"}
 ALLOWED_EVIDENCE_PHASES = {"pre_trigger", "trigger_window", "post_trigger", "final_check"}
 MAX_EVIDENCE_STEPS = 12
 MAX_WINDOW_MS = 5000
@@ -127,11 +127,40 @@ def _normalize_step(raw_step: dict[str, Any], index: int) -> tuple[dict[str, Any
         if not _evidence_key(step) and not str(step.get("hint", "")).strip() and not str(step.get("checkType", "") or step.get("check_type", "")).strip():
             reasons.append(f"step {index} check requires evidenceRef, hint, or checkType")
 
+    if action_key == "callmethod":
+        target = step.get("target", {})
+        method_name = str(step.get("method", "") or step.get("methodName", "") or step.get("method_name", "")).strip()
+        if not isinstance(target, dict):
+            reasons.append(f"step {index} callMethod target must be an object")
+        if not method_name:
+            reasons.append(f"step {index} callMethod requires method")
+        args = step.get("args", [])
+        if not isinstance(args, list):
+            reasons.append(f"step {index} callMethod args must be a list when provided")
+
+    if action_key == "aimat":
+        target = step.get("target", {})
+        player = step.get("player", {})
+        if not isinstance(target, dict):
+            reasons.append(f"step {index} aimAt target must be an object")
+        if player not in ({}, None) and not isinstance(player, dict):
+            reasons.append(f"step {index} aimAt player must be an object when provided")
+
+    if action_key == "shoot":
+        player = step.get("player", {})
+        if player not in ({}, None) and not isinstance(player, dict):
+            reasons.append(f"step {index} shoot player must be an object when provided")
+
     if reasons:
         return None, reasons
 
     step["id"] = step_id
-    step["action"] = action_key if action_key != "closeproject" else "closeProject"
+    if action_key == "callmethod":
+        step["action"] = "callMethod"
+    elif action_key == "aimat":
+        step["action"] = "aimAt"
+    else:
+        step["action"] = action_key if action_key != "closeproject" else "closeProject"
     step["phase"] = phase
     step["source"] = "model_evidence_plan"
     step["modelEvidencePhase"] = phase

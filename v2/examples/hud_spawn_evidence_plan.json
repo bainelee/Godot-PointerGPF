@@ -1,0 +1,50 @@
+{
+  "schema": "pointer_gpf.v2.model_evidence_plan.v1",
+  "description": "Evidence plan for a HUD-spawn bug where GamePointerHud should exist and be visible after entering gameplay.",
+  "steps": [
+    {
+      "id": "wait_start_button",
+      "phase": "pre_trigger",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "wait_game_level",
+      "phase": "post_trigger",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:GameLevel"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "sample_hud_visible",
+      "phase": "post_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:GamePointerHud"
+      },
+      "metric": {
+        "kind": "node_property",
+        "property_path": "visible"
+      },
+      "windowMs": 160,
+      "intervalMs": 40,
+      "evidenceKey": "hud_visible_after_start"
+    },
+    {
+      "id": "check_hud_visible",
+      "phase": "final_check",
+      "action": "check",
+      "checkType": "node_property_value_seen",
+      "evidenceRef": "hud_visible_after_start",
+      "predicate": {
+        "operator": "value_seen",
+        "value": true
+      }
+    }
+  ]
+}

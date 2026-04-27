@@ -12,9 +12,14 @@ Pointer GPF 是一个面向 **Godot 灰盒测试** 的 MCP 工具链。
 
 - 帮你把 Godot 工程接入可执行的测试链路
 - 帮你围绕 Godot 游戏 bug 做灰盒测试、复现、证据整理、受约束修复与验证
-- 帮你用受约束的自然语言和显式工具来驱动这些能力
+- 帮 Codex、Cursor 或其他 AI 编码工具用明确的工具、契约和证据来驱动这些能力
 
 它当前**不是**一个“什么都能理解、什么都能自动处理”的开放式代理。
+它也不是替代大语言模型来理解所有游戏项目的组件。
+
+GPF 的定位是：给大语言模型提供可调用的 Godot 灰盒测试与 debug 工具、项目事实、动作规范、证据规范、运行结果和验收依据。项目理解、测试流程设计、操作方式选择、修复 proposal 生成，应该由 Codex、Cursor 或其他 AI 编码工具基于 GPF 返回的信息来完成。
+
+没有大语言模型时，GPF 不可能现实地覆盖所有游戏类型、所有玩法、所有操作方式。可持续的产品路径是：GPF 向大语言模型注入足够清晰的项目上下文和工具规范，让模型理解“这个项目需要分析什么、应该如何分析、应该设计什么验证计划”，然后 GPF 负责校验、执行、记录证据和汇报结果。
 
 ## 它现在能做什么
 
@@ -30,7 +35,7 @@ Pointer GPF 是一个面向 **Godot 灰盒测试** 的 MCP 工具链。
 - 在流程结束后验证 teardown 是否真的完成
 - 拒绝同工程并发 flow、拒绝多编辑器冲突
 - 提供一组**受约束的自然语言入口**
-- 围绕 bug 返回观察摘要、调查计划、可执行检查集合
+- 围绕 bug 返回观察摘要、可执行检查候选、项目事实和模型可用的证据计划说明
 - 在 repro artifact 中持久化 `executable_checks`、`check_results`、`check_summary`
 - 在 fix plan 中返回 `evidence_summary`、`acceptance_checks`、候选文件和修复目标
 - 接收模型提供的 runtime evidence plan，并把 `sample`、`observe`、evidence-backed `check` 插入 repro flow
@@ -43,7 +48,8 @@ Pointer GPF 是一个面向 **Godot 灰盒测试** 的 MCP 工具链。
 - `input isolation` 的进一步完善记为后期 TODO
 - `basicflow` 的进一步补充增强记为后期 TODO
 - 下一阶段主线回到 GPF 的核心产品能力
-- 当前主线已经从“继续枚举更多固定 bug 类型”转向“让模型基于项目事实决定如何检查、如何验证、如何形成修复计划”
+- 当前主线已经从“继续枚举更多固定 bug 类型”转向“让 GPF 给模型提供足够清晰的项目事实、动作规范、证据规范和结果分类，由模型决定如何检查、如何验证、如何形成修复 proposal”
+- 任何面向具体项目或具体玩法的测试策略，都应由大语言模型基于 GPF 注入的上下文生成，而不是写死在 GPF 内部
 
 如果你想看这个方向文档，请读：
 
@@ -77,12 +83,12 @@ Pointer GPF 是一个面向 **Godot 灰盒测试** 的 MCP 工具链。
 GPF 后续应该主要围绕这条链路继续开发：
 
 1. 用户用自然语言描述游戏中的 bug
-2. GPF 分析可能原因与受影响区域
-3. GPF 定义“没有这个 bug 时应该成立”的显式断言
-4. GPF 设计或更新能够触及该 bug 的测试流
-5. GPF 自动运行测试流，确认 bug 可以复现
+2. AI 编码工具调用 GPF 获取项目事实、可用动作、证据规范和历史运行结果
+3. AI 编码工具基于这些信息定义“没有这个 bug 时应该成立”的显式断言
+4. AI 编码工具生成能够触及该 bug 的 evidence plan
+5. GPF 校验并运行已接受的 evidence plan，确认 bug 是否可以复现
 6. GPF 执行受约束的检查集合，得到结构化证据
-7. GPF 基于这些证据形成修复计划和候选文件
+7. AI 编码工具基于这些证据生成修复 proposal
 8. 模型提出受约束编辑 proposal
 9. GPF 验证 proposal 后修改项目代码或场景
 10. GPF 再次运行测试流与断言，确认修复生效
@@ -91,7 +97,7 @@ GPF 后续应该主要围绕这条链路继续开发：
 当前已经实现的重点是：
 
 - bug 观察摘要
-- 调查计划
+- 模型可用的项目事实与候选检查
 - 可执行检查集合
 - repro 后的检查结果归档
 - 证据化修复计划
@@ -222,13 +228,13 @@ python -m v2.mcp_core.server --tool repair_reported_bug --project-root D:\AI\poi
 
 ## 当前实际效果
 
-现在用户描述一个 bug 之后，GPF 已经会：
+现在用户描述一个 bug 之后，AI 编码工具可以调用 GPF 来：
 
 1. 整理项目结构、运行诊断、最近 repro、最近 verification
-2. 生成一组明确检查，而不是只给一句笼统建议
+2. 获取一组明确检查候选，而不是只得到一句笼统建议
 3. 在真实 `play_mode` 运行后，把失败检查和未执行检查写入 artifact
 4. 持久化 runtime evidence records 和 evidence summary
-5. 用这些检查证据形成修复计划
+5. 把这些检查证据提供给模型，用于形成修复 proposal
 6. 在模型提供 bounded fix proposal 后应用候选文件内的受约束编辑
 7. 重跑同一条 bug-focused flow 并执行 regression
 

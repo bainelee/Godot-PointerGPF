@@ -1,0 +1,64 @@
+{
+  "schema": "pointer_gpf.v2.model_evidence_plan.v1",
+  "description": "Evidence plan shape for a shader feedback bug where a trigger should update a ShaderMaterial parameter.",
+  "steps": [
+    {
+      "id": "sample_shader_before",
+      "phase": "pre_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:Sprite3D"
+      },
+      "metric": {
+        "kind": "shader_param",
+        "param_name": "hit_count"
+      },
+      "windowMs": 120,
+      "intervalMs": 40,
+      "evidenceKey": "shader_param_before_trigger"
+    },
+    {
+      "id": "call_shader_feedback_trigger",
+      "phase": "trigger_window",
+      "action": "callMethod",
+      "target": {
+        "hint": "node_name:TestEnemy"
+      },
+      "method": "_on_bullet_hit",
+      "args": [
+        {
+          "kind": "node_global_position",
+          "target": {
+            "hint": "node_name:Sprite3D"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sample_shader_after",
+      "phase": "post_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:Sprite3D"
+      },
+      "metric": {
+        "kind": "shader_param",
+        "param_name": "hit_count"
+      },
+      "windowMs": 240,
+      "intervalMs": 40,
+      "evidenceKey": "shader_param_after_trigger"
+    },
+    {
+      "id": "check_shader_param_after",
+      "phase": "final_check",
+      "action": "check",
+      "checkType": "shader_param_value_seen",
+      "evidenceRef": "shader_param_after_trigger",
+      "predicate": {
+        "operator": "value_seen",
+        "value": 1
+      }
+    }
+  ]
+}

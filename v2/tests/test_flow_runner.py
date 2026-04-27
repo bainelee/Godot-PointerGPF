@@ -126,6 +126,24 @@ class FlowRunnerContractTests(unittest.TestCase):
                                 "windowMs": 250,
                                 "evidenceKey": "enemy_hit_signal_window",
                             },
+                            {
+                                "id": "call_enemy_hit",
+                                "action": "callMethod",
+                                "target": {"hint": "node_name:Enemy"},
+                                "method": "_on_bullet_hit",
+                                "args": [{"kind": "vector3", "x": 0, "y": 0, "z": 0}],
+                            },
+                            {
+                                "id": "aim_at_enemy",
+                                "action": "aimAt",
+                                "player": {"hint": "node_name:FPSController"},
+                                "target": {"hint": "node_name:Sprite3D"},
+                            },
+                            {
+                                "id": "shoot_enemy",
+                                "action": "shoot",
+                                "player": {"hint": "node_name:FPSController"},
+                            },
                             {"id": "close", "action": "closeProject"},
                         ],
                     }
@@ -137,6 +155,9 @@ class FlowRunnerContractTests(unittest.TestCase):
 
         self.assertEqual(payload["steps"][1]["action"], "sample")
         self.assertEqual(payload["steps"][2]["action"], "observe")
+        self.assertEqual(payload["steps"][3]["action"], "callMethod")
+        self.assertEqual(payload["steps"][4]["action"], "aimAt")
+        self.assertEqual(payload["steps"][5]["action"], "shoot")
 
     def test_load_flow_accepts_utf8_bom(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

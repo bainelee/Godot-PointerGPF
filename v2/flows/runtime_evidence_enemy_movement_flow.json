@@ -1,0 +1,61 @@
+{
+  "flowId": "runtime_evidence_enemy_movement_flow",
+  "name": "Runtime Evidence Enemy Movement Flow",
+  "description": "Verifies that TestEnemy changes position over time in real play_mode after entering GameLevel.",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "wait_startbutton",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "click_startbutton",
+      "action": "click",
+      "target": {
+        "hint": "node_name:StartButton"
+      }
+    },
+    {
+      "id": "wait_gamelevel",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:GameLevel"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "sample_enemy_position_window",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:TestEnemy"
+      },
+      "metric": {
+        "kind": "node_property",
+        "property_path": "position"
+      },
+      "windowMs": 900,
+      "intervalMs": 100,
+      "evidenceKey": "enemy_position_window"
+    },
+    {
+      "id": "check_enemy_position_changed",
+      "action": "check",
+      "checkType": "node_property_changed",
+      "evidenceRef": "enemy_position_window",
+      "predicate": {
+        "operator": "changed_from_baseline"
+      }
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}

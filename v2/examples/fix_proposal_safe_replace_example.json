@@ -1,0 +1,12 @@
+{
+  "schema": "pointer_gpf.v2.fix_proposal.v1",
+  "description": "Example of a safe bounded replacement inside a candidate file.",
+  "candidate_file": "res://scripts/enemies/test_enemy.gd",
+  "edits": [
+    {
+      "kind": "replace_text",
+      "find": "\treturn  # gpf_seeded_bug:hit_feedback_shader_not_updated\n",
+      "replace": ""
+    }
+  ]
+}

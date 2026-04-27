@@ -58,6 +58,69 @@ class BugObservationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (project_root / "scenes" / "main_scene_example.tscn").parent.mkdir(parents=True, exist_ok=True)
+            (project_root / "scenes" / "main_scene_example.tscn").write_text(
+                '\n'.join(
+                    [
+                        '[gd_scene format=3]',
+                        '[ext_resource type="Script" path="res://scripts/main_menu_flow.gd" id="1_menu"]',
+                        '[node name="MainSceneExample" type="Node"]',
+                        'script = ExtResource("1_menu")',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "scenes" / "game_level.tscn").write_text(
+                '\n'.join(
+                    [
+                        '[gd_scene format=3]',
+                        '[ext_resource type="Script" path="res://scripts/game_level.gd" id="1_level"]',
+                        '[ext_resource type="PackedScene" path="res://scenes/enemies/test_enemy.tscn" id="2_enemy"]',
+                        '[node name="GameLevel" type="Node3D"]',
+                        'script = ExtResource("1_level")',
+                        '[node name="TestEnemy" parent="." instance=ExtResource("2_enemy")]',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "scenes" / "enemies").mkdir(parents=True, exist_ok=True)
+            (project_root / "scenes" / "enemies" / "test_enemy.tscn").write_text(
+                '\n'.join(
+                    [
+                        '[gd_scene format=3]',
+                        '[ext_resource type="Script" path="res://scripts/enemies/test_enemy.gd" id="1_enemy"]',
+                        '[node name="TestEnemy" type="Node3D" groups=["enemy"]]',
+                        'script = ExtResource("1_enemy")',
+                        '[node name="Sprite3D" type="Sprite3D" parent="."]',
+                        '[connection signal="hit_received" from="." to="." method="_apply_hit_effect"]',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (project_root / "scripts" / "enemies").mkdir(parents=True, exist_ok=True)
+            (project_root / "scripts" / "main_menu_flow.gd").parent.mkdir(parents=True, exist_ok=True)
+            (project_root / "scripts" / "main_menu_flow.gd").write_text(
+                "extends Node\nfunc _on_start_button_pressed() -> void:\n\tpass\n",
+                encoding="utf-8",
+            )
+            (project_root / "scripts" / "game_level.gd").write_text(
+                'extends Node3D\nconst ENEMY := preload("res://scenes/enemies/test_enemy.tscn")\n',
+                encoding="utf-8",
+            )
+            (project_root / "scripts" / "enemies" / "test_enemy.gd").write_text(
+                '\n'.join(
+                    [
+                        "extends Node3D",
+                        "var _hit_material: ShaderMaterial",
+                        "func _on_bullet_hit(hit_position: Vector3) -> bool:",
+                        "\treturn _apply_hit_effect(hit_position)",
+                        "func _apply_hit_effect(hit_position: Vector3) -> bool:",
+                        '\t_hit_material.set_shader_parameter("hit_count", 1)',
+                        "\treturn true",
+                    ]
+                ),
+                encoding="utf-8",
+            )
             (tmp_dir / "runtime_diagnostics.json").write_text(
                 json.dumps(
                     {
@@ -135,6 +198,23 @@ class BugObservationTests(unittest.TestCase):
         self.assertIn("sample", payload["runtime_evidence_capabilities"]["actions"])
         self.assertEqual(payload["latest_fix_verification"]["status"], "fix_verified")
         self.assertIn("res://scripts/main_menu_flow.gd", payload["candidate_file_read_order"])
+        static_observation = payload["project_static_observation"]
+        self.assertEqual(static_observation["schema"], "pointer_gpf.v2.project_static_observation.v1")
+        self.assertTrue(
+            any(item["path"] == "res://scripts/enemies/test_enemy.gd" for item in static_observation["candidate_files"])
+        )
+        self.assertTrue(
+            any(item["method"] == "_apply_hit_effect" for item in static_observation["candidate_scripts"])
+        )
+        self.assertTrue(any(item["node"] == "Sprite3D" for item in static_observation["candidate_nodes"]))
+        self.assertTrue(any(item["method"] == "_apply_hit_effect" for item in static_observation["signal_connections"]))
+        self.assertTrue(any(item["term"] == "hit_count" for item in static_observation["visual_state_surfaces"]))
+        self.assertTrue(
+            any(
+                item.get("metric", {}).get("kind") == "shader_param"
+                for item in static_observation["runtime_evidence_target_candidates"]
+            )
+        )
 
 
 if __name__ == "__main__":

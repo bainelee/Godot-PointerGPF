@@ -193,6 +193,53 @@ class BugReproFlowTests(unittest.TestCase):
         self.assertLess(step_ids.index("click_startbutton"), step_ids.index("sample_startbutton_visible"))
         self.assertLess(step_ids.index("sample_startbutton_visible"), step_ids.index("check_startbutton_visible_changed"))
 
+    def test_plan_bug_repro_flow_runs_model_evidence_before_base_post_trigger_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            self._write_project_files(
+                project_root,
+                [
+                    {"id": "launch_game", "action": "launchGame"},
+                    {"id": "click_startbutton", "action": "click", "target": {"hint": "node_name:StartButton"}},
+                    {"id": "wait_gamelevel", "action": "wait", "until": {"hint": "node_exists:GameLevel"}},
+                    {"id": "check_gamepointerhud", "action": "check", "hint": "node_exists:GamePointerHud"},
+                    {"id": "close_project", "action": "closeProject"},
+                ],
+            )
+            args = self._default_args()
+            args.evidence_plan_json = json.dumps(
+                {
+                    "steps": [
+                        {
+                            "id": "sample_hud_visible",
+                            "phase": "post_trigger",
+                            "action": "sample",
+                            "target": {"hint": "node_name:GamePointerHud"},
+                            "metric": {"kind": "node_property", "property_path": "visible"},
+                            "windowMs": 200,
+                            "intervalMs": 50,
+                            "evidenceKey": "hud_visible_after_start",
+                        },
+                        {
+                            "id": "check_hud_visible",
+                            "phase": "final_check",
+                            "action": "check",
+                            "checkType": "node_property_value_seen",
+                            "evidenceRef": "hud_visible_after_start",
+                            "predicate": {"operator": "value_seen", "value": True},
+                        },
+                    ]
+                }
+            )
+
+            payload = plan_bug_repro_flow(project_root, args)
+
+        step_ids = [step["id"] for step in payload["candidate_flow"]["steps"]]
+        self.assertLess(step_ids.index("click_startbutton"), step_ids.index("sample_hud_visible"))
+        self.assertLess(step_ids.index("wait_gamelevel"), step_ids.index("sample_hud_visible"))
+        self.assertLess(step_ids.index("sample_hud_visible"), step_ids.index("check_hud_visible"))
+        self.assertLess(step_ids.index("check_hud_visible"), step_ids.index("check_gamepointerhud"))
+
     def test_plan_bug_repro_flow_blocks_rejected_evidence_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -271,6 +318,85 @@ class BugReproFlowTests(unittest.TestCase):
         self.assertLess(step_ids.index("observe_scene_change_collect"), step_ids.index("check_scene_change_event"))
         self.assertIn("scene_change_window", payload["evidence_refs_produced"])
         self.assertIn("scene_change_window", payload["evidence_refs_required"])
+
+    def test_plan_bug_repro_flow_accepts_player_aim_and_shoot_behavior_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            self._write_project_files(
+                project_root,
+                [
+                    {"id": "launch_game", "action": "launchGame"},
+                    {"id": "click_startbutton", "action": "click", "target": {"hint": "node_name:StartButton"}},
+                    {"id": "wait_gamelevel", "action": "wait", "until": {"hint": "node_exists:GameLevel"}},
+                    {"id": "close_project", "action": "closeProject"},
+                ],
+            )
+            args = self._default_args()
+            args.location_node = "TestEnemy"
+            args.evidence_plan_json = json.dumps(
+                {
+                    "steps": [
+                        {
+                            "id": "sample_enemy_hit_count_before",
+                            "phase": "post_trigger",
+                            "action": "sample",
+                            "target": {"hint": "node_name:Sprite3D"},
+                            "metric": {"kind": "shader_param", "param_name": "hit_count"},
+                            "windowMs": 80,
+                            "intervalMs": 40,
+                            "evidenceKey": "enemy_hit_count_before",
+                        },
+                        {
+                            "id": "aim_at_enemy",
+                            "phase": "post_trigger",
+                            "action": "aimAt",
+                            "player": {"hint": "node_name:FPSController"},
+                            "target": {"hint": "node_name:Sprite3D"},
+                        },
+                        {
+                            "id": "shoot_enemy",
+                            "phase": "post_trigger",
+                            "action": "shoot",
+                            "player": {"hint": "node_name:FPSController"},
+                        },
+                        {
+                            "id": "sample_enemy_hit_count_after",
+                            "phase": "post_trigger",
+                            "action": "sample",
+                            "target": {"hint": "node_name:Sprite3D"},
+                            "metric": {"kind": "shader_param", "param_name": "hit_count"},
+                            "windowMs": 160,
+                            "intervalMs": 40,
+                            "evidenceKey": "enemy_hit_count_after",
+                        },
+                        {
+                            "id": "check_enemy_hit_count_after_one",
+                            "phase": "final_check",
+                            "action": "check",
+                            "checkType": "shader_param_value_seen",
+                            "evidenceRef": "enemy_hit_count_after",
+                            "predicate": {"operator": "value_seen", "value": 1},
+                        },
+                    ]
+                }
+            )
+
+            payload = plan_bug_repro_flow(project_root, args)
+
+        step_ids = [step["id"] for step in payload["candidate_flow"]["steps"]]
+        self.assertEqual(payload["model_evidence_plan_status"], "accepted")
+        self.assertIn("enemy_hit_count_after", payload["evidence_refs_produced"])
+        self.assertIn("enemy_hit_count_after", payload["evidence_refs_required"])
+        self.assertLess(step_ids.index("wait_gamelevel"), step_ids.index("sample_enemy_hit_count_before"))
+        self.assertLess(step_ids.index("sample_enemy_hit_count_before"), step_ids.index("aim_at_enemy"))
+        self.assertLess(step_ids.index("aim_at_enemy"), step_ids.index("shoot_enemy"))
+        self.assertLess(step_ids.index("shoot_enemy"), step_ids.index("sample_enemy_hit_count_after"))
+        self.assertIn("aim_at_enemy", payload["execution_contract"]["trigger_step_ids"])
+        self.assertIn("shoot_enemy", payload["execution_contract"]["trigger_step_ids"])
+        self.assertNotIn("precondition_0_interaction_target_present", step_ids)
+        self.assertTrue(
+            any(item["status"] == "covered_by_model_evidence_plan" for item in payload["assertion_coverage"])
+        )
 
 
 if __name__ == "__main__":

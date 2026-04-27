@@ -1,0 +1,78 @@
+{
+  "schema": "pointer_gpf.v2.model_evidence_plan.v1",
+  "description": "Evidence plan for a hit-feedback behavior bug where the enemy hit method should update the Sprite3D shader hit_count.",
+  "steps": [
+    {
+      "id": "sample_enemy_hit_count_before",
+      "phase": "post_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:Sprite3D"
+      },
+      "metric": {
+        "kind": "shader_param",
+        "param_name": "hit_count"
+      },
+      "windowMs": 80,
+      "intervalMs": 40,
+      "evidenceKey": "enemy_hit_count_before"
+    },
+    {
+      "id": "check_enemy_hit_count_before_zero",
+      "phase": "final_check",
+      "action": "check",
+      "checkType": "shader_param_value_seen",
+      "evidenceRef": "enemy_hit_count_before",
+      "predicate": {
+        "operator": "value_seen",
+        "value": 0
+      }
+    },
+    {
+      "id": "aim_at_enemy",
+      "phase": "post_trigger",
+      "action": "aimAt",
+      "player": {
+        "hint": "node_name:FPSController"
+      },
+      "target": {
+        "hint": "node_name:Sprite3D"
+      }
+    },
+    {
+      "id": "shoot_enemy",
+      "phase": "post_trigger",
+      "action": "shoot",
+      "player": {
+        "hint": "node_name:FPSController"
+      },
+      "settleMs": 120
+    },
+    {
+      "id": "sample_enemy_hit_count_after",
+      "phase": "post_trigger",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:Sprite3D"
+      },
+      "metric": {
+        "kind": "shader_param",
+        "param_name": "hit_count"
+      },
+      "windowMs": 160,
+      "intervalMs": 40,
+      "evidenceKey": "enemy_hit_count_after"
+    },
+    {
+      "id": "check_enemy_hit_count_after_one",
+      "phase": "final_check",
+      "action": "check",
+      "checkType": "shader_param_value_seen",
+      "evidenceRef": "enemy_hit_count_after",
+      "predicate": {
+        "operator": "value_seen",
+        "value": 1
+      }
+    }
+  ]
+}

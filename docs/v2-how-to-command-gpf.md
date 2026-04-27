@@ -138,8 +138,20 @@ Current behavior:
 - if no model evidence plan is available yet, it stops at `status: awaiting_model_evidence_plan`
 - the returned `blocking_point` explains why it stopped
 - the returned `next_action` tells the model-facing layer to provide `--evidence-plan-json` or `--evidence-plan-file`
+- the returned `model_evidence_plan_instruction` gives the model the expected schema, allowed actions, candidate project facts, and a compact example
 - after a reproduced bug and fix planning, if no bounded fix proposal is available yet, it stops at `status: bug_reproduced_awaiting_fix_proposal`
 - the returned `next_action` tells the model-facing layer to provide `--fix-proposal-json` or `--fix-proposal-file`
+- the returned `model_fix_proposal_instruction` gives the model the expected schema, candidate files, fix goals, acceptance checks, runtime evidence summary, and a compact edit example
+
+Model-facing contracts:
+
+- [v2-model-evidence-plan-contract.md](/D:/AI/pointer_gpf/docs/v2-model-evidence-plan-contract.md)
+- [v2-model-fix-proposal-contract.md](/D:/AI/pointer_gpf/docs/v2-model-fix-proposal-contract.md)
+
+Example files:
+
+- `v2/examples/*_evidence_plan.json`
+- `v2/examples/*fix_proposal*.json`
 
 Important boundary:
 
@@ -154,6 +166,7 @@ Expected final behavior when the model provides the required inputs:
 - bounded edit applied only inside candidate files
 - rerun of the same bug-focused flow
 - regression before reporting `fixed_and_verified`
+- `artifact_summary`, `repair_summary`, and `user_report` in the result after repro has run
 
 ## Current Product Boundary
 

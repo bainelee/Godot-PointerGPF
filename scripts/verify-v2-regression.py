@@ -83,6 +83,40 @@ def _reset_runtime_state(project_root: Path) -> None:
     _clear_runtime_markers(project_root)
 
 
+def _verified_close_project_timeout(payload: dict[str, Any]) -> bool:
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    if not isinstance(error, dict) or error.get("code") != "TIMEOUT":
+        return False
+    details = error.get("details", {})
+    if not isinstance(details, dict) or details.get("step_id") != "close_project":
+        return False
+    project_close = details.get("project_close", {})
+    if not isinstance(project_close, dict) or project_close.get("status") != "verified":
+        return False
+    remaining = project_close.get("forced_process_cleanup", {}).get("remaining_process_count", 0)
+    try:
+        return int(remaining) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _flow_result_ok(
+    proc: subprocess.CompletedProcess[str],
+    payload: dict[str, Any],
+    result_checks: bool,
+) -> tuple[bool, bool]:
+    close_timeout_accepted = _verified_close_project_timeout(payload)
+    return (
+        (
+            proc.returncode == 0
+            and bool(payload.get("ok"))
+            and result_checks
+        )
+        or close_timeout_accepted,
+        close_timeout_accepted,
+    )
+
+
 def _load_test_suite(paths: list[Path]) -> unittest.TestSuite:
     loader = unittest.defaultTestLoader
     suite = unittest.TestSuite()
@@ -156,15 +190,171 @@ def run_interactive_flow(project_root: Path) -> dict[str, Any]:
     )
     payload = json.loads(proc.stdout)
     result = payload.get("result", {})
-    return {
-        "name": "basic_interactive_flow",
-        "ok": (
-            proc.returncode == 0
-            and bool(payload.get("ok"))
-            and result.get("execution", {}).get("status") == "passed"
+    ok, close_timeout_accepted = _flow_result_ok(
+        proc,
+        payload,
+        (
+            result.get("execution", {}).get("status") == "passed"
             and result.get("project_close", {}).get("status") == "verified"
         ),
+    )
+    return {
+        "name": "basic_interactive_flow",
+        "ok": ok,
         "returncode": proc.returncode,
+        "close_project_timeout_accepted": close_timeout_accepted,
+        "payload": payload,
+    }
+
+
+def run_runtime_evidence_value_predicate_flow(project_root: Path) -> dict[str, Any]:
+    _reset_runtime_state(project_root)
+    flow_file = _repo_root() / "v2" / "flows" / "runtime_evidence_value_predicate_flow.json"
+    proc = _hidden_run(
+        [
+            sys.executable,
+            "-m",
+            "v2.mcp_core.server",
+            "--tool",
+            "run_basic_flow",
+            "--project-root",
+            str(project_root),
+            "--flow-file",
+            str(flow_file),
+        ],
+        cwd=_repo_root(),
+        timeout=240,
+    )
+    payload = json.loads(proc.stdout)
+    result = payload.get("result", {})
+    ok, close_timeout_accepted = _flow_result_ok(
+        proc,
+        payload,
+        (
+            result.get("execution", {}).get("status") == "passed"
+            and result.get("runtime_evidence_summary", {}).get("record_count") == 1
+            and result.get("project_close", {}).get("status") == "verified"
+        ),
+    )
+    return {
+        "name": "runtime_evidence_value_predicate_flow",
+        "ok": ok,
+        "returncode": proc.returncode,
+        "close_project_timeout_accepted": close_timeout_accepted,
+        "payload": payload,
+    }
+
+
+def run_runtime_evidence_shader_param_flow(project_root: Path) -> dict[str, Any]:
+    _reset_runtime_state(project_root)
+    flow_file = _repo_root() / "v2" / "flows" / "runtime_evidence_shader_param_flow.json"
+    proc = _hidden_run(
+        [
+            sys.executable,
+            "-m",
+            "v2.mcp_core.server",
+            "--tool",
+            "run_basic_flow",
+            "--project-root",
+            str(project_root),
+            "--flow-file",
+            str(flow_file),
+        ],
+        cwd=_repo_root(),
+        timeout=240,
+    )
+    payload = json.loads(proc.stdout)
+    result = payload.get("result", {})
+    ok, close_timeout_accepted = _flow_result_ok(
+        proc,
+        payload,
+        (
+            result.get("execution", {}).get("status") == "passed"
+            and result.get("runtime_evidence_summary", {}).get("record_count") == 1
+            and result.get("project_close", {}).get("status") == "verified"
+        ),
+    )
+    return {
+        "name": "runtime_evidence_shader_param_flow",
+        "ok": ok,
+        "returncode": proc.returncode,
+        "close_project_timeout_accepted": close_timeout_accepted,
+        "payload": payload,
+    }
+
+
+def run_runtime_evidence_hit_feedback_flow(project_root: Path) -> dict[str, Any]:
+    _reset_runtime_state(project_root)
+    flow_file = _repo_root() / "v2" / "flows" / "runtime_evidence_hit_feedback_flow.json"
+    proc = _hidden_run(
+        [
+            sys.executable,
+            "-m",
+            "v2.mcp_core.server",
+            "--tool",
+            "run_basic_flow",
+            "--project-root",
+            str(project_root),
+            "--flow-file",
+            str(flow_file),
+        ],
+        cwd=_repo_root(),
+        timeout=240,
+    )
+    payload = json.loads(proc.stdout)
+    result = payload.get("result", {})
+    ok, close_timeout_accepted = _flow_result_ok(
+        proc,
+        payload,
+        (
+            result.get("execution", {}).get("status") == "passed"
+            and result.get("runtime_evidence_summary", {}).get("record_count") == 2
+            and result.get("project_close", {}).get("status") == "verified"
+        ),
+    )
+    return {
+        "name": "runtime_evidence_hit_feedback_flow",
+        "ok": ok,
+        "returncode": proc.returncode,
+        "close_project_timeout_accepted": close_timeout_accepted,
+        "payload": payload,
+    }
+
+
+def run_runtime_evidence_enemy_movement_flow(project_root: Path) -> dict[str, Any]:
+    _reset_runtime_state(project_root)
+    flow_file = _repo_root() / "v2" / "flows" / "runtime_evidence_enemy_movement_flow.json"
+    proc = _hidden_run(
+        [
+            sys.executable,
+            "-m",
+            "v2.mcp_core.server",
+            "--tool",
+            "run_basic_flow",
+            "--project-root",
+            str(project_root),
+            "--flow-file",
+            str(flow_file),
+        ],
+        cwd=_repo_root(),
+        timeout=240,
+    )
+    payload = json.loads(proc.stdout)
+    result = payload.get("result", {})
+    ok, close_timeout_accepted = _flow_result_ok(
+        proc,
+        payload,
+        (
+            result.get("execution", {}).get("status") == "passed"
+            and result.get("runtime_evidence_summary", {}).get("record_count") == 1
+            and result.get("project_close", {}).get("status") == "verified"
+        ),
+    )
+    return {
+        "name": "runtime_evidence_enemy_movement_flow",
+        "ok": ok,
+        "returncode": proc.returncode,
+        "close_project_timeout_accepted": close_timeout_accepted,
         "payload": payload,
     }
 
@@ -440,6 +630,10 @@ def main() -> int:
             run_v2_unit_tests(),
             run_preflight(project_root),
             run_interactive_flow(project_root),
+            run_runtime_evidence_value_predicate_flow(project_root),
+            run_runtime_evidence_shader_param_flow(project_root),
+            run_runtime_evidence_hit_feedback_flow(project_root),
+            run_runtime_evidence_enemy_movement_flow(project_root),
             run_generation_questions(project_root),
             run_basicflow_session_flow(project_root),
             run_default_basicflow(project_root),

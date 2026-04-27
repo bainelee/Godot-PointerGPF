@@ -1,0 +1,12 @@
+{
+  "schema": "pointer_gpf.v2.fix_proposal.v1",
+  "description": "Rejected example: the find text is too broad and should not match exactly once in a real script.",
+  "candidate_file": "res://scripts/enemies/test_enemy.gd",
+  "edits": [
+    {
+      "kind": "replace_text",
+      "find": "func ",
+      "replace": "func "
+    }
+  ]
+}

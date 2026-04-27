@@ -1,0 +1,12 @@
+{
+  "schema": "pointer_gpf.v2.fix_proposal.v1",
+  "description": "Restore the GamePointerHud instantiation line disabled by the injected pointer_hud_not_spawned bug.",
+  "candidate_file": "res://scripts/game_level.gd",
+  "edits": [
+    {
+      "kind": "replace_text",
+      "find": "\tpass  # gpf_seeded_bug:pointer_hud_not_spawned",
+      "replace": "\tadd_child(POINTER_HUD.instantiate())"
+    }
+  ]
+}

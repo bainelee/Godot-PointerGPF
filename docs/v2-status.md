@@ -24,6 +24,7 @@ Direction note:
 - the current runtime-evidence implementation plan is recorded in [2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-generic-runtime-evidence-primitives-plan.md)
 - the current model-controlled repair execution plan and verification record is [2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
 - the current version summary is [2026-04-23-gpf-current-version-summary.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-current-version-summary.md)
+- the current long-running agent-controlled development plan is [2026-04-27-gpf-agent-controlled-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-27-gpf-agent-controlled-development-plan.md)
 
 Authoritative current-doc order:
 
@@ -33,6 +34,7 @@ Authoritative current-doc order:
 4. [v2-how-to-command-gpf.md](/D:/AI/pointer_gpf/docs/v2-how-to-command-gpf.md)
 5. [2026-04-23-gpf-current-version-summary.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-current-version-summary.md)
 6. [2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md](/D:/AI/pointer_gpf/docs/2026-04-23-gpf-model-controlled-repair-next-steps-detailed-plan.md)
+7. [2026-04-27-gpf-agent-controlled-development-plan.md](/D:/AI/pointer_gpf/docs/2026-04-27-gpf-agent-controlled-development-plan.md)
 
 ## What Is Already Working
 
@@ -95,6 +97,7 @@ The following V2 capabilities are already implemented in `v2/`:
   - `scene_transition_not_triggered`
   - `button_node_renamed_in_scene`
   - `pointer_hud_not_spawned`
+  - `hit_feedback_shader_not_updated`
 - bug-focused repro classification now separates:
   - `precondition_failed`
   - `trigger_failed`
@@ -110,6 +113,10 @@ The following V2 capabilities are already implemented in `v2/`:
   - latest persisted repro result summary
   - latest fix verification summary
   - candidate file read order
+- `observe_bug_context` now also returns `project_static_observation` for behavior-bug work:
+  - candidate project files selected from startup scene, basicflow files, bug location hints, bug text tokens, and resource references
+  - candidate behavior methods such as hit, damage, flash, feedback, shader, and animation methods
+  - candidate scene nodes, signal connections, visual state surfaces, and runtime evidence target candidates
 - `plan_bug_investigation` now returns:
   - grouped runtime actions
   - executable check candidates
@@ -134,7 +141,15 @@ The following V2 capabilities are already implemented in `v2/`:
 - `observe` can run as a cross-step event observer with `mode: "start"` and `mode: "collect"`
 - `plan_bug_repro_flow` can materialize a model `trigger_window` observe step around the trigger action
 - `apply_bug_fix` can apply a bounded model fix proposal from `--fix-proposal-json` or `--fix-proposal-file`
-- `repair_reported_bug` runs the explicit sequence for natural-language bug repair requests and stops with `blocking_point` plus `next_action` when the model still needs to provide an evidence plan or fix proposal
+- `repair_reported_bug` runs the explicit sequence for natural-language bug repair requests, stops with `blocking_point` plus `next_action` when the model still needs to provide an evidence plan or fix proposal, and can reach `fixed_and_verified` when accepted evidence and fix proposal files are supplied
+- model evidence plans can include bounded `callMethod` trigger steps
+- `repair_reported_bug` waiting states now include model-facing instruction payloads:
+  - `model_evidence_plan_instruction` when evidence is missing or rejected
+  - `model_fix_proposal_instruction` when repro succeeded and a bounded fix proposal is missing
+- `repair_reported_bug` result payloads now include `artifact_summary` and `repair_summary` after repro has run
+- `repair_reported_bug` result payloads now include `user_report` after repro has run
+- model-facing evidence plan contract document: [v2-model-evidence-plan-contract.md](/D:/AI/pointer_gpf/docs/v2-model-evidence-plan-contract.md)
+- model-facing fix proposal contract document: [v2-model-fix-proposal-contract.md](/D:/AI/pointer_gpf/docs/v2-model-fix-proposal-contract.md)
 
 ## Current Limitation
 
@@ -151,17 +166,21 @@ What is already implemented:
 - runtime evidence records and summaries in flow reports, runtime orchestration results, and bug repro artifacts when evidence is present
 - real `play_mode` validation for a node-property `sample` flow
 - real `play_mode` validation for a cross-step `observe` flow
+- real `play_mode` validation for a hit-feedback behavior flow that calls `_on_bullet_hit` and verifies shader `hit_count`
+- real injected behavior-bug round for `hit_feedback_shader_not_updated`, including baseline recording, repro failure, restore, and restored-state verification
 - model-provided evidence plans can now be loaded from `--evidence-plan-json` or `--evidence-plan-file`
-- accepted model evidence `sample`, `observe`, and `check` steps are inserted into `plan_bug_repro_flow` candidate flows
+- accepted model evidence `sample`, `observe`, `callMethod`, and `check` steps are inserted into `plan_bug_repro_flow` candidate flows
+- `observe_bug_context` now reports `callMethod` in `runtime_evidence_capabilities.actions`
 - model evidence `check` steps are now included in executable check sets
 - `plan_bug_fix` now preserves runtime evidence summaries, compact records, evidence refs, and evidence-backed acceptance checks
 - bounded model fix proposals can be applied inside candidate files without requiring a fixed strategy kind
 - natural-language bug repair requests can route to `repair_reported_bug`
+- `repair_reported_bug` has reached `fixed_and_verified` for a real injected behavior bug using `v2/examples/hit_feedback_evidence_plan.json` and `v2/examples/hit_feedback_fix_proposal.json`
 
 What is still limited:
 
 - bug reasoning is still stronger than bug execution planning
-- the model still does not reliably generate structured evidence plans from arbitrary bug reports without an external model step
+- the model still does not reliably generate structured evidence plans from arbitrary bug reports without an external model step; the current successful behavior-bug repair used repo-stored example JSON files
 - the model still does not yet generate a rich executable investigation plan by default
 - the model still must provide the bounded fix proposal; the deterministic MCP layer does not invent arbitrary code edits
 
@@ -263,6 +282,25 @@ Current implementation status for that plan:
 10. [runtime_evidence_observe_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_observe_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 1`
 11. [bug_fix_proposal.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_fix_proposal.py) supports bounded model edit proposal validation and application
 12. [bug_repair_workflow.py](/D:/AI/pointer_gpf/v2/mcp_core/bug_repair_workflow.py) implements `repair_reported_bug`
+13. [runtime_evidence_value_predicate_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_value_predicate_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 1`; it verifies evidence-backed `value_seen` and `last_value_equals` checks on sampled node-property evidence
+14. [runtime_evidence_shader_param_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_shader_param_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 1`; it verifies 3D `Sprite3D` shader parameter sampling through `GeometryInstance3D.material_override`
+15. `callMethod` is accepted by flow contracts and implemented in `runtime_bridge.gd` as a bounded gray-box runtime action for invoking a method on a resolved node
+16. `aimAt` and `shoot` are accepted by flow contracts and implemented in `runtime_bridge.gd` for player-input hit tests: `aimAt` sends equivalent mouse motion toward a 3D target, and `shoot` sends a left mouse button input event through the player controller path
+17. [runtime_evidence_hit_feedback_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_hit_feedback_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 2`; it samples `TestEnemy/Sprite3D` shader `hit_count=0`, runs `aimAt` toward `Sprite3D`, runs `shoot` through `FPSController`, then verifies shader `hit_count=1`
+18. the test project now records the triangle enemy's irregular player-orbit movement in `D:\AI\pointer_gpf_testgame\pointer_gpf\project_context\07-game-design.md`
+19. `runtime_bridge.gd` sample windows now wait through Godot timers instead of blocking the main thread, so `_process(delta)` can advance while evidence is being sampled
+20. [runtime_evidence_enemy_movement_flow.json](/D:/AI/pointer_gpf/v2/flows/runtime_evidence_enemy_movement_flow.json) passed against `D:\AI\pointer_gpf_testgame` with `runtime_evidence_summary.record_count: 1`; it samples `TestEnemy.position` over time and verifies `changed_from_baseline`
+21. `seed_test_project_bug` supports `hit_feedback_shader_not_updated`, which inserts an early return into `_sync_hits_to_shader()` in the test project's enemy script
+22. real round `20260427-185421-919628` injected `hit_feedback_shader_not_updated`, reproduced the bug with `enemy_hit_count_after` remaining `0`, restored the test project, and verified the restored hit-feedback flow with `hit_count=1`
+23. [hit_feedback_evidence_plan.json](/D:/AI/pointer_gpf/v2/examples/hit_feedback_evidence_plan.json) is an accepted model evidence plan example that samples shader `hit_count`, aims the player at `Sprite3D`, shoots through `FPSController`, then checks the changed shader value
+24. [hit_feedback_fix_proposal.json](/D:/AI/pointer_gpf/v2/examples/hit_feedback_fix_proposal.json) is an accepted bounded fix proposal example that removes the injected hit-feedback return marker from `res://scripts/enemies/test_enemy.gd`
+25. real round `20260427-191248-387259` injected `hit_feedback_shader_not_updated`, ran `repair_reported_bug` with the evidence plan and fix proposal examples, returned `status: fixed_and_verified`, restored the test project, and verified the restored state
+26. `repair_reported_bug` now returns `model_evidence_plan_instruction` on `awaiting_model_evidence_plan` and `model_fix_proposal_instruction` on `bug_reproduced_awaiting_fix_proposal`
+27. accepted evidence-plan examples now cover scene transition, HUD spawn, animation feedback, shader feedback, and hit feedback under `v2/examples`
+28. fix-proposal examples now cover safe replace, candidate mismatch rejection, and broad edit rejection under `v2/examples`
+29. `repair_reported_bug` now returns `artifact_summary` and `repair_summary` after repro has run, including stage-labeled artifact paths, failed check ids, runtime evidence ids, applied changes, rerun status, and regression status
+30. [repair_report_formatter.py](/D:/AI/pointer_gpf/v2/mcp_core/repair_report_formatter.py) formats `repair_summary` and `artifact_summary` into `user_report`, including structured report sections and concise markdown
+31. real round `20260427-211825-006332` verified that `repair_reported_bug` CLI output includes `user_report`; repro, fix application, and bug-focused rerun passed, while final regression was classified as `regression_failed` due to a `close_project` timeout after teardown was already verified
 
 The current V2 structure lives under:
 
@@ -311,6 +349,10 @@ Latest observed fixed regression result:
 - `v2_unit_tests`: `Ran 97 tests`, `OK`
 - `preflight_project`: `ok: true`
 - `basic_interactive_flow`: `ok: true`
+- `runtime_evidence_value_predicate_flow`: `ok: true`
+- `runtime_evidence_shader_param_flow`: `ok: true`
+- `runtime_evidence_hit_feedback_flow`: `ok: true`
+- `runtime_evidence_enemy_movement_flow`: `ok: true`
 - `default_basicflow`: `ok: true`
 - `basicflow_stale_override`: `ok: true`
 - `runtime_guards`: `ok: true`
@@ -347,7 +389,7 @@ python -m unittest D:\AI\pointer_gpf\v2\tests\test_preflight.py D:\AI\pointer_gp
 
 Observed result:
 
-- the latest full V2 unit-test run in this workspace exercised `Ran 199 tests`
+- the latest full V2 unit-test run in this workspace exercised `Ran 207 tests`
 - `OK`
 
 Model evidence plan CLI smoke:
@@ -394,6 +436,74 @@ Observed result:
 - observed event scene `res://scenes/game_level.tscn`
 - `project_close.status: verified`
 
+### 3.2.1 Runtime evidence value predicate flow
+
+```powershell
+python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame --flow-file D:\AI\pointer_gpf\v2\flows\runtime_evidence_value_predicate_flow.json
+```
+
+Observed result:
+
+- `ok: true`
+- `execution.status: passed`
+- `runtime_evidence_summary.record_count: 1`
+- evidence id `startbutton_visible_value_window`
+- sampled `StartButton.visible=true`
+- evidence-backed checks passed for `value_seen` and `last_value_equals`
+- `project_close.status: verified`
+
+### 3.2.2 Runtime evidence shader parameter flow
+
+```powershell
+python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame --flow-file D:\AI\pointer_gpf\v2\flows\runtime_evidence_shader_param_flow.json
+```
+
+Observed result:
+
+- `ok: true`
+- `execution.status: passed`
+- `runtime_evidence_summary.record_count: 1`
+- evidence id `enemy_hit_count_shader_window`
+- sampled `/root/GameLevel/TestEnemy/Sprite3D`
+- sampled shader `hit_count=0`
+- evidence-backed check passed for `value_seen`
+- `project_close.status: verified`
+
+### 3.2.3 Runtime evidence hit feedback flow
+
+```powershell
+python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame --flow-file D:\AI\pointer_gpf\v2\flows\runtime_evidence_hit_feedback_flow.json
+```
+
+Observed result:
+
+- `ok: true`
+- `play_mode.status: entered_play_mode`
+- `execution.status: passed`
+- `runtime_evidence_summary.record_count: 2`
+- evidence id `enemy_hit_count_before` sampled `/root/GameLevel/TestEnemy/Sprite3D` shader `hit_count=0`
+- `aimAt` aimed `FPSController` at `/root/GameLevel/TestEnemy/Sprite3D`, then `shoot` sent a left mouse button input event
+- evidence id `enemy_hit_count_after` sampled `/root/GameLevel/TestEnemy/Sprite3D` shader `hit_count=1`
+- `project_close.status: verified`
+
+### 3.2.4 Runtime evidence enemy movement flow
+
+```powershell
+python -m v2.mcp_core.server --tool run_basic_flow --project-root D:\AI\pointer_gpf_testgame --flow-file D:\AI\pointer_gpf\v2\flows\runtime_evidence_enemy_movement_flow.json
+```
+
+Observed result:
+
+- `ok: true`
+- `play_mode.status: entered_play_mode`
+- `execution.status: passed`
+- `runtime_evidence_summary.record_count: 1`
+- evidence id `enemy_position_window` sampled `/root/GameLevel/TestEnemy.position`
+- first sample was approximately `(4.81, 1.81, 4.54)`
+- final sample was approximately `(5.40, 1.89, 3.72)`
+- evidence-backed check passed for `changed_from_baseline`
+- `project_close.status: verified`
+
 ### 3.3 Top-level repair smoke
 
 ```powershell
@@ -407,6 +517,131 @@ Observed result:
 - `status: awaiting_model_evidence_plan`
 - `blocking_point: repair_reported_bug requires an accepted model evidence plan before running repro`
 - `next_action: provide_evidence_plan_json_or_file`
+- `model_evidence_plan_instruction.schema: pointer_gpf.v2.model_evidence_plan_instruction.v1`
+- `model_evidence_plan_instruction.allowed_actions` includes `callMethod`
+
+### 3.4 Top-level repair with real behavior bug
+
+Bug source:
+
+- injected in round `20260427-191248-387259`
+- bug kind: `hit_feedback_shader_not_updated`
+- modified test-project files were recorded in that round and later restored
+
+Evidence and fix artifacts:
+
+- `D:\AI\pointer_gpf\v2\examples\hit_feedback_evidence_plan.json`
+- `D:\AI\pointer_gpf\v2\examples\hit_feedback_fix_proposal.json`
+
+Repair command shape:
+
+```powershell
+python -m v2.mcp_core.server --tool repair_reported_bug --project-root D:\AI\pointer_gpf_testgame --bug-report "敌人受击后没有闪红" --bug-summary "受击反馈没有更新 shader 状态" --expected-behavior "敌人受击后 shader hit_count 应该从 0 变为 1" --steps-to-trigger "启动游戏|点击开始|调用敌人受击方法" --location-scene res://scenes/game_level.tscn --location-node TestEnemy --location-script res://scripts/enemies/test_enemy.gd --bug-case-file D:\AI\pointer_gpf_testgame\pointer_gpf\tmp\bug_dev_rounds\20260427-191248-387259\bug_cases\hit_feedback_shader_not_updated-191248.json --evidence-plan-file D:\AI\pointer_gpf\v2\examples\hit_feedback_evidence_plan.json --fix-proposal-file D:\AI\pointer_gpf\v2\examples\hit_feedback_fix_proposal.json
+```
+
+Observed result:
+
+- `ok: true`
+- `status: fixed_and_verified`
+- `blocking_point: ""`
+- `next_action: ""`
+- repair artifacts written:
+  - `D:\AI\pointer_gpf_testgame\pointer_gpf\tmp\last_bug_repro_result.json`
+  - `D:\AI\pointer_gpf_testgame\pointer_gpf\tmp\last_bug_fix_proposal.json`
+  - `D:\AI\pointer_gpf_testgame\pointer_gpf\tmp\last_bug_fix_application.json`
+  - `D:\AI\pointer_gpf_testgame\pointer_gpf\tmp\last_bug_fix_verification.json`
+  - `D:\AI\pointer_gpf_testgame\pointer_gpf\tmp\last_bug_fix_regression.json`
+
+Restore command:
+
+```powershell
+python -m v2.mcp_core.server --tool restore_test_project_bug_round --project-root D:\AI\pointer_gpf_testgame --round-id 20260427-191248-387259
+```
+
+Observed result:
+
+- `ok: true`
+- `status: restored_and_verified`
+- restored `scenes/game_level.tscn`
+- restored `scripts/enemies/test_enemy.gd`
+
+Post-restore checks:
+
+- `Select-String -Path D:\AI\pointer_gpf_testgame\scripts\enemies\test_enemy.gd -Pattern 'gpf_seeded_bug:hit_feedback_shader_not_updated' -SimpleMatch` -> no match
+- `Get-Process | Where-Object { $_.ProcessName -like 'Godot*' }` -> no remaining Godot process at that check point
+- `python -m unittest discover -s D:\AI\pointer_gpf\v2\tests -p "test_*.py"` -> `Ran 207 tests`, `OK`
+- `python D:\AI\pointer_gpf\scripts\verify-v2-regression.py --project-root D:\AI\pointer_gpf_testgame` -> `ok: true`; hit-feedback flow sampled `hit_count=0` before the trigger and `hit_count=1` after the trigger
+
+### 3.5 Repair workflow instruction payload tests
+
+```powershell
+python -m unittest D:\AI\pointer_gpf\v2\tests\test_bug_repair_workflow.py
+```
+
+Observed result:
+
+- `Ran 4 tests`
+- `OK`
+- tests cover `artifact_summary.by_stage` and `repair_summary` on success and waiting-for-fix-proposal states
+
+### 3.5.1 User repair report tests
+
+```powershell
+python -m unittest D:\AI\pointer_gpf\v2\tests\test_repair_report_formatter.py D:\AI\pointer_gpf\v2\tests\test_bug_repair_workflow.py
+```
+
+Observed result:
+
+- `Ran 5 tests`
+- `OK`
+- tests cover `user_report.schema`, report sections, markdown text, changed files, and artifact references
+
+### 3.5.2 Real CLI user_report validation
+
+Bug source:
+
+- injected in round `20260427-211825-006332`
+- bug kind: `hit_feedback_shader_not_updated`
+
+Observed repair result:
+
+- `ok: true`
+- `status: regression_failed`
+- `blocking_point: regression failed after bug-focused rerun passed`
+- `user_report.schema: pointer_gpf.v2.user_repair_report.v1`
+- `user_report.status: regression_failed`
+- `user_report.markdown` included repro, failed checks, runtime evidence ids, changed file, rerun status, regression status, and artifact paths
+- repro status in the report: `bug_reproduced`
+- fix application status in the report: `fix_applied`
+- changed file in the report: `res://scripts/enemies/test_enemy.gd`
+- bug-focused rerun status in the report: `bug_not_reproduced`
+
+Regression note:
+
+- the first regression failure occurred in `runtime_evidence_shader_param_flow` at `close_project`
+- retrying `verify-v2-regression.py` later passed the shader and hit-feedback flows, but failed at `basicflow_stale_override` `close_project`
+- both failures reported `project_close.status: verified`
+- `runtime_diagnostics.json` was not present
+
+Restore:
+
+- `restore_test_project_bug_round --round-id 20260427-211825-006332` -> `ok: true`, `status: restored_and_verified`, `verification_returncode: 0`
+- post-restore marker check found no `gpf_seeded_bug:hit_feedback_shader_not_updated`
+- post-restore process check found no remaining Godot process
+
+### 3.6 Model contract example tests
+
+```powershell
+python -m unittest D:\AI\pointer_gpf\v2\tests\test_bug_evidence_plan.py D:\AI\pointer_gpf\v2\tests\test_bug_fix_proposal.py
+```
+
+Observed result:
+
+- `Ran 11 tests`
+- `OK`
+- accepted evidence examples load through `load_model_evidence_plan`
+- safe fix proposal example applies in a temp project
+- candidate mismatch and broad edit examples reject as expected
 
 ### 4. V2 interactive flow
 
@@ -645,10 +880,9 @@ Phase 1 minimal chain is already passing.
 
 Next phase should be:
 
-1. add a real behavior-bug validation round that uses `repair_reported_bug` with a model evidence plan and bounded fix proposal
-2. improve model-facing project observation so the model can choose better evidence plans from real scenes, scripts, animations, signals, and node paths
-3. improve candidate-file ranking from runtime evidence refs and target node paths
-4. keep avoiding per-bug fixed branches; the model should choose the relevant checks and candidate files from project facts and runtime evidence
+1. handle fixed-regression `close_project` timeout cases where `project_close.status` is already verified, so successful bug-focused repair is not reported as a generic regression failure without clearer classification
+2. improve install and AI-tool entry docs after the repair report shape is stable
+3. keep avoiding per-bug fixed branches; the model should choose the relevant checks and candidate files from project facts and runtime evidence
 
 ## Notes About External Project
 

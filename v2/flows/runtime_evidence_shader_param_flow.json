@@ -1,0 +1,62 @@
+{
+  "flowId": "runtime_evidence_shader_param_flow",
+  "name": "Runtime Evidence Shader Param Flow",
+  "description": "Verifies shader parameter sampling on a 3D Sprite node in real play_mode.",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "wait_startbutton",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "click_startbutton",
+      "action": "click",
+      "target": {
+        "hint": "node_name:StartButton"
+      }
+    },
+    {
+      "id": "wait_gamelevel",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:GameLevel"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "sample_enemy_hit_count",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:Sprite3D"
+      },
+      "metric": {
+        "kind": "shader_param",
+        "param_name": "hit_count"
+      },
+      "windowMs": 120,
+      "intervalMs": 40,
+      "evidenceKey": "enemy_hit_count_shader_window"
+    },
+    {
+      "id": "check_enemy_hit_count_initial",
+      "action": "check",
+      "checkType": "shader_param_value_seen",
+      "evidenceRef": "enemy_hit_count_shader_window",
+      "predicate": {
+        "operator": "value_seen",
+        "value": 0
+      }
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}

@@ -31,6 +31,9 @@ ALLOWED_FLOW_ACTIONS = frozenset(
         "check",
         "sample",
         "observe",
+        "callMethod",
+        "aimAt",
+        "shoot",
         "snapshot",
         "closeProject",
     }

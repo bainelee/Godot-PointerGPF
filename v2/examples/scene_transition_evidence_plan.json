@@ -1,0 +1,47 @@
+{
+  "schema": "pointer_gpf.v2.model_evidence_plan.v1",
+  "description": "Evidence plan for a scene-transition bug where clicking StartButton should enter GameLevel.",
+  "steps": [
+    {
+      "id": "wait_start_button",
+      "phase": "pre_trigger",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "observe_scene_change_after_start",
+      "phase": "trigger_window",
+      "action": "observe",
+      "event": {
+        "kind": "scene_changed"
+      },
+      "windowMs": 1200,
+      "evidenceKey": "scene_change_after_start"
+    },
+    {
+      "id": "click_start_button",
+      "phase": "trigger_window",
+      "action": "click",
+      "target": {
+        "hint": "node_name:StartButton"
+      }
+    },
+    {
+      "id": "check_scene_changed",
+      "phase": "final_check",
+      "action": "check",
+      "checkType": "scene_changed",
+      "evidenceRef": "scene_change_after_start",
+      "predicate": {
+        "operator": "event_seen",
+        "event": {
+          "kind": "scene_changed",
+          "scene": "res://scenes/game_level.tscn"
+        }
+      }
+    }
+  ]
+}

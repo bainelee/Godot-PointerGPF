@@ -1,0 +1,12 @@
+{
+  "schema": "pointer_gpf.v2.fix_proposal.v1",
+  "description": "Rejected example: the file is not one of plan_bug_fix.candidate_files.",
+  "candidate_file": "res://scripts/unrelated.gd",
+  "edits": [
+    {
+      "kind": "replace_text",
+      "find": "pass",
+      "replace": ""
+    }
+  ]
+}

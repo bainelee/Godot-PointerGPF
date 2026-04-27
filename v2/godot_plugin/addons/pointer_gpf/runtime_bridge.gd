@@ -17,6 +17,7 @@ var _automation_input_guard_active: bool = false
 var _run_captures: Dictionary = {}
 var _run_evidence_records: Dictionary = {}
 var _active_observers: Dictionary = {}
+var _bridge_command_active: bool = false
 
 
 func _ready() -> void:
@@ -63,6 +64,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _poll_bridge() -> void:
+    if _bridge_command_active:
+        return
     var cmd_path := ProjectSettings.globalize_path(_CMD_REL)
     if not FileAccess.file_exists(cmd_path):
         return
@@ -103,10 +106,12 @@ func _poll_bridge() -> void:
         return
     _last_run_id = run_id
     _last_seq = seq
-    var rsp := _dispatch_action(action, seq, run_id, d, step)
+    _bridge_command_active = true
+    var rsp := await _dispatch_action(action, seq, run_id, d, step)
     _diag_writer.note_bridge_dispatch(action, rsp)
     _write_response(rsp)
     _delete_command_file()
+    _bridge_command_active = false
 
 
 func _dispatch_action(action: String, seq: int, run_id: String, command: Dictionary, step: Dictionary) -> Dictionary:
@@ -127,9 +132,15 @@ func _dispatch_action(action: String, seq: int, run_id: String, command: Diction
         "capture":
             return _capture_runtime_value(command, step, seq, run_id)
         "sample":
-            return _sample_runtime_value(command, step, seq, run_id)
+            return await _sample_runtime_value(command, step, seq, run_id)
         "observe":
             return _observe_runtime_event(command, step, seq, run_id)
+        "callmethod":
+            return _call_runtime_method(command, step, seq, run_id)
+        "aimat":
+            return _aim_player_at_target(command, step, seq, run_id)
+        "shoot":
+            return _shoot_with_player_input(command, step, seq, run_id)
         "click":
             var click_result := _perform_click(_extract_target(command, step), _extract_position(command, step))
             if not bool(click_result.get("ok", false)):
@@ -232,6 +243,124 @@ func _extract_predicate(command: Dictionary, step: Dictionary) -> Dictionary:
     return predicate if typeof(predicate) == TYPE_DICTIONARY else {}
 
 
+func _extract_args(command: Dictionary, step: Dictionary) -> Array:
+    var raw_args := step.get("args", command.get("args", []))
+    return raw_args if typeof(raw_args) == TYPE_ARRAY else []
+
+
+func _call_runtime_method(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
+    var target := _extract_target(command, step)
+    var node := _resolve_target_node_with_retry(target, 1200)
+    if node == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve callMethod target", seq, run_id)
+    var method_name := str(step.get("method", command.get("method", ""))).strip_edges()
+    if method_name == "":
+        return _error_payload("INVALID_ARGUMENT", "method is required for callMethod action", seq, run_id)
+    if not node.has_method(method_name):
+        return _error_payload("METHOD_NOT_FOUND", "target does not define method: %s" % method_name, seq, run_id)
+    var raw_args := _extract_args(command, step)
+    var coerced_args: Array = []
+    for item in raw_args:
+        coerced_args.append(_coerce_method_arg(item))
+    var result = node.callv(method_name, coerced_args)
+    return {
+        "ok": true,
+        "seq": seq,
+        "run_id": run_id,
+        "message": "callMethod acknowledged",
+        "target": _target_description(target, node),
+        "method": method_name,
+        "arg_count": coerced_args.size(),
+        "return_value": _serialize_variant_value(result),
+    }
+
+
+func _coerce_method_arg(value: Variant) -> Variant:
+    if typeof(value) != TYPE_DICTIONARY:
+        return value
+    var d: Dictionary = value
+    var kind := str(d.get("kind", "")).strip_edges()
+    if kind == "vector3":
+        return Vector3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
+    if kind == "vector2":
+        return Vector2(float(d.get("x", 0.0)), float(d.get("y", 0.0)))
+    if kind == "color":
+        return Color(float(d.get("r", 0.0)), float(d.get("g", 0.0)), float(d.get("b", 0.0)), float(d.get("a", 1.0)))
+    if kind == "node_global_position":
+        var target := d.get("target", {})
+        var node := _resolve_target_node_with_retry(target, 1200)
+        if node is Node3D:
+            return (node as Node3D).global_position
+        if node is Node2D:
+            var pos2 := (node as Node2D).global_position
+            return Vector3(pos2.x, pos2.y, 0.0)
+        return Vector3.ZERO
+    return value
+
+
+func _aim_player_at_target(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
+    var player := _resolve_player_node(step)
+    if player == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve player for aimAt action", seq, run_id)
+    var target_node := _resolve_target_node_with_retry(_extract_target(command, step), 1200)
+    if target_node == null or not (target_node is Node3D):
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve 3D target for aimAt action", seq, run_id)
+    var camera := _player_camera(player)
+    if camera == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve player Camera3D for aimAt action", seq, run_id)
+
+    _prepare_player_gameplay_input(player)
+    var direction := (target_node as Node3D).global_position - camera.global_position
+    if direction.length() <= 0.001:
+        return _error_payload("INVALID_ARGUMENT", "aimAt target overlaps camera", seq, run_id)
+    var normalized := direction.normalized()
+    var desired_yaw := atan2(-normalized.x, -normalized.z)
+    var desired_pitch := asin(clampf(normalized.y, -1.0, 1.0))
+    var current_yaw := (player as Node3D).rotation.y
+    var current_pitch := _player_pitch(player)
+    var sensitivity := _player_mouse_sensitivity(player)
+    var relative := Vector2(
+        -wrapf(desired_yaw - current_yaw, -PI, PI) / sensitivity,
+        -(desired_pitch - current_pitch) / sensitivity
+    )
+
+    var motion := InputEventMouseMotion.new()
+    motion.relative = relative
+    motion.position = _viewport_center(camera)
+    Input.parse_input_event(motion)
+    OS.delay_msec(32)
+    return {
+        "ok": true,
+        "seq": seq,
+        "run_id": run_id,
+        "message": "aimAt acknowledged",
+        "player": _target_description({"hint": str(player.name)}, player),
+        "target": _target_description(_extract_target(command, step), target_node),
+        "mouse_relative": {"x": relative.x, "y": relative.y},
+        "desired_yaw": desired_yaw,
+        "desired_pitch": desired_pitch,
+    }
+
+
+func _shoot_with_player_input(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
+    var player := _resolve_player_node(step)
+    if player == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve player for shoot action", seq, run_id)
+    var camera := _player_camera(player)
+    if camera == null:
+        return _error_payload("TARGET_NOT_FOUND", "cannot resolve player Camera3D for shoot action", seq, run_id)
+    _prepare_player_gameplay_input(player)
+    _dispatch_click_virtual(_viewport_center(camera), MOUSE_BUTTON_LEFT)
+    OS.delay_msec(max(16, _coerce_int(step.get("settleMs", command.get("settleMs", 80)))))
+    return {
+        "ok": true,
+        "seq": seq,
+        "run_id": run_id,
+        "message": "shoot acknowledged",
+        "player": _target_description({"hint": str(player.name)}, player),
+    }
+
+
 func _sample_runtime_value(command: Dictionary, step: Dictionary, seq: int, run_id: String) -> Dictionary:
     var evidence_key := _extract_evidence_key(command, step)
     if evidence_key == "":
@@ -242,7 +371,33 @@ func _sample_runtime_value(command: Dictionary, step: Dictionary, seq: int, run_
     var interval_ms := max(16, _coerce_int(step.get("intervalMs", command.get("intervalMs", 50))))
     var node := _resolve_target_node_with_retry(target, 1200)
     if node == null:
-        return _error_payload("TARGET_NOT_FOUND", "cannot resolve sample target", seq, run_id)
+        var missing_record := {
+            "evidence_id": evidence_key,
+            "record_type": "sample_result",
+            "status": "failed",
+            "target": _target_description(target, null),
+            "metric": _metric_description(metric),
+            "window_ms": window_ms,
+            "interval_ms": interval_ms,
+            "samples": [
+                {
+                    "timestamp_ms": 0,
+                    "ok": false,
+                    "value": null,
+                    "value_type": "missing_target",
+                    "message": "cannot resolve sample target",
+                }
+            ],
+        }
+        _run_evidence_records[evidence_key] = missing_record
+        return {
+            "ok": true,
+            "seq": seq,
+            "run_id": run_id,
+            "message": "sample target missing; evidence recorded",
+            "runtime_evidence_refs": [evidence_key],
+            "runtime_evidence_records": [missing_record],
+        }
     var samples: Array = []
     var start := Time.get_ticks_msec()
     var elapsed := 0
@@ -259,7 +414,7 @@ func _sample_runtime_value(command: Dictionary, step: Dictionary, seq: int, run_
         samples.append(sample)
         if elapsed >= window_ms:
             break
-        OS.delay_msec(interval_ms)
+        await get_tree().create_timer(float(interval_ms) / 1000.0).timeout
         elapsed = Time.get_ticks_msec() - start
     var status := "passed"
     for item in samples:
@@ -478,6 +633,12 @@ func _evaluate_predicate(record: Dictionary, predicate: Dictionary) -> bool:
         var samples := record.get("samples", [])
         var min_samples := max(0, _coerce_int(predicate.get("count", 1)))
         return typeof(samples) == TYPE_ARRAY and (samples as Array).size() >= min_samples
+    if operator == "value_seen" or operator == "equals_at_least_once" or operator == "sample_value_equals":
+        return _sample_value_seen(record, predicate.get("value", null))
+    if operator == "first_value_equals":
+        return _sample_edge_value_equals(record, predicate.get("value", null), true)
+    if operator == "last_value_equals":
+        return _sample_edge_value_equals(record, predicate.get("value", null), false)
     if operator == "not_equals":
         return _sample_value_changed(record)
     if operator == "changed_from_baseline":
@@ -499,6 +660,33 @@ func _sample_value_changed(record: Dictionary) -> bool:
         if typeof(item) == TYPE_DICTIONARY and JSON.stringify((item as Dictionary).get("value", null)) != baseline:
             return true
     return false
+
+
+func _values_equal(left: Variant, right: Variant) -> bool:
+    if typeof(left) in [TYPE_INT, TYPE_FLOAT] and typeof(right) in [TYPE_INT, TYPE_FLOAT]:
+        return absf(float(left) - float(right)) <= 0.00001
+    return JSON.stringify(left) == JSON.stringify(right)
+
+
+func _sample_value_seen(record: Dictionary, expected: Variant) -> bool:
+    var samples := record.get("samples", [])
+    if typeof(samples) != TYPE_ARRAY:
+        return false
+    for item in samples:
+        if typeof(item) == TYPE_DICTIONARY and _values_equal((item as Dictionary).get("value", null), expected):
+            return true
+    return false
+
+
+func _sample_edge_value_equals(record: Dictionary, expected: Variant, use_first: bool) -> bool:
+    var samples := record.get("samples", [])
+    if typeof(samples) != TYPE_ARRAY or (samples as Array).is_empty():
+        return false
+    var index := 0 if use_first else (samples as Array).size() - 1
+    var item: Variant = (samples as Array)[index]
+    if typeof(item) != TYPE_DICTIONARY:
+        return false
+    return _values_equal((item as Dictionary).get("value", null), expected)
 
 
 func _sample_value_returned(record: Dictionary) -> bool:
@@ -621,9 +809,13 @@ func _read_runtime_metric(node: Node, metric: Variant) -> Dictionary:
         var param_name := str(metric_dict.get("param_name", metric_dict.get("parameter", ""))).strip_edges()
         if param_name == "":
             return {"ok": false, "message": "shader_param metric requires param_name"}
-        if not (node is CanvasItem):
-            return {"ok": false, "message": "shader_param metric requires a CanvasItem target"}
-        var material := (node as CanvasItem).material
+        var material: Material = null
+        if node is CanvasItem:
+            material = (node as CanvasItem).material
+        elif node is GeometryInstance3D:
+            material = (node as GeometryInstance3D).material_override
+        else:
+            return {"ok": false, "message": "shader_param metric requires a CanvasItem or GeometryInstance3D target"}
         if not (material is ShaderMaterial):
             return {"ok": false, "message": "target material is not a ShaderMaterial"}
         var shader_value = (material as ShaderMaterial).get_shader_parameter(param_name)
@@ -754,6 +946,58 @@ func _perform_click(target: Variant, fallback_pos: Vector2) -> Dictionary:
         _dispatch_click_virtual(fallback_pos)
         return {"ok": true, "node_path": ""}
     return {"ok": false, "message": "cannot resolve clickable target"}
+
+
+func _resolve_player_node(step: Dictionary) -> Node3D:
+    var player_target = step.get("player", {})
+    var player := _resolve_target_node_with_retry(player_target, 250) if typeof(player_target) == TYPE_DICTIONARY and not (player_target as Dictionary).is_empty() else null
+    if player is Node3D:
+        return player as Node3D
+    var tree := get_tree()
+    if tree != null:
+        for node in tree.get_nodes_in_group("player"):
+            if node is Node3D:
+                return node as Node3D
+    var by_name := _resolve_target_node_with_retry({"hint": "node_name:FPSController"}, 250)
+    return by_name as Node3D if by_name is Node3D else null
+
+
+func _player_camera(player: Node3D) -> Camera3D:
+    var camera := player.get_node_or_null("Camera3D")
+    if camera is Camera3D:
+        return camera as Camera3D
+    for child in player.get_children():
+        if child is Camera3D:
+            return child as Camera3D
+    return null
+
+
+func _prepare_player_gameplay_input(player: Node3D) -> void:
+    if "pointer_ui_mode" in player:
+        player.pointer_ui_mode = false
+    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _player_mouse_sensitivity(player: Node3D) -> float:
+    var value = player.get("mouse_sensitivity")
+    if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+        return max(0.0001, float(value))
+    return 0.002
+
+
+func _player_pitch(player: Node3D) -> float:
+    var value = player.get("_pitch")
+    if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+        return float(value)
+    var camera := _player_camera(player)
+    return camera.rotation.x if camera != null else 0.0
+
+
+func _viewport_center(camera: Camera3D) -> Vector2:
+    var viewport := camera.get_viewport()
+    if viewport == null:
+        return Vector2.ZERO
+    return viewport.get_visible_rect().get_center()
 
 
 func _resolve_target_node_with_retry(target: Variant, timeout_ms: int = 1200) -> Node:

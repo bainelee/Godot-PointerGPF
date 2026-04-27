@@ -1,0 +1,57 @@
+{
+  "flowId": "runtime_evidence_value_predicate_flow",
+  "name": "Runtime Evidence Value Predicate Flow",
+  "description": "Verifies evidence-backed sample value predicates in real play_mode.",
+  "steps": [
+    {
+      "id": "launch_game",
+      "action": "launchGame"
+    },
+    {
+      "id": "wait_startbutton",
+      "action": "wait",
+      "until": {
+        "hint": "node_exists:StartButton"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "sample_startbutton_visible",
+      "action": "sample",
+      "target": {
+        "hint": "node_name:StartButton"
+      },
+      "metric": {
+        "kind": "node_property",
+        "property_path": "visible"
+      },
+      "windowMs": 120,
+      "intervalMs": 40,
+      "evidenceKey": "startbutton_visible_value_window"
+    },
+    {
+      "id": "check_startbutton_visible_seen",
+      "action": "check",
+      "checkType": "node_property_value_seen",
+      "evidenceRef": "startbutton_visible_value_window",
+      "predicate": {
+        "operator": "value_seen",
+        "value": true
+      }
+    },
+    {
+      "id": "check_startbutton_visible_last",
+      "action": "check",
+      "checkType": "node_property_last_value_equals",
+      "evidenceRef": "startbutton_visible_value_window",
+      "predicate": {
+        "operator": "last_value_equals",
+        "value": true
+      }
+    },
+    {
+      "id": "close_project",
+      "action": "closeProject"
+    }
+  ]
+}

@@ -103,7 +103,7 @@ def _build_execution_contract(candidate_steps: list[dict[str, Any]]) -> dict[str
         action = str(step.get("action", "")).strip().lower()
         if action == "closeproject":
             close_step_ids.append(step_id)
-        elif action == "click":
+        elif action in {"click", "callmethod", "aimat", "shoot"}:
             trigger_step_ids.append(step_id)
         elif first_trigger_index is None or index < first_trigger_index:
             if action in {"wait", "check", "sample", "observe"}:
@@ -248,66 +248,81 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
     planned_postcondition_steps: list[dict[str, Any]] = []
     assertion_coverage: list[dict[str, Any]] = []
     unsupported_assertions: list[str] = []
+    model_evidence_plan_accepted = str(evidence_plan_payload.get("status", "")).strip() == "accepted"
 
-    for index, assertion in enumerate(assertion_set.get("preconditions", [])):
-        if not isinstance(assertion, dict):
-            continue
-        built = _assertion_step(assertion, "precondition", index)
-        assertion_id = str(assertion.get("id", f"precondition_{index}"))
-        if built is None:
-            unsupported_assertions.append(assertion_id)
-            continue
-        step, hint = built
-        if hint in existing_hints:
+    if model_evidence_plan_accepted:
+        for index, assertion in enumerate(assertion_set.get("assertions", [])):
+            if not isinstance(assertion, dict):
+                continue
+            assertion_id = str(assertion.get("id", f"assertion_{index}"))
             assertion_coverage.append(
                 {
                     "assertion_id": assertion_id,
-                    "status": "already_covered_by_base_flow",
-                    "reason": f"base flow already contains runtime hint {hint}",
+                    "status": "covered_by_model_evidence_plan",
+                    "reason": "an accepted model evidence plan is present, so fixed heuristic assertions are retained as context but not inserted as blocking runtime steps",
                     "supporting_assertions": [],
                 }
             )
-            continue
-        planned_precondition_steps.append(step)
-        existing_hints.add(hint)
-        assertion_coverage.append(
-            {
-                "assertion_id": assertion_id,
-                "status": "covered_by_planned_step",
-                "reason": "repro planner added an explicit precondition step for this assertion",
-                "supporting_assertions": [],
-            }
-        )
-
-    for index, assertion in enumerate(assertion_set.get("postconditions", [])):
-        if not isinstance(assertion, dict):
-            continue
-        built = _assertion_step(assertion, "postcondition", index)
-        assertion_id = str(assertion.get("id", f"postcondition_{index}"))
-        if built is None:
-            unsupported_assertions.append(assertion_id)
-            continue
-        step, hint = built
-        if hint in existing_hints:
+    else:
+        for index, assertion in enumerate(assertion_set.get("preconditions", [])):
+            if not isinstance(assertion, dict):
+                continue
+            built = _assertion_step(assertion, "precondition", index)
+            assertion_id = str(assertion.get("id", f"precondition_{index}"))
+            if built is None:
+                unsupported_assertions.append(assertion_id)
+                continue
+            step, hint = built
+            if hint in existing_hints:
+                assertion_coverage.append(
+                    {
+                        "assertion_id": assertion_id,
+                        "status": "already_covered_by_base_flow",
+                        "reason": f"base flow already contains runtime hint {hint}",
+                        "supporting_assertions": [],
+                    }
+                )
+                continue
+            planned_precondition_steps.append(step)
+            existing_hints.add(hint)
             assertion_coverage.append(
                 {
                     "assertion_id": assertion_id,
-                    "status": "already_covered_by_base_flow",
-                    "reason": f"base flow already contains runtime hint {hint}",
+                    "status": "covered_by_planned_step",
+                    "reason": "repro planner added an explicit precondition step for this assertion",
                     "supporting_assertions": [],
                 }
             )
-            continue
-        planned_postcondition_steps.append(step)
-        existing_hints.add(hint)
-        assertion_coverage.append(
-            {
-                "assertion_id": assertion_id,
-                "status": "covered_by_planned_step",
-                "reason": "repro planner added an explicit postcondition step for this assertion",
-                "supporting_assertions": [],
-            }
-        )
+
+        for index, assertion in enumerate(assertion_set.get("postconditions", [])):
+            if not isinstance(assertion, dict):
+                continue
+            built = _assertion_step(assertion, "postcondition", index)
+            assertion_id = str(assertion.get("id", f"postcondition_{index}"))
+            if built is None:
+                unsupported_assertions.append(assertion_id)
+                continue
+            step, hint = built
+            if hint in existing_hints:
+                assertion_coverage.append(
+                    {
+                        "assertion_id": assertion_id,
+                        "status": "already_covered_by_base_flow",
+                        "reason": f"base flow already contains runtime hint {hint}",
+                        "supporting_assertions": [],
+                    }
+                )
+                continue
+            planned_postcondition_steps.append(step)
+            existing_hints.add(hint)
+            assertion_coverage.append(
+                {
+                    "assertion_id": assertion_id,
+                    "status": "covered_by_planned_step",
+                    "reason": "repro planner added an explicit postcondition step for this assertion",
+                    "supporting_assertions": [],
+                }
+            )
 
     planned_trigger = None
     if first_trigger_index is None:
@@ -336,16 +351,30 @@ def plan_bug_repro_flow(project_root: Path, args: Any) -> dict[str, Any]:
             candidate_core.extend(evidence_steps_by_phase["post_trigger"])
             candidate_core.extend(evidence_steps_by_phase["final_check"])
         else:
+            trigger_step = core_steps[trigger_insert_index]
+            post_trigger_base_steps = core_steps[trigger_insert_index + 1 :]
+            post_trigger_wait_steps: list[dict[str, Any]] = []
+            remaining_post_trigger_base_steps = post_trigger_base_steps
+            for index, step in enumerate(post_trigger_base_steps):
+                action = str(step.get("action", "")).strip().lower()
+                if action != "wait":
+                    remaining_post_trigger_base_steps = post_trigger_base_steps[index:]
+                    break
+                post_trigger_wait_steps.append(step)
+            else:
+                remaining_post_trigger_base_steps = []
             candidate_core = (
                 core_steps[:trigger_insert_index]
                 + planned_precondition_steps
                 + evidence_steps_by_phase["pre_trigger"]
                 + trigger_window_start_steps
-                + core_steps[trigger_insert_index:]
+                + [trigger_step]
+                + post_trigger_wait_steps
                 + planned_postcondition_steps
                 + trigger_window_collect_steps
                 + evidence_steps_by_phase["post_trigger"]
                 + evidence_steps_by_phase["final_check"]
+                + remaining_post_trigger_base_steps
             )
 
     candidate_steps = candidate_core + close_steps

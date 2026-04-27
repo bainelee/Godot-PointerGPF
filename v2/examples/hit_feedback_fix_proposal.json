@@ -1,0 +1,12 @@
+{
+  "schema": "pointer_gpf.v2.fix_proposal.v1",
+  "description": "Remove the injected early return that prevents hit feedback from syncing hit_count to the Sprite3D shader.",
+  "candidate_file": "res://scripts/enemies/test_enemy.gd",
+  "edits": [
+    {
+      "kind": "replace_text",
+      "find": "\treturn  # gpf_seeded_bug:hit_feedback_shader_not_updated\n",
+      "replace": ""
+    }
+  ]
+}
